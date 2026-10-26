@@ -38,16 +38,15 @@ async function getCatalog(): Promise<Catalog> {
   return data;
 }
 
-// "Meta Llama API" (api.llama.com) aparece en models.dev como "llama",
-// no como "meta" (que es la API de pago de meta.ai).
+// "Meta Llama API" (api.llama.com) YA NO aparece en models.dev (la sección
+// "llama" desapareció; "meta" ahora es la API de Muse, otro producto) →
+// sin catálogo: el listado en vivo no se filtra ni marca gratis.
 function catalogKey(provider: "nvidia" | "meta" | "custom"): string | null {
   switch (provider) {
     case "nvidia":
       return "nvidia";
-    case "meta":
-      return "llama";
     default:
-      return null; // custom: sin catálogo, solo listado en vivo
+      return null; // meta/custom: sin catálogo, solo listado en vivo
   }
 }
 
@@ -60,6 +59,12 @@ function isChatModel(m: CatalogModel | undefined): boolean {
 }
 
 const KEY_ERROR_RE = /401|403|invalid|unauthorized|api\s?key|credencial/i;
+
+// Pista accionable para el 401: las causas reales siempre están del lado
+// de la credencial (copia parcial, proyecto sin acceso, propagación).
+const KEY_HINT =
+  "copia la key completa de nuevo (solo se muestra una vez al crearla) " +
+  "y confirma que tu proyecto tiene acceso a la API";
 
 // -----------------------------------------------------------------
 // POST { provider, baseUrl?, apiKey?, model? }
@@ -143,8 +148,9 @@ export async function POST(req: Request) {
       } catch (e2: any) {
         const msg2 = String(e2?.message ?? e2);
         if (KEY_ERROR_RE.test(msg2)) {
+          console.error(`[ai/models] ${provider}: ping rechazó la key (${msg2.slice(0, 120)})`);
           return NextResponse.json(
-            { ok: false, error: `API key rechazada (${msg2.slice(0, 140)})` },
+            { ok: false, error: `API key rechazada (${msg2.slice(0, 120)}) — ${KEY_HINT}` },
             { status: 401 }
           );
         }
@@ -158,10 +164,43 @@ export async function POST(req: Request) {
     } catch (e: any) {
       const msg = String(e?.message ?? e);
 
-      // API key inválida → se lo decimos claro al usuario
+      // API key inválida → antes de rendirse, un ping mínimo de chat: si
+      // el /models está restringido pero la key infiere bien, se acepta
+      // con la lista del catálogo (casos raros del lado del proveedor).
+      // Si el ping también falla → la key es inválida de verdad.
       if (KEY_ERROR_RE.test(msg)) {
+        console.error(`[ai/models] ${provider}: /models rechazó la key (${msg.slice(0, 120)})`);
+        const fallbackModel =
+          AI_PROVIDERS[provider]?.models[0] ?? catalogChat[0];
+        // lista a guardar si el ping valida la key: catálogo, o la lista
+        // conocida del proveedor (meta no tiene catálogo en models.dev)
+        const fromCatalog = catalogChat.length > 0;
+        const saveIds = fromCatalog
+          ? catalogChat
+          : (AI_PROVIDERS[provider]?.models ?? []);
+        if (apiKey && baseUrl && fallbackModel && saveIds.length > 0) {
+          try {
+            const probe = new OpenAI({ apiKey, baseURL: baseUrl });
+            await probe.chat.completions.create(
+              {
+                model: fallbackModel,
+                messages: [{ role: "user", content: "ping" }],
+                max_tokens: 1,
+              },
+              { timeout: 15_000, maxRetries: 0 },
+            );
+            return NextResponse.json({
+              ok: true,
+              source: "catalog",
+              warning: `tu key funciona pero ${provider} no permitió listar modelos — usando ${fromCatalog ? "el catálogo público" : "la lista conocida de modelos"}`,
+              models: saveIds.map((id) => ({ id, free: catFree.has(id) })),
+            });
+          } catch {
+            /* ping también rechazado → 401 de abajo */
+          }
+        }
         return NextResponse.json(
-          { ok: false, error: `API key rechazada por el proveedor (${msg.slice(0, 140)})` },
+          { ok: false, error: `API key rechazada por el proveedor (${msg.slice(0, 120)}) — ${KEY_HINT}` },
           { status: 401 }
         );
       }

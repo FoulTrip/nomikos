@@ -350,6 +350,50 @@ pub async fn device_token_handler(
 // 4. Runtime del dispositivo (token de dispositivo)
 // ---------------------------------------------------------------------------
 
+/// GET /api/devices/me/llm — proveedores LLM de MI cuenta para elegir
+/// en los ajustes del dispositivo (Bearer de device). SIN secretos: el
+/// device solo SELECCIONA; las keys se cargan en el panel de la cuenta.
+pub async fn me_llm_handler(
+    State(state): State<SharedState>,
+    auth: AuthedDevice,
+) -> AppResult<Response> {
+    let providers = crate::modules::accounts::llm_providers_list(&state, &auth.account_id);
+    let active = providers
+        .iter()
+        .find(|p| p["is_active"].as_bool().unwrap_or(false))
+        .and_then(|p| p["provider"].as_str())
+        .map(str::to_string);
+    Ok(Json(json!({
+        "ok": true,
+        "active_provider": active,
+        "providers": providers,
+    }))
+    .into_response())
+}
+
+#[derive(Deserialize)]
+pub struct DeviceActivateLlmBody {
+    provider: Option<String>,
+    model: Option<String>,
+}
+
+/// POST /api/devices/me/llm/active — el dispositivo cambia el proveedor
+/// activo y/o su modelo: {provider?, model?} (al menos uno). Validado
+/// igual que en el panel; NO puede crear keys ni borrar providers.
+pub async fn me_llm_activate_handler(
+    State(state): State<SharedState>,
+    auth: AuthedDevice,
+    Json(body): Json<DeviceActivateLlmBody>,
+) -> AppResult<Response> {
+    let v = crate::modules::accounts::set_active_llm(
+        &state,
+        &auth.account_id,
+        body.provider.as_deref(),
+        body.model.as_deref(),
+    )?;
+    Ok(Json(json!({ "ok": true, "active_provider": v["active_provider"] })).into_response())
+}
+
 /// GET /api/devices/me — identidad y contexto del dispositivo.
 pub async fn me_handler(
     State(state): State<SharedState>,

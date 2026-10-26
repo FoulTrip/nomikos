@@ -15,7 +15,7 @@
  */
 import {
   test, expect, api, json, auth, randomEmail, randomPassword, brain, LoginSchema,
-  dapp, dappLogin,
+  dapp, dappLogin, setupAccountLLM,
 } from './_helpers';
 
 /** Pubkey ed25519 válida (base58) para simular la identidad de la placa. */
@@ -183,6 +183,9 @@ test('⑦ el agente opera la flota: tool fleet_status con la cuenta', { timeout:
   await api('/devices/claim', { method: 'POST', headers: withH(account.token), body: JSON.stringify({ code: dev.claim_code }) });
   const dtok = (await (await api('/devices/token', json({ device_id: dev.device_id, enroll_secret: dev.enroll_secret }))).json()) as { token: string };
   await api('/devices/me/heartbeat', { method: 'POST', headers: withH(dtok.token), body: JSON.stringify({}) });
+
+  // la cuenta trae SU key (sin fallback global, el agente la exige)
+  await setupAccountLLM(account.token);
 
   const gw = await brain('/v1/agentic-gateway', {
     method: 'POST',

@@ -13,8 +13,10 @@ imprescindible: [`context.md`](context.md).
    - Identidad: `context.fetch_account_context(bearer)` → `AccountContext`
      (llm/chain/wallets). Token inválido → `PermissionError` → **401** (no
      se opera con identidad rota).
-   - LLM: por cuenta si `ctx.llm` existe (`backend: "account:<provider>"`),
-     si no Llama Stack (`:8321/v1`) con fallback Ollama (`:11434/v1`).
+   - LLM: SOLO el de la cuenta (`backend: "account:<provider>"`, key +
+     modelos del contexto). Sin proveedor activo → `LLMNotConfigured` →
+     **400 `LLM_NOT_CONFIGURED`**. NO hay fallback global (el stack :8321
+     y `LLM_MODEL` son vestigiales: solo sonda de salud y shields).
    - x402: **TODAS** las llamadas a `api` pasan por `x402.guarded_call()`
      (handshake reactivo: 402 → `pay-invoice` delegado → poll → reintento
      con `X-Payment`). NO reintroducir el flujo proactivo viejo.
@@ -51,7 +53,11 @@ imprescindible: [`context.md`](context.md).
 ## Prueba de humo
 
 ```bash
+# Bearer OBLIGATORIO (sin cuenta no hay LLM: 401 AUTH_REQUIRED)
+TOK=$(curl -s -X POST http://localhost:8080/api/auth/login \
+  -H 'Content-Type: application/json' -d '{"email":"…","password":"…"}' \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['token'])")
 curl -s -X POST http://localhost:8322/v1/agentic-gateway \
-  -H "Content-Type: application/json" -d '{"text":"estado de salud de la API"}'
-# con cuenta: -H "Authorization: Bearer <token de login de :8080/api/auth/login>"
+  -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
+  -d '{"text":"estado de salud de la API"}'
 ```

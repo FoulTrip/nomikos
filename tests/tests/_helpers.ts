@@ -181,6 +181,23 @@ export async function nvidiaKeyFromApiEnv(): Promise<string> {
   throw new Error('Sin NVIDIA_API_KEY (env o dapp/credentials.json)');
 }
 
+/** Configura el LLM DE LA CUENTA (NIM real) — sin esto el agente no
+ *  razona: no existe backend global, la cuenta trae sus keys. */
+export async function setupAccountLLM(token: string, model = 'meta/muse-glimmer-30b'): Promise<void> {
+  const nvKey = await nvidiaKeyFromApiEnv();
+  const res = await api('/accounts/me/llm', {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      provider: 'nvidia-nim',
+      api_key: nvKey,
+      models: [model],
+      default_model: model,
+    }),
+  });
+  if (res.status !== 200) throw new Error(`setupAccountLLM: HTTP ${res.status} ${await res.text()}`);
+}
+
 // ── Fixture: cuenta efímera con login y teardown (logout) ──
 export interface TestAccount {
   email: string;

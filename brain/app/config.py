@@ -44,10 +44,15 @@ class Settings:
     guard_via_llama_stack: bool = field(default_factory=lambda: _bool("GUARD_VIA_LLAMA_STACK", False))
     # Categorías cuya violación NO bloquea (práctica Red Hat contra falsos
     # positivos del 1B en dominios técnicos: software/IP→S8, peajes→S9).
+    # S7 (Privacy): el agente solo ve datos DE LA PROPIA cuenta (todas las
+    # tools llevan el Bearer de la cuenta) y le responde a su dueño — no hay
+    # filtración posible a terceros por construcción, y el 1B flaggea
+    # pubkeys base58 e IDs de dispositivo (reproducido 4/4 en fleet_status).
+    # La exclusión exige que TODAS las categorías sean de la lista.
     guard_excluded_categories: list[str] = field(
         default_factory=lambda: [
             c.strip().upper()
-            for c in os.getenv("GUARD_EXCLUDED_CATEGORIES", "S6,S8,S9,S14").split(",")
+            for c in os.getenv("GUARD_EXCLUDED_CATEGORIES", "S6,S7,S8,S9,S14").split(",")
             if c.strip()
         ]
     )

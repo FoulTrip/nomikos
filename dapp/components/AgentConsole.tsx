@@ -89,7 +89,9 @@ export default function AgentConsole({ mode = "direct" }: { mode?: ConsoleMode }
           setResult(
             data.ok
               ? {ok: true, reply: data.reply}
-              : {ok: false, error: data.error || `HTTP ${res.status}`},
+              : data.code === "LLM_NOT_CONFIGURED"
+                ? {ok: false, error: "Sin proveedor LLM: carga tu API key en Modelos del agente (arriba) y elige proveedor + modelo."}
+                : {ok: false, error: data.error || `HTTP ${res.status}`},
           );
         }
       } catch (e: any) {

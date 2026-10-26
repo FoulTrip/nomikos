@@ -12,7 +12,7 @@
  */
 import {
   test, expect, api, json, auth, LoginSchema, randomEmail, randomPassword,
-  settleInvoiceViaLedger,
+  settleInvoiceViaLedger, setupAccountLLM,
 } from './_helpers';
 
 const withH = (t: string) => ({ Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' });
@@ -133,6 +133,9 @@ test('⑦ un turno de voz real: Pi → /api/voice → orquestador', { timeout: 6
   const dtok = LoginSchema.parse(
     await (await api('/devices/token', json({ device_id, enroll_secret }))).json(),
   ).token;
+
+  // la cuenta trae SU key (el turno de voz razona solo con ella)
+  await setupAccountLLM(account.token);
 
   const turn = await api('/voice', {
     method: 'POST', headers: withH(dtok),

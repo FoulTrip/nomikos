@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Bot,
+  Crosshair,
   LoaderCircle,
   Mic,
   Monitor,
@@ -16,11 +17,13 @@ import {
   RefreshCw,
   Send,
   Square,
+  Unlock,
   Volume2,
   VolumeX,
   Zap,
 } from "lucide-react";
-import { useNomikOS, simClaim, simX402, simRebuild, simSay } from "@/lib/os/nomikos";
+import { useNomikOS, simClaim, simX402, simRebuild, simSay, simPress } from "@/lib/os/nomikos";
+import { setViewLocked, useViewLocked } from "@/lib/viewer/view";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -74,6 +77,9 @@ export default function SimulatorBar() {
     setSrAvailable(speechRecognition() !== null);
   }, []);
   const SR = srAvailable;
+
+  // Vista 3D fija: de frente y sin rotación para tocar con precisión.
+  const viewLocked = useViewLocked();
 
   const run = async (label: string, fn: () => Promise<void>) => {
     setBusy(label);
@@ -190,8 +196,19 @@ export default function SimulatorBar() {
         <p className="font-mono text-xs text-muted-foreground">
           {os === null
             ? "sincronizando…"
-            : `stage: ${os.stage} · boots: ${os.boot_count} · toques: ${os.taps}`}
+            : `stage: ${os.stage}${os.stage === "online" && os.locked ? " 🔒" : ""} · boots: ${os.boot_count} · toques: ${os.taps}`}
         </p>
+
+        {os?.stage === "online" && (
+          <p className="font-mono text-xs text-muted-foreground">
+            {(() => {
+              const act = os.llm?.providers?.find((p) => p.is_active);
+              return act
+                ? `🧠 ${act.provider} · ${(act.default_model ?? "—").split("/").pop()}`
+                : "🧠 sin proveedor — configúralo en Modelos";
+            })()}
+          </p>
+        )}
 
         {actionError && (
           <p className="text-xs text-red-400" role="alert">
@@ -224,12 +241,39 @@ export default function SimulatorBar() {
           </>
         )}
 
-        {os?.stage === "online" && (
+        {os?.stage === "online" && os.locked !== false && (
           <>
             <p className="text-xs text-muted-foreground">
-              pantalla táctil: toca el AMOLED para ciclar inicio ⇄ apps ⇄
-              peaje ⇄ ajustes
+              🔒 bloqueado — toca la pantalla del AMOLED para desbloquear.
             </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={busy !== null}
+              onClick={() => void run("unlock", () => simPress("unlock"))}
+            >
+              Desbloquear
+            </Button>
+          </>
+        )}
+
+        {os?.stage === "online" && os.locked === false && (
+          <>
+            <p className="text-xs text-muted-foreground">
+              pantalla táctil: toca los iconos del AMOLED (apps · ajustes
+              · peaje).
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant={viewLocked ? "default" : "secondary"}
+              onClick={() => setViewLocked(!viewLocked)}
+              title="Fija la cámara de frente y desactiva la rotación"
+            >
+              {viewLocked ? <Unlock /> : <Crosshair />}
+              {viewLocked ? "liberar vista 3D" : "fijar vista de frente"}
+            </Button>
             {/* micrófono: hablar con el agente (voz → turno real del device) */}
             <div className="flex gap-1.5">
               <Button
@@ -330,8 +374,8 @@ export default function SimulatorBar() {
             </Button>
             {os.last_x402 && (
               <p className="text-xs text-muted-foreground">
-                último peaje: {os.last_x402.status}
-                {os.last_x402.access ? ` · ${os.last_x402.access}` : ""}
+                último peaje: {os.last_x402.access ?? os.last_x402.status}
+                {os.last_x402.hint ? ` — ${os.last_x402.hint}` : ""}
               </p>
             )}
           </>

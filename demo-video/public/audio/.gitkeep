@@ -1,0 +1,2 @@
+# public/audio contendrá scene-*.mp3 generados por scripts/generate-tts.py (P3).
+# Se ignora el audio real, se versiona solo este marcador.

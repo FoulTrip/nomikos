@@ -14,8 +14,8 @@ brain/
 │   ├── context.py   — AccountContext + fetch_account_context(bearer) + bearer_from_headers
 │   ├── config.py    — settings de .env (AGENT_OS_API_URL, LLAMA_STACK_URL, LLM_MODEL,
 │   │                  OLLAMA_URL, GUARD_*, MUSE_BIN, MAX_TOOL_ITERATIONS)
-│   ├── llm.py       — run_agent(): cliente por cuenta (account:nvidia-nim) o global
-│   │                  (llama-stack → ollama); loop de tool-calls multi-iteración
+│   ├── llm.py       — run_agent(): SOLO cliente de cuenta (account:<provider>);
+│   │                  sin Bearer → 401, sin LLM activo → 400 LLM_NOT_CONFIGURED
 │   ├── tools.py     — 11 tools → TODAS vía guarded_call(ctx); ToolResult; RunEvents
 │   ├── x402.py      — guarded_call: 402 → delegated_pay_invoice (dPaaS de la cuenta)
 │   │                  → poll (4×3 s) → reintento con X-Payment → 200 recurso
@@ -33,24 +33,23 @@ brain/
 ## Flujo del gateway (`POST /v1/agentic-gateway`)
 
 ```
-{device_id, text, solana_tx_signature?} + Authorization: Bearer?
-  ① ctx = fetch_account_context(bearer)   → 401 si token inválido
+{device_id, text, solana_tx_signature?} + Authorization: Bearer (OBLIGATORIO)
+  ① ctx = fetch_account_context(bearer)   → 401 si falta token o es inválido
   ② shield_in = run_llama_guard(text)     → 400-policy si unsafe
-  ③ run = run_agent(text, ctx)            → LLM de la cuenta o global;
+  ③ run = run_agent(text, ctx)            → SOLO LLM de la cuenta;
+     sin proveedor activo → 400 LLM_NOT_CONFIGURED (sin fallback global:
+     la cuenta trae sus keys en Modelos del agente)
   ④   por cada tool_call → execute_tool(ctx) → guarded_call → api
         (402 → pay-invoice delegado → reintento X-Payment → recurso)
   ⑤ shield_out = run_llama_guard(reply, output=True, original_user_text)
   → {ok, reply, tools_used, shield_in, shield_out, x402[], account, backend, model}
 ```
 
-Backends observables en `backend`: `account:<provider>` (LLM de la cuenta,
-api_key de `account_llm` desencriptada en `/me/context`), `llama-stack`
-(global vía NIM — **key viva desde 2026-10-26**, flip ejecutado:
-`LLM_MODEL=nvidia/meta/muse-glimmer-30b` + stack arriba vía
-`scripts/stack-up.sh`, que lee la key de `.env`; `scripts/llm-health.sh`
-sondea ollama/stack/NIM en un comando),
-`ollama` (fallback + backend global ACTUAL: `llama3.2:1b` local —
-tool-calls verificados).
+Backend observable en `backend`: `account:<provider>` (LLM ACTIVO de la
+cuenta, api_key de `account_llm_providers` desencriptada en `/me/context`).
+Ollama queda SOLO para shields Llama Guard (`GUARD_VIA_LLAMA_STACK=false`);
+ya no razona nada. Llama Stack fuera del arranque (`make up` ya no lo
+levanta; `scripts/stack-up.sh` + `llm-health.sh` quedan para self-host).
 
 ## Las 15 tools (tools.py)
 
@@ -91,24 +90,24 @@ llamada devuelve un ToolResult de error y la conversación continúa.
 
 ## Variables de entorno (brain/.env)
 
-`AGENT_OS_API_URL` (http://localhost:8080/api) · `LLAMA_STACK_URL`
-(http://localhost:8321/v1) + `LLAMA_STACK_API_KEY=fake` · `LLM_MODEL`
-(nvidia/meta/muse-glimmer-30b — el router exige prefijo de provider) ·
-`OLLAMA_URL` · `GUARD_ENABLED/LLAMA_GUARD_MODEL/GUARD_VIA_LLAMA_STACK/
-GUARD_EXCLUDED_CATEGORIES` · `MUSE_BIN` (~/.local/bin/muse) ·
-`MAX_TOOL_ITERATIONS=8`. x402 sin config local: el gateway de `api` manda.
+`AGENT_OS_API_URL` (http://localhost:8080/api) · `OLLAMA_URL` ·
+`GUARD_ENABLED/LLAMA_GUARD_MODEL/GUARD_VIA_LLAMA_STACK/
+GUARD_EXCLUDED_CATEGORIES` (default `S6,S7,S8,S9,S14`) · `MUSE_BIN`
+(~/.local/bin/muse, tool local) · `MAX_TOOL_ITERATIONS=8`.
+Vestigiales (no se usan para inferir): `LLAMA_STACK_URL` (+
+`LLAMA_STACK_API_KEY=fake`, solo sonda de `/v1/health`) y `LLM_MODEL`.
+x402 sin config local: el gateway de `api` manda.
 
 ## Servicios de los que depende
 
 | Puerto | Qué | Uso en brain |
 |---|---|---|
 | 8080 | api (Rust) | contexto de cuenta, tools, x402, dPaaS |
-| 8321 | Llama Stack | inference global (NIM: muse-glimmer-30b — **key viva 2026-10-26**, arrancar con `scripts/stack-up.sh`; ollama queda de respaldo) |
-| 11434 | Ollama | Llama Guard 3 (llama-guard3:1b) + fallback LLM (llama3.2:1b) |
+| 11434 | Ollama (CPU) | SOLO shields Llama Guard 3 (llama-guard3:1b); sin :8321 (retirado: la cuenta trae su LLM) |
 
 ## Verificado end-to-end (no romper)
 
-- Sin Bearer: tools funcionan; `get_device` → 402 → manual con pay_hint.
-- Con Bearer de cuenta: `backend: account:nvidia-nim`, 1 tool call,
+- Sin Bearer → 401 AUTH_REQUIRED (sin cuenta no hay LLM ni tools).
+- Con Bearer de cuenta + LLM activo: `backend: account:nvidia-nim`, 1 tool call,
   handshake delegado settled → la ficha técnica REAL llega al reply.
 - Token inválido → 401 antes de razonar. Input inseguro (S11) → bloqueado.

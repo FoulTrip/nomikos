@@ -43,10 +43,22 @@ pub fn router(state: SharedState) -> Router {
             "/api/accounts/me/llm",
             put(accounts::put_llm_handler).delete(accounts::delete_llm_handler),
         )
+        .route(
+            "/api/accounts/me/llm/active",
+            post(accounts::activate_llm_handler),
+        )
+        .route(
+            "/api/accounts/me/llm/refresh-models",
+            post(accounts::refresh_llm_models_handler),
+        )
         .route("/api/accounts/me/chain", put(accounts::put_chain_handler))
         .route(
             "/api/accounts/me/chain/keypair/import",
             post(accounts::import_keypair_handler),
+        )
+        .route(
+            "/api/accounts/me/chain/keypair/generate",
+            post(accounts::generate_keypair_handler),
         )
         // [ NomikOS W6 — faucet Devnet: settlement x402 REAL on-chain ]
         .route(
@@ -91,6 +103,12 @@ pub fn router(state: SharedState) -> Router {
         .route("/api/devices", get(devices::list_fleet_handler))
         .route("/api/devices/me", get(devices::me_handler))
         .route("/api/devices/me/heartbeat", post(devices::heartbeat_handler))
+        // [ Dispositivo: elegir proveedor/modelo LLM de SU cuenta (sin secretos) ]
+        .route("/api/devices/me/llm", get(devices::me_llm_handler))
+        .route(
+            "/api/devices/me/llm/active",
+            post(devices::me_llm_activate_handler),
+        )
         .route("/api/devices/{id}/limits", put(devices::limits_handler))
         // [ NomikOS F5 — llamadas con peaje x402 por minuto ]
         .route("/api/calls", post(calls::create_call_handler))

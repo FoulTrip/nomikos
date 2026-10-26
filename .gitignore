@@ -55,6 +55,21 @@ nohup.out
 # dirs creados por mala expansión de ~ en herramientas (junk runtime)
 ~/
 
+# ── Medios e imágenes de disco (pesados / innecesarios) ─────────────────
+# demo-video/ se autogobierna (su .gitignore cubre node_modules/, out/ con
+# los renders, TTS y .remotion/ ≈1.2 GB) — esto es red de seguridad global:
+# hoy ningún medio del repo es fuente legítima (los samples de whisper.cpp
+# y los audios/renders de demo-video ya van ignorados por sus reglas).
+*.mp3
+*.wav
+*.mp4
+*.mov
+*.webm
+*.m4a
+*.ogg
+*.img
+*.iso
+
 # ── Capa OS embebida (os/): solo se excluyen artefactos de voz ──────
 # (buildroot-external, context.md, README.md y swupdate SÍ se versionan;
 # whisper.cpp y los modelos se re-crean con os/voice/host-setup.sh)

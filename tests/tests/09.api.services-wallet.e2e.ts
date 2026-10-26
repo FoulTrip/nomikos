@@ -230,6 +230,50 @@ test('wallets conectadas del navegador (Phantom/MetaMask): varias, solo una en u
   ).toBe(401);
 });
 
+test('reconectar la misma wallet NO duplica (upsert + EIP-55 insensible)', async ({ account }) => {
+  const H = { Authorization: `Bearer ${account.token}`, 'Content-Type': "application/json" };
+  const post = (body: unknown) =>
+    api('/accounts/me/connected-wallets', { method: 'POST', headers: H, body: JSON.stringify(body) });
+
+  const w1 = await post({ provider: 'metamask', chain: 'evm', pubkey: '0xABCDEF1234567890abcdef1234567890ABCDEF12' });
+  expect(w1.status).toBe(201);
+  // misma dirección con distinto checksum EIP-55 → 200 deduped, sin fila nueva
+  const w2 = await post({ provider: 'metamask', chain: 'evm', pubkey: '0xabcdef1234567890abcdef1234567890abcdef12' });
+  expect(w2.status).toBe(200);
+  expect(((await w2.json()) as { deduped?: boolean }).deduped).toBe(true);
+  const list = await api('/accounts/me/connected-wallets', { method: 'GET', headers: { Authorization: `Bearer ${account.token}` } });
+  const { wallets } = (await list.json()) as { wallets: unknown[] };
+  expect(wallets).toHaveLength(1);
+});
+
+test('lista trae balance Solana vivo; dPaaS se crea con un clic (generate)', async ({ account }) => {
+  const H = { Authorization: `Bearer ${account.token}`, 'Content-Type': "application/json" };
+  // Solana con fondos conocidos (treasury e2e no aplica; solo forma): conectamos
+  await api('/accounts/me/connected-wallets', {
+    method: 'POST', headers: H,
+    body: JSON.stringify({ provider: 'phantom', chain: 'solana', pubkey: '9EgkxJXATAppZgRViFFBNmhSeQbXj664zKV9ErCm6cVS' }),
+  });
+  const list = await api('/accounts/me/connected-wallets', { method: 'GET', headers: { Authorization: `Bearer ${account.token}` } });
+  const { wallets } = (await list.json()) as { wallets: { balance_lamports?: number | null }[] };
+  expect(typeof wallets[0].balance_lamports === 'number' || wallets[0].balance_lamports === null).toBe(true);
+
+  // generate: crea la dPaaS sellada; segunda vez → 409
+  const g1 = await api('/accounts/me/chain/keypair/generate', { method: 'POST', headers: H });
+  expect(g1.status).toBe(200);
+  const g1b = (await g1.json()) as { wallet_pubkey: string; encrypted_at_rest: boolean };
+  expect(g1b.wallet_pubkey).toMatch(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
+  expect(g1b.encrypted_at_rest).toBe(true);
+  expect((await api('/accounts/me/chain/keypair/generate', { method: 'POST', headers: H })).status).toBe(409);
+
+  // el summary expone wallet + red + balance para el modal
+  const sum = await api('/accounts/me/x402/summary', { method: 'GET', headers: { Authorization: `Bearer ${account.token}` } });
+  expect(sum.status).toBe(200);
+  const dpaas = ((await sum.json()) as { dpaas: { wallet: string; network: string; balance_lamports: number | null } }).dpaas;
+  expect(dpaas.wallet).toBe(g1b.wallet_pubkey);
+  expect(dpaas.network).toBe('devnet');
+  expect(typeof dpaas.balance_lamports === 'number').toBe(true);
+});
+
 test('nivel dapp: el proxy /api/account/llm guarda proveedor, key y modelo de la cuenta', async () => {
   const jar = await dappLogin();
   const H = { 'Content-Type': 'application/json' };
@@ -258,6 +302,19 @@ test('nivel dapp: el proxy /api/account/llm guarda proveedor, key y modelo de la
   });
   expect(((await keep.json()) as { api_key_updated: boolean }).api_key_updated).toBe(false);
 
+  // elegir modelo vía dapp (POST = activate; lo que usa el modal al seleccionar)
+  const sw = await dapp('/api/account/llm', {
+    method: 'POST', jar, headers: H,
+    body: JSON.stringify({ model: 'meta/llama-3.1-8b-instruct' }),
+  });
+  expect(sw.status).toBe(200);
+  expect(((await sw.json()) as { ok: boolean }).ok).toBe(true);
+  const badModel = await dapp('/api/account/llm', {
+    method: 'POST', jar, headers: H,
+    body: JSON.stringify({ model: 'no-existe' }),
+  });
+  expect(badModel.status).toBe(400);
+
   // el contexto (lo que lee brain para razonar como la cuenta) lo refleja
   const ctx = await dapp('/api/account/context', { jar });
   const llm = ((await ctx.json()) as { llm: { provider: string; default_model: string; models: string[] } }).llm;
@@ -271,7 +328,7 @@ test('nivel dapp: el proxy /api/account/llm guarda proveedor, key y modelo de la
   });
   expect(bad.status).toBe(400);
 
-  // Desconectar (DELETE) → la cuenta vuelve al backend global
+  // Desconectar (DELETE) → la cuenta queda sin agente hasta reconfigurar
   const del = await dapp('/api/account/llm', { method: 'DELETE', jar });
   expect(del.status).toBe(200);
   expect(((await del.json()) as { ok: boolean; llm: null }).ok).toBe(true);

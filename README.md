@@ -50,7 +50,7 @@ El flujo autoritativo está en [`diagram.d2`](diagram.d2) (render:
 | Directorio | Stack | Rol |
 |---|---|---|
 | [`api/`](api/) | Rust · axum 0.8 · rusqlite · argon2 · XChaCha20-Poly1305 · ed25519 (sin SDK) | Fuente única de verdad: IdP, gateway 402, dPaaS, flota, voz, llamadas, faucet Devnet, x402 |
-| [`brain/`](brain/) | Python 3.13 · FastAPI · Llama Stack (NIM) · Ollama (Llama Guard 3) | Orquestador: shields in/out, 15 tools, guard x402 reactivo (paga y reintenta solo) |
+| [`brain/`](brain/) | Python 3.13 · FastAPI · Ollama (shields Llama Guard) | Orquestador: exige Bearer + LLM de la cuenta (sin fallback global), shields in/out, 15 tools, guard x402 reactivo |
 | [`dapp/`](dapp/) | Next.js 16 · Auth.js v5 · React 19 | Panel del navegador: sesión, wallet/red, modelos, servicios, flota + instalador web (Web Serial) |
 | [`firmware/`](firmware/) | Rust no_std | `agentd-core` (máquina de estados), `agentd-host` (simulador: voz + puente SIP), `agentd-esp32` (AMOLED 466×466, compila para xtensa) |
 | [`os/`](os/) | Buildroot (BR2_EXTERNAL) + shell | Imagen Linux de la Pi4: `sdcard.img` con agentd, whisper, piper y systemd · bucle de voz `os/voice/` |
@@ -89,9 +89,8 @@ Arranque manual (equivalente, por servicio):
 | Puerto | Servicio | Comando |
 |---|---|---|
 | 8080 | api | `cd api && cargo run` |
-| 8321 | Llama Stack (NIM) | `cd brain && ./scripts/stack-up.sh &` |
-| 8322 | brain | `cd brain && .venv/bin/python -m uvicorn app.main:app --port 8322` |
-| 11434 | Ollama (Llama Guard 3) | `ollama serve` |
+| 8322 | brain (exige Bearer + LLM de cuenta) | `cd brain && .venv/bin/python -m uvicorn app.main:app --port 8322` |
+| 11434 | Ollama (SOLO shields Llama Guard) | `ollama serve` |
 | 3000 | dapp | `cd dapp && npm run dev` |
 | 3100 | app (Payload CMS) | `cd dapps/payload-cms/templates/with-cloudflare-d1 && pnpm dev --port 3100` |
 
@@ -100,11 +99,14 @@ La configuración vive en el **`.env` central de la raíz** (plantilla:
 una app nueva al ecosistema (que el orquestador pague por peaje):
 [`dapps/README.md`](dapps/README.md).
 
-Prueba de humo:
+Prueba de humo (`make test-smoke` hace esto):
 
 ```bash
+curl -s http://localhost:8080/api/health -o /dev/null -w "api → %{http_code}\n"
+curl -s http://localhost:8322/v1/health -o /dev/null -w "brain → %{http_code}\n"
+# gateway sin Bearer → 401: el agente exige cuenta con LLM propio
 curl -s -X POST http://localhost:8322/v1/agentic-gateway \
-  -H "Content-Type: application/json" -d '{"text":"estado de salud de la API"}'
+  -H "Content-Type: application/json" -d '{"text":"hola"}' -o /dev/null -w "gateway → %{http_code}\n"
 ```
 
 ## Flota, voz y hardware
@@ -130,7 +132,7 @@ curl -s -X POST http://localhost:8322/v1/agentic-gateway \
 cd tests && npm run test:e2e -- tests/13.settlement.real-chain.e2e.ts
 ```
 
-16 suites (01–16): salud, IdP, cuenta, x402, brain global y por cuenta,
+16 suites (01–16): salud, IdP, cuenta, x402, brain (auth + LLM de cuenta),
 escalabilidad, dapp sesión, servicios/wallets, flota, llamadas,
 voz+app peajizada, **settlement real on-chain**, **puente SIP**,
 **tienda de apps** y **simulador NomikOS**. Los servicios deben estar

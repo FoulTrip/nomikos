@@ -24,9 +24,10 @@ import {
   PlugZap,
   Plus,
   Radio,
+  RotateCw,
   Sun,
+  Trash2,
   TriangleAlert,
-  Unplug,
   Wallet,
   WalletMinimal,
 } from "lucide-react";
@@ -36,7 +37,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -89,6 +89,16 @@ interface LlmConfig {
   api_key?: string | null;
 }
 
+/** Fila de proveedor del contexto (sin secretos — la key nunca baja). */
+interface LlmProviderRow {
+  provider: string;
+  base_url?: string;
+  models?: string[];
+  default_model?: string | null;
+  has_key?: boolean;
+  is_active?: boolean;
+}
+
 /**
  * Proveedores del modal Modelos. `apiProvider` es el que acepta la api
  * (PROVIDERS de account_llm — lo usará brain para razonar como la cuenta);
@@ -107,7 +117,6 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
   { label: "NVIDIA NIM", apiProvider: "nvidia-nim", modelsProvider: "nvidia", keyHint: "nvapi-…" },
   { label: "OpenAI", apiProvider: "openai", modelsProvider: "custom", baseUrl: "https://api.openai.com/v1", keyHint: "sk-…" },
   { label: "Meta Llama API", apiProvider: "custom", modelsProvider: "meta", baseUrl: "https://api.llama.com/compat/v1", keyHint: "llama-…" },
-  { label: "Llama Stack (local :8321)", apiProvider: "llama-stack", modelsProvider: "custom", baseUrl: "http://localhost:8321/v1", keyOptional: true },
   { label: "Personalizado (OpenAI-compat)", apiProvider: "custom", modelsProvider: "custom", keyHint: "según proveedor" },
 ];
 
@@ -123,6 +132,39 @@ interface ConnectedWallet {
   chain: string; // 'solana' | 'evm'
   pubkey: string;
   is_active: boolean;
+  balance_lamports?: number | null; // solo chain=solana (vía RPC del api)
+}
+
+interface DpaasSummary {
+  wallet: string | null;
+  network?: string | null;
+  balance_lamports?: number | null;
+}
+
+/** Nombres legibles de chains EVM habituales (eth_chainId → nombre). */
+const EVM_CHAINS: Record<string, string> = {
+  "0x1": "Ethereum",
+  "0x2105": "Base",
+  "0x89": "Polygon",
+  "0xa": "Optimism",
+  "0x38": "BSC",
+  "0xaa36a7": "Sepolia",
+  "0x14a34": "Base Sepolia",
+  "0x66eee": "Arbitrum Sepolia",
+  "0xa4b1": "Arbitrum",
+};
+
+function fmtSol(lamports: number | null | undefined): string {
+  if (lamports == null) return "…";
+  return `${(lamports / 1_000_000_000).toFixed(4)} SOL`;
+}
+
+function fmtEth(weiHex: string, chainId: string): string {
+  const wei = BigInt(weiHex);
+  const int = wei / 10n ** 18n;
+  const frac = ((wei % 10n ** 18n) / 10n ** 14n).toString().padStart(4, "0");
+  const name = EVM_CHAINS[chainId.toLowerCase()] ?? `chain ${chainId}`;
+  return `${int}.${frac} ETH · ${name}`;
 }
 
 /** Wallets del navegador detectables (extensión instalada). */
@@ -172,6 +214,19 @@ function WalletModal({ onClose }: { onClose: () => void }) {
   const [connectingWallet, setConnectingWallet] = useState<string | null>(null);
   const [faucetBusy, setFaucetBusy] = useState(false);
   const [faucetMsg, setFaucetMsg] = useState<string | null>(null);
+  const [dpaas, setDpaas] = useState<DpaasSummary | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [evmBalance, setEvmBalance] = useState<string | null>(null);
+
+  const loadSummary = async () => {
+    try {
+      const res = await fetch("/api/account/x402/summary", { cache: "no-store" });
+      const data = await res.json();
+      if (data.ok && data.dpaas) setDpaas(data.dpaas as DpaasSummary);
+    } catch {
+      /* silencioso: el balance es informativo */
+    }
+  };
 
   const loadConnected = async () => {
     try {
@@ -200,7 +255,35 @@ function WalletModal({ onClose }: { onClose: () => void }) {
       }
     })();
     loadConnected();
+    loadSummary();
   }, []);
+
+  // Balance EVM de la wallet ACTIVA con su propia extensión: ella sabe en
+  // qué red está (el api no puede saberlo). Solo si la pubkey coincide con
+  // la cuenta actual de la extensión.
+  useEffect(() => {
+    (async () => {
+      setEvmBalance(null);
+      try {
+        const w = window as unknown as Record<string, any>;
+        const eth = w.ethereum;
+        const activeEvm = connected?.find((c) => c.is_active && c.chain === "evm");
+        if (!eth?.request || !activeEvm) return;
+        const [accounts, chainId] = await Promise.all([
+          eth.request({ method: "eth_accounts" }) as Promise<string[]>,
+          eth.request({ method: "eth_chainId" }) as Promise<string>,
+        ]);
+        if (!accounts?.[0] || accounts[0].toLowerCase() !== activeEvm.pubkey.toLowerCase()) return;
+        const bal = (await eth.request({
+          method: "eth_getBalance",
+          params: [accounts[0], "latest"],
+        })) as string;
+        setEvmBalance(fmtEth(bal, chainId));
+      } catch {
+        /* sin extensión o sin permiso: sin balance EVM */
+      }
+    })();
+  }, [connected]);
 
   /** Conectar wallet del navegador → pubkey → guardada en la cuenta (en uso). */
   const onConnect = async (id: string) => {
@@ -250,6 +333,28 @@ function WalletModal({ onClose }: { onClose: () => void }) {
     }
   };
 
+  /** Crear wallet dPaaS (ed25519, sellada AEAD) — un clic y listo. */
+  const onGenerate = async () => {
+    setGenerating(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/account/chain/keypair/generate", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setError(data.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      const ctxRes = await fetch("/api/account/context", { cache: "no-store" });
+      const ctxData: AccountContext = await ctxRes.json();
+      if (ctxRes.ok && ctxData.ok) setCtx(ctxData);
+      await loadSummary();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error de red");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   /** Faucet Devnet (W6): treasury del ecosistema → wallet dPaaS. */
   const onFaucet = async () => {
     setFaucetBusy(true);
@@ -266,10 +371,11 @@ function WalletModal({ onClose }: { onClose: () => void }) {
         `tx ${String(data.tx_signature).slice(0, 18)}… · ` +
           `${data.lamports} lamports → ${shortKey(data.wallet_pubkey)}`,
       );
-      // refrescar contexto de la cuenta
+      // refrescar contexto de la cuenta + balance
       const ctxRes = await fetch("/api/account/context", { cache: "no-store" });
       const ctxData: AccountContext = await ctxRes.json();
       if (ctxRes.ok && ctxData.ok) setCtx(ctxData);
+      await loadSummary();
     } catch (e) {
       setFaucetMsg(e instanceof Error ? e.message : "Error de red");
     } finally {
@@ -338,11 +444,30 @@ function WalletModal({ onClose }: { onClose: () => void }) {
               <span className="flex flex-1 flex-col gap-0.5">
                 <b className="text-[13px] font-semibold">Wallet principal (dPaaS)</b>
                 <small className="text-xs text-muted-foreground">
-                  {shortKey(ctx.chain?.wallet_pubkey)} · firma los peajes x402
+                  {dpaas?.wallet
+                    ? `${shortKey(dpaas.wallet)} · ${fmtSol(dpaas.balance_lamports)} · firma los peajes x402`
+                    : "sin configurar · firma los peajes x402"}
                 </small>
               </span>
-              {walletLabel === "" && <Check className="size-4 shrink-0 text-primary" />}
+              {walletLabel === "" && dpaas?.wallet && <Check className="size-4 shrink-0 text-primary" />}
             </button>
+            {!dpaas?.wallet && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onGenerate}
+                disabled={generating}
+                className="w-fit"
+              >
+                {generating ? (
+                  <LoaderCircle className="animate-spin" />
+                ) : (
+                  <Plus />
+                )}
+                {generating ? "Creando…" : "Crear wallet dPaaS"}
+              </Button>
+            )}
             {wallets.map((w) => (
               <button
                 key={w.id}
@@ -402,23 +527,29 @@ function WalletModal({ onClose }: { onClose: () => void }) {
               Wallets del navegador
             </h4>
             <div className="flex flex-wrap gap-2">
-              {BROWSER_WALLETS.map((bw) => (
-                <Button
-                  key={bw.id}
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onConnect(bw.id)}
-                  disabled={connectingWallet !== null}
-                >
-                  {connectingWallet === bw.id ? (
-                    <LoaderCircle className="animate-spin" />
-                  ) : (
-                    <bw.icon />
-                  )}
-                  {connectingWallet === bw.id ? "Conectando…" : bw.label}
-                </Button>
-              ))}
+              {BROWSER_WALLETS.map((bw) => {
+                // el botón queda seleccionado si ESE proveedor es el de la
+                // wallet en uso (ej: MetaMask conectada → botón MetaMask)
+                const isProviderActive =
+                  connected?.some((c) => c.is_active && c.provider === bw.id) ?? false;
+                return (
+                  <Button
+                    key={bw.id}
+                    type="button"
+                    variant={isProviderActive ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => onConnect(bw.id)}
+                    disabled={connectingWallet !== null}
+                  >
+                    {connectingWallet === bw.id ? (
+                      <LoaderCircle className="animate-spin" />
+                    ) : (
+                      <bw.icon />
+                    )}
+                    {connectingWallet === bw.id ? "Conectando…" : bw.label}
+                  </Button>
+                );
+              })}
             </div>
             {connected && connected.length > 0 ? (
               <div className="grid gap-2">
@@ -439,6 +570,12 @@ function WalletModal({ onClose }: { onClose: () => void }) {
                       </b>
                       <small className="text-xs text-muted-foreground">
                         {shortKey(cw.pubkey)}
+                        {cw.chain === "solana" &&
+                          ` · ${fmtSol(cw.balance_lamports)}`}
+                        {cw.chain === "evm" &&
+                          cw.is_active &&
+                          evmBalance != null &&
+                          ` · ${evmBalance}`}
                       </small>
                     </span>
                     {cw.is_active ? (
@@ -517,37 +654,132 @@ function WalletModal({ onClose }: { onClose: () => void }) {
 }
 
 /**
- * Modal Modelos — proveedor LLM del agente, con el mismo flujo que la
- * antigua sección "Configurar proveedor de IA" pero persistiendo en la
- * CUENTA (account_llm en api; api_key sellada AEAD) en vez de en
- * localStorage:
+ * Modal Modelos — LLM DE LA CUENTA (multi-proveedor, uno solo ACTIVO).
  *
- *  · Sin conexión: proveedor + API key → "Conectar" (valida la key en
- *    vivo contra el proveedor y lista los modelos de chat) → guarda.
- *  · Conectado: "Modelo (N gratis)" (select Gratis/Otros) + Desconectar.
- *    Cambiar de modelo guarda al vuelo; Desconectar borra el LLM de la
- *    cuenta (el agente vuelve al backend global del ecosistema).
- *  · Al abrir: si la cuenta ya tiene proveedor + key guardados,
- *    auto-conecta y muestra directamente el estado conectado.
+ * La cuenta carga sus api_keys (selladas AEAD en api) y elige UN proveedor
+ * activo + su modelo; brain razona SOLO con ese (sin fallback global).
+ *
+ *  · "Tus proveedores": radio por fila (el activo), nº de modelos, key ●/○
+ *    y 🗑 por proveedor. Sin activo → el agente exige configurar.
+ *  · "Modelo": modelos del proveedor ACTIVO (guarda al vuelo).
+ *  · "Agregar key": proveedor + base_url (custom) + api_key → Conectar
+ *    valida en vivo, lista modelos (Gratis/Otros) y guarda.
  */
 function ModelsModal({ onClose }: { onClose: () => void }) {
+  const [rows, setRows] = useState<LlmProviderRow[]>([]);
+  const [active, setActive] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [providerIdx, setProviderIdx] = useState(0);
   const [apiKey, setApiKey] = useState("");
   const [customBaseUrl, setCustomBaseUrl] = useState("");
-  const [keyExists, setKeyExists] = useState(false);
-  const [models, setModels] = useState<{ id: string; free: boolean }[]>([]);
-  const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
-  const [selectedModel, setSelectedModel] = useState("");
+  const [live, setLive] = useState<{ provider: string; models: { id: string; free: boolean }[] } | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [savedNotice, setSavedNotice] = useState(false);
-  const autoConnected = useRef(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const autoRefreshed = useRef(false);
+  const mounted = useRef(true);
 
   const opt = PROVIDER_OPTIONS[providerIdx];
-  const freeModels = models.filter((m) => m.free);
-  const otherModels = models.filter((m) => !m.free);
+  const activeRow = rows.find((r) => r.provider === active) ?? null;
+  // modelos del activo: en vivo si se acaban de listar, si no los guardados
+  const activeModels: { id: string; free: boolean }[] =
+    live && live.provider === active
+      ? live.models
+      : (activeRow?.models ?? []).map((id) => ({ id, free: false }));
+  const freeModels = activeModels.filter((m) => m.free);
+  const otherModels = activeModels.filter((m) => !m.free);
+  const showGroups = live?.provider === active && freeModels.length > 0;
 
-  /** Guarda el LLM en la cuenta (sin api_key → conserva la guardada). */
+  /** Recarga la lista desde el contexto de la cuenta. Devuelve las filas. */
+  const refresh = async (): Promise<LlmProviderRow[] | null> => {
+    try {
+      const res = await fetch("/api/account/context", { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        if (mounted.current) setStatus({ ok: false, text: data.error ?? `HTTP ${res.status}` });
+        return null;
+      }
+      if (!mounted.current) return null;
+      const list: LlmProviderRow[] = data.llm_providers ?? [];
+      setRows(list);
+      const act: string | null = list.find((r) => r.is_active)?.provider ?? data.llm?.provider ?? null;
+      setActive(act);
+      setLoaded(true);
+      return list;
+    } catch (e) {
+      if (mounted.current) setStatus({ ok: false, text: e instanceof Error ? e.message : "Error de red" });
+      return null;
+    }
+  };
+
+  /** Re-lista los modelos del activo desde el servidor (key sellada).
+   *  Auto al abrir (manual=false: fallo silencioso con aviso tenue);
+   *  manual=true: el error se muestra en rojo. */
+  const refreshModels = async (manual: boolean) => {
+    if (refreshing) return;
+    setRefreshing(true);
+    if (manual) setStatus(null);
+    try {
+      const res = await fetch("/api/account/llm/refresh-models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        const text = data?.error ?? `HTTP ${res.status}`;
+        if (mounted.current) {
+          setStatus(
+            manual
+              ? { ok: false, text }
+              : { ok: true, text: `Aviso: no se pudo actualizar la lista (${text}) — mostrando la guardada` },
+          );
+        }
+        return;
+      }
+      setLive(null);
+      flashSaved();
+      await refresh();
+    } catch (e) {
+      if (mounted.current) {
+        const text = e instanceof Error ? e.message : "Error de red";
+        setStatus(
+          manual
+            ? { ok: false, text }
+            : { ok: true, text: `Aviso: no se pudo actualizar la lista (${text}) — mostrando la guardada` },
+        );
+      }
+    } finally {
+      if (mounted.current) setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    mounted.current = true;
+    void (async () => {
+      const list = await refresh();
+      // auto-refresh una vez por apertura: si el activo tiene key, la lista
+      // guardada puede estar vieja (ej: un solo modelo) y el servidor la
+      // re-lista sin pedir la key de nuevo
+      if (!autoRefreshed.current && list?.some((r) => r.is_active && r.has_key)) {
+        autoRefreshed.current = true;
+        await refreshModels(false);
+      }
+    })();
+    return () => {
+      mounted.current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const flashSaved = () => {
+    setSavedNotice(true);
+    setTimeout(() => mounted.current && setSavedNotice(false), 1600);
+  };
+
+  /** Guarda (upsert) la config de UN proveedor en la cuenta. */
   const saveToAccount = async (body: Record<string, unknown>): Promise<boolean> => {
     const put = await fetch("/api/account/llm", {
       method: "PUT",
@@ -559,22 +791,12 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
       setStatus({ ok: false, text: saved?.error ?? `HTTP ${put.status}` });
       return false;
     }
-    setKeyExists(true);
-    setSavedNotice(true);
-    setTimeout(() => setSavedNotice(false), 1600);
     return true;
   };
 
   /** Conectar: valida la key en vivo + lista modelos + guarda en la cuenta. */
-  async function doConnect(params: {
-    idx: number;
-    key: string;
-    baseUrl?: string;
-    persistKey?: string; // solo si el usuario escribió una key nueva
-    currentModel?: string;
-  }) {
+  async function doConnect(params: { idx: number; key: string; baseUrl?: string }) {
     const o = PROVIDER_OPTIONS[params.idx];
-    const cur = params.currentModel ?? selectedModel;
     setConnecting(true);
     setStatus(null);
     try {
@@ -588,152 +810,132 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
             o.modelsProvider === "custom"
               ? (params.baseUrl?.trim() || o.baseUrl)
               : undefined,
-          model: cur || undefined,
         }),
       });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        setConnected(false);
-        setModels([]);
-        setStatus({ ok: false, text: data.error ?? `HTTP ${res.status}` });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        setStatus({ ok: false, text: data?.error ?? `HTTP ${res.status}` });
         return;
       }
       const list: { id: string; free: boolean }[] = data.models ?? [];
-      // conserva el modelo actual si sigue disponible; si no, el 1º gratis
-      const pick = list.some((m) => m.id === cur)
-        ? cur
-        : (list.find((m) => m.free) ?? list[0])?.id ?? cur;
-      setModels(list);
-      setConnected(true);
-      setSelectedModel(pick);
+      const pick = (list.find((m) => m.free) ?? list[0])?.id;
+      if (!pick) {
+        setStatus({ ok: false, text: "el proveedor no devolvió modelos" });
+        return;
+      }
       if (data.warning) setStatus({ ok: true, text: `Aviso: ${data.warning}` });
 
-      // conectar = guardar (la key solo si el usuario la escribió ahora)
+      // conectar = guardar lista COMPLETA (para cambiar de modelo sin
+      // revalidar) + default; la key solo si el usuario la escribió ahora
       const body: Record<string, unknown> = {
         provider: o.apiProvider,
-        models: [pick],
+        models: list.map((m) => m.id),
         default_model: pick,
       };
       const baseUrl = o.baseUrl ?? params.baseUrl?.trim();
       if (baseUrl) body.base_url = baseUrl;
-      if (params.persistKey?.trim()) body.api_key = params.persistKey.trim();
-      await saveToAccount(body);
+      if (params.key.trim()) body.api_key = params.key.trim();
+      if (!(await saveToAccount(body))) return;
+      setLive({ provider: o.apiProvider, models: list });
+      setApiKey("");
+      flashSaved();
+      await refresh();
     } catch (e) {
-      setConnected(false);
       setStatus({ ok: false, text: e instanceof Error ? e.message : "Error de conexión" });
     } finally {
-      setConnecting(false);
+      if (mounted.current) setConnecting(false);
     }
   }
 
-  // Al montar: config guardada en la cuenta → preselección + auto-conexión
-  useEffect(() => {
-    if (autoConnected.current) return; // guard contra StrictMode
-    autoConnected.current = true;
-    (async () => {
-      try {
-        const res = await fetch("/api/account/context", { cache: "no-store" });
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
-          setStatus({ ok: false, text: data.error ?? `HTTP ${res.status}` });
-          return;
-        }
-        const llm: LlmConfig | null = data.llm;
-        if (!llm) return;
-        setKeyExists(!!llm.api_key);
-        // emparejar la config guardada con una opción del modal:
-        //  1) match exacto (provider + base_url propios de la opción), y si no
-        //  2) la opción genérica del provider (sin baseUrl: NIM/Personalizado —
-        //     el validador resuelve el base_url por su cuenta)
-        const exact = llm.base_url
-          ? PROVIDER_OPTIONS.findIndex(
-              (o) => o.apiProvider === llm.provider && o.baseUrl === llm.base_url,
-            )
-          : -1;
-        const idx =
-          exact >= 0
-            ? exact
-            : PROVIDER_OPTIONS.findIndex(
-                (o) => o.apiProvider === llm.provider && !o.baseUrl,
-              );
-        if (idx >= 0) {
-          const o = PROVIDER_OPTIONS[idx];
-          setProviderIdx(idx);
-          // Personalizado: prefill del base_url guardado en la cuenta
-          if (!o.baseUrl && llm.base_url) setCustomBaseUrl(llm.base_url);
-          if (llm.default_model) setSelectedModel(llm.default_model);
-          // auto-conexión con la key guardada → estado conectado directo
-          if (llm.api_key || o.keyOptional)
-            doConnect({
-              idx,
-              key: llm.api_key ?? "",
-              baseUrl: llm.base_url,
-              currentModel: llm.default_model ?? "",
-            });
-        }
-      } catch (e) {
-        setStatus({ ok: false, text: e instanceof Error ? e.message : "Error de red" });
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleProvider = (i: number) => {
-    setProviderIdx(i);
-    setApiKey("");
-    setModels([]);
-    setConnected(false);
-    setStatus(null);
-  };
-
   const conectar = () => {
-    // como la sección original: la key es obligatoria salvo proveedores
-    // locales (Llama Stack). Sin ella no se conecta ni se guarda nada.
-    if (!apiKey.trim() && !opt.keyOptional) {
+    if (!apiKey.trim()) {
       setStatus({ ok: false, text: "Pega tu API key primero" });
       return;
     }
-    doConnect({
-      idx: providerIdx,
-      key: apiKey,
-      baseUrl: customBaseUrl,
-      persistKey: apiKey, // key nueva escrita por el usuario
-      currentModel: selectedModel,
-    });
+    if (apiKey.trim().length < 20) {
+      setStatus({
+        ok: false,
+        text: "Esa key parece incompleta — cópiala entera (se muestra una sola vez al crearla)",
+      });
+      return;
+    }
+    void doConnect({ idx: providerIdx, key: apiKey, baseUrl: customBaseUrl });
   };
 
-  // cambiar de modelo → guarda al vuelo (como la sección original)
-  const handleModel = async (id: string) => {
-    setSelectedModel(id);
+  /** Elegir proveedor activo (radio). */
+  const activate = async (provider: string) => {
+    setBusy(`active:${provider}`);
     setStatus(null);
-    const body: Record<string, unknown> = {
-      provider: opt.apiProvider,
-      models: [id],
-      default_model: id,
-    };
-    const baseUrl = opt.baseUrl ?? customBaseUrl.trim();
-    if (baseUrl) body.base_url = baseUrl;
-    await saveToAccount(body);
-  };
-
-  // Desconectar: borra el LLM de la cuenta → backend global
-  const desconectar = async () => {
     try {
-      const res = await fetch("/api/account/llm", { method: "DELETE" });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        setStatus({ ok: false, text: data.error ?? `HTTP ${res.status}` });
+      const res = await fetch("/api/account/llm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        setStatus({ ok: false, text: data?.error ?? `HTTP ${res.status}` });
         return;
       }
-      setConnected(false);
-      setModels([]);
-      setApiKey("");
-      setKeyExists(false);
-      setStatus(null);
+      setLive(null);
+      flashSaved();
+      await refresh();
     } catch (e) {
       setStatus({ ok: false, text: e instanceof Error ? e.message : "Error de red" });
+    } finally {
+      if (mounted.current) setBusy(null);
     }
   };
+
+  /** Cambiar modelo del activo (guarda al vuelo). */
+  const handleModel = async (id: string) => {
+    if (!active) return;
+    setBusy("model");
+    setStatus(null);
+    try {
+      const res = await fetch("/api/account/llm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: id }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        setStatus({ ok: false, text: data?.error ?? `HTTP ${res.status}` });
+        return;
+      }
+      flashSaved();
+      await refresh();
+    } catch (e) {
+      setStatus({ ok: false, text: e instanceof Error ? e.message : "Error de red" });
+    } finally {
+      if (mounted.current) setBusy(null);
+    }
+  };
+
+  /** Desconectar UN proveedor (🗑 por fila). */
+  const desconectar = async (provider: string) => {
+    setBusy(`del:${provider}`);
+    setStatus(null);
+    try {
+      const res = await fetch(`/api/account/llm?provider=${encodeURIComponent(provider)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        setStatus({ ok: false, text: data?.error ?? `HTTP ${res.status}` });
+        return;
+      }
+      setLive((l) => (l?.provider === provider ? null : l));
+      await refresh();
+    } catch (e) {
+      setStatus({ ok: false, text: e instanceof Error ? e.message : "Error de red" });
+    } finally {
+      if (mounted.current) setBusy(null);
+    }
+  };
+
+  const labelFor = (provider: string): string =>
+    PROVIDER_OPTIONS.find((o) => o.apiProvider === provider)?.label ?? provider;
 
   return (
     <Modal
@@ -745,119 +947,184 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
       }
       onClose={onClose}
     >
-      <section className="grid gap-2">
-        <h4 className="text-xs font-medium text-muted-foreground">Proveedor</h4>
-        <Select
-          value={String(providerIdx)}
-          onValueChange={(v) => handleProvider(Number(v))}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {PROVIDER_OPTIONS.map((o, i) => (
-              <SelectItem key={o.label} value={String(i)}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {!connected && opt.apiProvider === "custom" && !opt.baseUrl && (
-          <Input
-            value={customBaseUrl}
-            onChange={(e) => setCustomBaseUrl(e.target.value)}
-            placeholder="Base URL OpenAI-compat (https://…/v1)"
-          />
-        )}
-      </section>
-
-      {!connected ? (
-        <>
-          <section className="grid gap-2">
-            <Label>
-              API key{" "}
-              {keyExists && (
-                <span className="text-[11px] font-normal text-emerald-400">
-                  ••••• guardada en la cuenta
-                </span>
-              )}
-            </Label>
-            <Input
-              type="password"
-              value={apiKey}
-              onChange={(e) => {
-                setApiKey(e.target.value);
-                setStatus(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  conectar();
-                }
-              }}
-              placeholder={
-                opt.keyOptional
-                  ? "opcional — pégala y pulsa Enter"
-                  : "Pega tu API key y pulsa Enter"
-              }
-            />
-          </section>
-          <footer className="flex justify-end">
-            <Button type="button" onClick={conectar} disabled={connecting}>
-              {connecting ? (
-                <LoaderCircle className="animate-spin" />
-              ) : (
-                <PlugZap />
-              )}
-              {connecting ? "Conectando…" : "Conectar"}
-            </Button>
-          </footer>
-        </>
+      {!loaded ? (
+        <p className="text-sm text-muted-foreground">Cargando proveedores…</p>
       ) : (
         <>
           <section className="grid gap-2">
             <h4 className="text-xs font-medium text-muted-foreground">
-              Modelo {freeModels.length > 0 && `(${freeModels.length} gratis)`}
+              Proveedor activo (el que usa tu agente)
             </h4>
-            <Select value={selectedModel} onValueChange={handleModel}>
+            {rows.length === 0 && (
+              <p className="text-[13px] text-amber-400">
+                Sin proveedores — el agente no puede razonar hasta que agregues una key abajo.
+              </p>
+            )}
+            {rows.map((r) => (
+              <label
+                key={r.provider}
+                className={cn(
+                  "flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2 text-sm",
+                  r.provider === active
+                    ? "border-primary/60 bg-primary/5"
+                    : "border-border hover:border-primary/30",
+                )}
+              >
+                <input
+                  type="radio"
+                  name="llm-provider"
+                  checked={r.provider === active}
+                  disabled={busy !== null}
+                  onChange={() => void activate(r.provider)}
+                  className="size-4 accent-primary"
+                />
+                <span className="flex-1">
+                  <span className="font-medium">{labelFor(r.provider)}</span>{" "}
+                  <span className="text-xs text-muted-foreground">
+                    · {(r.models ?? []).length} modelo{(r.models ?? []).length === 1 ? "" : "s"}
+                    {r.has_key ? " · key ●" : " · sin key"}
+                  </span>
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  title={`Desconectar ${labelFor(r.provider)}`}
+                  disabled={busy !== null}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    void desconectar(r.provider);
+                  }}
+                  className="size-7 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              </label>
+            ))}
+          </section>
+
+          {activeRow && (
+            <section className="grid gap-2">
+              <h4 className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <span className="flex-1">
+                  Modelo de {labelFor(activeRow.provider)}{" "}
+                  {showGroups && `(${freeModels.length} gratis)`}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  title="Actualizar lista de modelos"
+                  disabled={busy !== null || refreshing}
+                  onClick={() => void refreshModels(true)}
+                  className="size-6"
+                >
+                  <RotateCw className={refreshing ? "size-3.5 animate-spin" : "size-3.5"} />
+                </Button>
+              </h4>
+              <Select
+                value={activeRow.default_model ?? ""}
+                onValueChange={(v) => void handleModel(v)}
+                disabled={busy !== null || refreshing}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {showGroups ? (
+                    <>
+                      {freeModels.length > 0 && (
+                        <SelectGroup>
+                          <SelectLabel>Gratis</SelectLabel>
+                          {freeModels.map((m) => (
+                            <SelectItem key={m.id} value={m.id}>
+                              {m.id}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      )}
+                      {otherModels.length > 0 && (
+                        <SelectGroup>
+                          <SelectLabel>Otros</SelectLabel>
+                          {otherModels.map((m) => (
+                            <SelectItem key={m.id} value={m.id}>
+                              {m.id}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      )}
+                    </>
+                  ) : (
+                    (activeRow.models ?? []).map((id) => (
+                      <SelectItem key={id} value={id}>
+                        {id}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </section>
+          )}
+
+          <section className="grid gap-2">
+            <h4 className="text-xs font-medium text-muted-foreground">
+              Agregar / actualizar key
+            </h4>
+            <Select
+              value={String(providerIdx)}
+              onValueChange={(v) => {
+                setProviderIdx(Number(v));
+                setApiKey("");
+                setStatus(null);
+              }}
+            >
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {freeModels.length > 0 && (
-                  <SelectGroup>
-                    <SelectLabel>Gratis</SelectLabel>
-                    {freeModels.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.id}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                )}
-                {otherModels.length > 0 && (
-                  <SelectGroup>
-                    <SelectLabel>Otros</SelectLabel>
-                    {otherModels.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.id}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                )}
+                {PROVIDER_OPTIONS.map((o, i) => (
+                  <SelectItem key={o.label} value={String(i)}>
+                    {o.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            {opt.apiProvider === "custom" && !opt.baseUrl && (
+              <Input
+                value={customBaseUrl}
+                onChange={(e) => setCustomBaseUrl(e.target.value)}
+                placeholder="Base URL OpenAI-compat (https://…/v1)"
+              />
+            )}
+            <div className="flex gap-2">
+              <Input
+                type="password"
+                value={apiKey}
+                onChange={(e) => {
+                  setApiKey(e.target.value);
+                  setStatus(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    conectar();
+                  }
+                }}
+                placeholder="Pega tu API key y pulsa Enter"
+                className="flex-1"
+              />
+              <Button type="button" onClick={conectar} disabled={connecting}>
+                {connecting ? (
+                  <LoaderCircle className="animate-spin" />
+                ) : (
+                  <PlugZap />
+                )}
+                {connecting ? "Conectando…" : "Conectar"}
+              </Button>
+            </div>
           </section>
-          <footer className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={desconectar}
-              className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-            >
-              <Unplug />
-              Desconectar
-            </Button>
-            <span className="flex-1" />
+
+          <footer className="flex justify-end">
             <Button type="button" variant="ghost" onClick={onClose}>
               Listo
             </Button>

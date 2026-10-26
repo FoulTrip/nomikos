@@ -51,8 +51,10 @@ fn default_state() -> Value {
         "claimed": false,
         "boot_count": 0,
         "taps": 0,
-        "screen": "home",             // home | apps | x402 | settings
-        "apps": [],                    // [{slug, name, status}] instaladas
+        "screen": "home",             // home | apps | appdetail | x402 | settings
+        "locked": true,                // pantalla de bloqueo (online arranca bloqueado)
+        "detail_app": null,            // slug visible en appdetail
+        "apps": [],                    // [{slug, name, status, tools_count}] instaladas
         "last_x402": null,
         "last_reply": null,            // {text, reply, ts} — última conversación con el agente
         "events": [],                  // progreso: [{ts, ev}]
@@ -263,9 +265,64 @@ fn refresh_apps(state: &SharedState, sim: &mut Value) {
     let apps: Vec<Value> = crate::modules::apps::all(state)
         .into_iter()
         .filter(|r| r.status == "installed")
-        .map(|r| json!({ "slug": r.slug, "name": r.name, "status": r.status }))
+        .map(|r| {
+            let tools_count = serde_json::from_str::<Vec<Value>>(&r.tools)
+                .map(|v| v.len())
+                .unwrap_or(0) as i64;
+            json!({ "slug": r.slug, "name": r.name, "status": r.status, "tools_count": tools_count })
+        })
         .collect();
     sim["apps"] = json!(apps);
+}
+
+/// Resumen LLM de la cuenta para los ajustes del dispositivo (SIN
+/// secretos): proveedores configurados + cuál está activo. Lectura barata
+/// de DB — se recalcula en cada GET, sin guardar.
+fn llm_summary(state: &SharedState, account: &str) -> Value {
+    let providers = crate::modules::accounts::llm_providers_list(state, account);
+    let active = providers
+        .iter()
+        .find(|p| p["is_active"].as_bool().unwrap_or(false))
+        .and_then(|p| p["provider"].as_str())
+        .map(str::to_string);
+    json!({ "active_provider": active, "providers": providers })
+}
+
+/// Wallet dPaaS que USA el agente + balance vivo (Solana RPC).
+/// Es la MISMA wallet que hay que recargar desde fuera (faucet 💧 del
+/// panel o transferencia desde otra wallet): el agente solo gasta de
+/// ella, firmando cada peaje por dPaaS. Se refresca al ENTRAR a la
+/// pantalla x402 (no en cada poll, para no martillar el RPC).
+async fn refresh_agent_wallet(state: &SharedState, account: &str, sim: &mut Value) {
+    let row: Option<(Option<String>, String)> = state
+        .db
+        .with(|c| {
+            c.query_row(
+                "SELECT wallet_pubkey, network FROM account_chain WHERE account_id = ?1",
+                params![account],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+        })
+        .ok();
+    let Some((wallet_opt, network)) = row else {
+        sim["agent_wallet"] =
+            json!({ "wallet_pubkey": null, "network": null, "balance_lamports": null });
+        return;
+    };
+    let balance = match wallet_opt.as_deref() {
+        Some(w) if !w.is_empty() => {
+            match crate::modules::x402::client_for_network(state, &network).await {
+                Ok(client) => client.get_balance(w).await.ok(),
+                Err(_) => None,
+            }
+        }
+        _ => None,
+    };
+    sim["agent_wallet"] = json!({
+        "wallet_pubkey": wallet_opt,
+        "network": network,
+        "balance_lamports": balance,
+    });
 }
 
 /// Peaje x402 del recurso protegido del dispositivo — igual que hace el
@@ -282,33 +339,60 @@ async fn sim_x402(state: &SharedState, account: &str, sim: &mut Value) {
     {
         Ok(v) => v,
         Err(_) => {
-            sim["last_x402"] = json!({ "resource": resource, "status": "error-factura" });
+            sim["last_x402"] = json!({
+                "resource": resource,
+                "status": "error",
+                "access": "no se pudo crear el peaje",
+                "hint": "reintenta más tarde",
+            });
             return;
         }
     };
     let invoice_id = inv["id"].as_str().unwrap_or_default().to_string();
     // la cuenta paga con dPaaS (real on-chain si la wallet tiene SOL)
     let payment = crate::modules::x402::pay_invoice_value(state, account, &invoice_id).await;
-    let (status, tx) = match payment {
-        Ok(v) => (
-            v["status"].as_str().unwrap_or("verifying").to_string(),
-            v["tx_signature"].as_str().map(str::to_string),
-        ),
-        Err(e) => (format!("sin-fondos ({e})"), None),
-    };
-    // acceso one-shot si liquidó
-    let access = if status == "settled" {
-        crate::modules::x402::settle_access(state, &invoice_id, Some(account))
-            .map(|_| "ACCESO CONCEDIDO (one-shot)")
-            .unwrap_or("error-consume")
-    } else {
-        "esperando confirmación on-chain"
+    // Estado para humanos (nunca texto técnico crudo en pantalla):
+    // settled | verifying | error, con access corto y hint accionable.
+    let (status, access, hint, tx) = match payment {
+        Ok(v) => {
+            let st = v["status"].as_str().unwrap_or("verifying").to_string();
+            let tx = v["tx_signature"].as_str().map(str::to_string);
+            if st == "settled" {
+                let access = crate::modules::x402::settle_access(state, &invoice_id, Some(account))
+                    .map(|_| "ACCESO CONCEDIDO (one-shot)")
+                    .unwrap_or("error al consumir");
+                (st, access.to_string(), None, tx)
+            } else {
+                (st, "esperando confirmación on-chain".to_string(), None, tx)
+            }
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            let (access, hint) = if msg.contains("keypair") {
+                (
+                    "sin wallet configurada".to_string(),
+                    "impórtala en Wallet·Red del panel".to_string(),
+                )
+            } else if msg.contains("fondos")
+                || msg.contains("insufficient")
+                || msg.contains("balance")
+            {
+                (
+                    "sin fondos".to_string(),
+                    "recarga con 💧 Faucet del panel".to_string(),
+                )
+            } else {
+                ("no se pudo pagar".to_string(), "reintenta más tarde".to_string())
+            };
+            ("error".to_string(), access, Some(hint), None)
+        }
     };
     sim["last_x402"] = json!({
         "resource": resource,
         "invoice_id": invoice_id,
         "status": status,
         "access": access,
+        "hint": hint,
         "tx_signature": tx,
         "lamports": lamports,
     });
@@ -319,12 +403,17 @@ async fn sim_x402(state: &SharedState, account: &str, sim: &mut Value) {
 // ---------------------------------------------------------------------------
 
 /// GET /api/accounts/me/simulation — estado del OS simulado (retoma el
-/// progreso guardado; si no hay, arranca de cero).
+/// progreso guardado; si no hay, arranca de cero). Enriquece con datos
+/// derivados frescos (resumen LLM + dapps instaladas): lecturas baratas
+/// de DB, sin guardar, para que la pantalla nunca muestre cachés viejos.
 pub async fn get_handler(
     State(state): State<SharedState>,
     auth: AuthedAccount,
 ) -> AppResult<Response> {
-    Ok(Json(json!({ "ok": true, "simulation": load(&state, &auth.account_id) })).into_response())
+    let mut sim = load(&state, &auth.account_id);
+    sim["llm"] = llm_summary(&state, &auth.account_id);
+    refresh_apps(&state, &mut sim);
+    Ok(Json(json!({ "ok": true, "simulation": sim })).into_response())
 }
 
 #[derive(Deserialize)]
@@ -333,6 +422,11 @@ pub struct StepBody {
     /// Texto del turno de voz (acción `say`).
     #[serde(default)]
     text: Option<String>,
+    /// Destino del toque posicionado (acción `press`): unlock | lock |
+    /// home | apps | settings | x402 | providers | models | app:<slug> |
+    /// provider:<slug> | model:<id>.
+    #[serde(default)]
+    target: Option<String>,
 }
 
 /// POST /api/accounts/me/simulation/step {action, text?} — avanza el OS simulado:
@@ -340,6 +434,15 @@ pub struct StepBody {
 ///   boot      — encender (boot_count++; primer boot → enroll → claim code)
 ///   claim     — «apretar AGREGAR»: claim + token → ONLINE (flota real)
 ///   tap       — tocar la pantalla: cicla home ⇄ apps ⇄ x402 ⇄ settings
+///               (compat: el táctil posicionado usa `press`)
+///   press     — toque posicionado {target}: unlock | lock | home | apps |
+///               settings | x402 | providers | models | app:<slug> |
+///               provider:<slug> | model:<id>. Navegación directa del OS.
+///               Solo online; con locked solo vale unlock. app:<slug> debe
+///               estar instalada. provider:/model: eligen explícitamente
+///               entre lo configurado (las keys se cargan en el panel).
+///               No genera eventos (los taps son frecuentes; solo unlock/lock y los
+///               cambios de LLM quedan en el progreso).
 ///   heartbeat — latido del OS (la flota lo ve ONLINE)
 ///   apps      — refresca las dapps instaladas del agente
 ///   x402      — demo del peaje (factura → dPaaS → one-shot)
@@ -375,6 +478,7 @@ pub async fn step_handler(
                 event(&mut sim, "online");
                 refresh_apps(&state, &mut sim);
                 sim["screen"] = json!("home"); // al entrar, la pantalla principal
+                sim["locked"] = json!(true); // como la placa real: arranca bloqueado
             } else {
                 // el código había expirado: se renovó solo — la pantalla
                 // muestra el nuevo y AGREGAR se pulsa otra vez
@@ -388,9 +492,78 @@ pub async fn step_handler(
                 "home" | "status" => json!("apps"),
                 "apps" => json!("x402"),
                 "x402" => json!("settings"),
+                "appdetail" => json!("apps"),
                 _ => json!("home"),
             };
+            if sim["screen"] == "x402" {
+                refresh_agent_wallet(&state, &auth.account_id, &mut sim).await;
+            }
             event(&mut sim, "tap");
+        }
+        "press" => {
+            if sim["stage"].as_str() != Some("online") {
+                return Err(AppError::bad_request("el OS debe estar ONLINE"));
+            }
+            sim["taps"] = json!(sim["taps"].as_i64().unwrap_or(0) + 1);
+            let target = body.target.as_deref().map(str::trim).unwrap_or_default();
+            let locked = sim["locked"].as_bool().unwrap_or(true);
+            match target {
+                "unlock" => {
+                    sim["locked"] = json!(false);
+                    event(&mut sim, "unlock");
+                }
+                "lock" => {
+                    sim["locked"] = json!(true);
+                    event(&mut sim, "lock");
+                }
+                "home" | "apps" | "settings" | "providers" | "models" if !locked => {
+                    sim["screen"] = json!(target);
+                }
+                "x402" if !locked => {
+                    sim["screen"] = json!("x402");
+                    refresh_agent_wallet(&state, &auth.account_id, &mut sim).await;
+                }
+                t if t.starts_with("provider:") && !locked => {
+                    // selección explícita desde la lista (las keys solo se
+                    // cargan en el panel; el device solo elige)
+                    let name = t.trim_start_matches("provider:");
+                    crate::modules::accounts::set_active_llm(
+                        &state, &auth.account_id, Some(name), None,
+                    )?;
+                    sim["screen"] = json!("settings");
+                    event(&mut sim, "set-provider");
+                }
+                t if t.starts_with("model:") && !locked => {
+                    let id = t.trim_start_matches("model:");
+                    crate::modules::accounts::set_active_llm(
+                        &state, &auth.account_id, None, Some(id),
+                    )?;
+                    sim["screen"] = json!("settings");
+                    event(&mut sim, "set-model");
+                }
+                t if t.starts_with("app:") && !locked => {
+                    let slug = t.trim_start_matches("app:");
+                    let known = sim["apps"]
+                        .as_array()
+                        .map(|a| a.iter().any(|x| x["slug"].as_str() == Some(slug)))
+                        .unwrap_or(false);
+                    if !known {
+                        return Err(AppError::not_found(format!(
+                            "dapp «{slug}» no instalada"
+                        )));
+                    }
+                    sim["detail_app"] = json!(slug);
+                    sim["screen"] = json!("appdetail");
+                }
+                _ if locked => {
+                    return Err(AppError::forbidden("OS bloqueado — desbloquea primero"));
+                }
+                _ => {
+                    return Err(AppError::bad_request(format!(
+                        "target «{target}» inválido"
+                    )));
+                }
+            }
         }
         "heartbeat" => {
             sim_heartbeat(&state, &mut sim)?;
@@ -405,6 +578,7 @@ pub async fn step_handler(
                 return Err(AppError::bad_request("el OS debe estar ONLINE (claim primero)"));
             }
             sim_x402(&state, &auth.account_id, &mut sim).await;
+            refresh_agent_wallet(&state, &auth.account_id, &mut sim).await;
             event(&mut sim, "x402");
         }
         "say" => {
@@ -467,6 +641,8 @@ pub async fn step_handler(
                 sim[k] = Value::Null;
             }
             sim["claimed"] = json!(false);
+            sim["locked"] = json!(true);
+            sim["detail_app"] = Value::Null;
             sim["stage"] = json!("boot");
             sim_enroll(&state, &mut sim)?;
             sim["boot_count"] = json!(boots);
@@ -476,11 +652,12 @@ pub async fn step_handler(
         }
         other => {
             return Err(AppError::bad_request(format!(
-                "acción «{other}» inválida — boot|claim|tap|heartbeat|apps|x402|rebuild"
+                "acción «{other}» inválida — boot|claim|tap|press|heartbeat|apps|x402|say|rebuild"
             )))
         }
     }
 
     save(&state, &auth.account_id, &sim);
+    sim["llm"] = llm_summary(&state, &auth.account_id);
     Ok(Json(json!({ "ok": true, "simulation": sim })).into_response())
 }

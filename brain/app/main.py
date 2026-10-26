@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 
 from .config import settings
 from .context import AccountContext, bearer_from_headers, fetch_account_context
-from .llm import run_agent
+from .llm import LLMNotConfigured, run_agent
 from .shields import GuardVerdict, run_llama_guard
 from .tools import TOOLS
 
@@ -70,16 +70,25 @@ def _verdict_dict(v: GuardVerdict) -> dict:
 async def agentic_gateway(req: AgenticRequest, request: Request) -> AgenticResponse | JSONResponse:
     log.info("◀ dispositivo «%s»: %s", req.device_id, req.text[:120])
 
-    # ① Identidad — Bearer opcional → contexto de la cuenta.
-    ctx: AccountContext | None = None
+    # ① Identidad — Bearer OBLIGATORIO: sin cuenta no hay LLM (la cuenta
+    # es 100% responsable de sus keys; no existe backend global).
     bearer = bearer_from_headers(request.headers)
-    if bearer:
-        try:
-            ctx = await fetch_account_context(bearer)
-        except PermissionError as e:
-            return JSONResponse({"ok": False, "error": str(e)}, status_code=401)
-        except Exception as e:  # noqa: BLE001
-            log.warning("contexto de cuenta falló: %s", e)
+    if not bearer:
+        return JSONResponse(
+            {"ok": False, "code": "AUTH_REQUIRED",
+             "error": "se requiere sesión de cuenta (Bearer) con proveedor LLM configurado"},
+            status_code=401,
+        )
+    try:
+        ctx = await fetch_account_context(bearer)
+    except PermissionError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=401)
+    except Exception as e:  # noqa: BLE001
+        log.warning("contexto de cuenta falló: %s", e)
+        return JSONResponse(
+            {"ok": False, "error": f"no pude resolver tu cuenta: {e}"},
+            status_code=401,
+        )
 
     # ② Shield entrada: Llama Guard
     shield_in = await run_llama_guard(req.text, output=False)
@@ -101,15 +110,20 @@ async def agentic_gateway(req: AgenticRequest, request: Request) -> AgenticRespo
             f"El dispositivo adjunta esta firma Solana de un pago x402 previo: "
             f"{req.solana_tx_signature}. Si necesitas verificar un pago, úsala."
         )
-    run = await run_agent(req.text, extra_instructions=extra, ctx=ctx)
+    try:
+        run = await run_agent(req.text, extra_instructions=extra, ctx=ctx)
+    except LLMNotConfigured as e:
+        return JSONResponse(
+            {"ok": False, "code": "LLM_NOT_CONFIGURED", "error": str(e)},
+            status_code=400,
+        )
 
     if not run.reply:
         log.error("run_agent sin respuesta: %s", run.error)
         return AgenticResponse(
             ok=False,
-            reply="No pude razonar la petición: el motor LLM no está disponible. "
-                  "Verifica que Llama Stack u Ollama estén corriendo (o que la cuenta "
-                  "tenga su proveedor configurado).",
+            reply="No pude razonar la petición: tu proveedor LLM falló. "
+                  "Revisa tu api_key y modelo en Modelos del agente.",
             backend=run.backend,
             model=run.model,
             x402=run.x402_events,

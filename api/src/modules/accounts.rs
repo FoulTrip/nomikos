@@ -24,6 +24,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use rusqlite::params;
+use rand::RngCore;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -304,6 +305,34 @@ pub async fn logout_handler(
     Ok(Json(json!({ "ok": true, "revoked": true })).into_response())
 }
 
+/// Lista de proveedores LLM de la cuenta para la UI (SIN secretos).
+/// El agente usa solo el de `is_active = 1`.
+pub(crate) fn llm_providers_list(state: &SharedState, account_id: &str) -> Vec<Value> {
+    state
+        .db
+        .with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT provider, base_url, models, default_model, \
+                 api_key_enc IS NOT NULL, is_active \
+                 FROM account_llm_providers WHERE account_id = ?1 ORDER BY provider",
+            )?;
+            let rows = stmt.query_map(params![account_id], |r| {
+                let models: Value =
+                    serde_json::from_str(&r.get::<_, String>(2)?).unwrap_or(json!([]));
+                Ok(json!({
+                    "provider": r.get::<_, String>(0)?,
+                    "base_url": r.get::<_, String>(1)?,
+                    "models": models,
+                    "default_model": r.get::<_, Option<String>>(3)?,
+                    "has_key": r.get::<_, i64>(4)? != 0,
+                    "is_active": r.get::<_, i64>(5)? != 0,
+                }))
+            })?;
+            Ok(rows.collect::<Result<Vec<_>, _>>()?)
+        })
+        .unwrap_or_default()
+}
+
 /// GET /api/auth/me — perfil + qué está configurado (sin secretos).
 pub async fn me_handler(
     State(state): State<SharedState>,
@@ -324,23 +353,17 @@ pub async fn me_handler(
             },
         )
     })?;
-    let llm: Option<Value> = state.db.with(|c| {
-        c.query_row(
-            "SELECT provider, models, default_model FROM account_llm WHERE account_id = ?1",
-            params![auth.account_id],
-            |r| {
-                let models: Value =
-                    serde_json::from_str(&r.get::<_, String>(1)?).unwrap_or(json!([]));
-                Ok(json!({
-                    "provider": r.get::<_, String>(0)?,
-                    "models": models,
-                    "default_model": r.get::<_, Option<String>>(2)?,
-                }))
-            },
-        )
-        .map_err(|e| e.into())
-    })
-    .ok();
+    let providers = llm_providers_list(&state, &auth.account_id);
+    let llm: Option<Value> = providers
+        .iter()
+        .find(|p| p["is_active"].as_bool().unwrap_or(false))
+        .map(|p| {
+            json!({
+                "provider": p["provider"],
+                "models": p["models"],
+                "default_model": p["default_model"],
+            })
+        });
     let chain: Option<Value> = state.db.with(|c| {
         c.query_row(
             "SELECT network, wallet_pubkey, payee, daily_limit_lamports, tx_limit_lamports, \
@@ -375,6 +398,7 @@ pub async fn me_handler(
         "account": account,
         "llm_configured": llm.is_some(),
         "llm": llm,
+        "llm_providers": providers,
         "chain_configured": chain.is_some(),
         "chain": chain,
         "sub_wallets": wallets,
@@ -395,7 +419,10 @@ pub struct PutLlmBody {
     default_model: Option<String>,
 }
 
-/// PUT /api/accounts/me/llm — proveedor y modelos de la cuenta.
+/// PUT /api/accounts/me/llm — guarda (upsert) la config de UN proveedor
+/// LLM de la cuenta. La cuenta puede tener N proveedores con key, pero el
+/// agente usa solo el ACTIVO (POST …/llm/active). El primero que se guarda
+/// queda activo automáticamente.
 pub async fn put_llm_handler(
     State(state): State<SharedState>,
     auth: AuthedAccount,
@@ -436,19 +463,41 @@ pub async fn put_llm_handler(
 
     state.db.with(|c| {
         c.execute(
-            "INSERT INTO account_llm (account_id, provider, base_url, api_key_enc, models, \
-             default_model, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
-             ON CONFLICT(account_id) DO UPDATE SET \
-               provider = excluded.provider, base_url = excluded.base_url, \
-               api_key_enc = COALESCE(excluded.api_key_enc, account_llm.api_key_enc), \
+            "INSERT INTO account_llm_providers (account_id, provider, base_url, api_key_enc, models, \
+             default_model, is_active, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7) \
+             ON CONFLICT(account_id, provider) DO UPDATE SET \
+               base_url = excluded.base_url, \
+               api_key_enc = COALESCE(excluded.api_key_enc, account_llm_providers.api_key_enc), \
                models = excluded.models, default_model = excluded.default_model, \
                updated_at = excluded.updated_at",
             params![auth.account_id, provider, base_url, api_key_enc, models_json, default_model, now],
         )?;
+        // primer proveedor de la cuenta → activo automáticamente
+        c.execute(
+            "UPDATE account_llm_providers SET is_active = 1, updated_at = ?3 \
+             WHERE account_id = ?1 AND provider = ?2 \
+             AND NOT EXISTS (SELECT 1 FROM account_llm_providers \
+                              WHERE account_id = ?1 AND is_active = 1 AND provider != ?2)",
+            params![auth.account_id, provider, now],
+        )?;
         Ok(())
     })?;
 
-    tracing::info!("account {} llm → {provider} ({})", auth.account_id, default_model);
+    let active: Option<String> = state
+        .db
+        .with(|c| {
+            c.query_row(
+                "SELECT provider FROM account_llm_providers WHERE account_id = ?1 AND is_active = 1",
+                params![auth.account_id],
+                |r| r.get(0),
+            )
+        })
+        .ok();
+    tracing::info!(
+        "account {} llm [{}] → {} (activo: {})",
+        auth.account_id, provider, default_model,
+        active.as_deref().unwrap_or("—")
+    );
     Ok(Json(json!({
         "ok": true,
         "provider": provider,
@@ -456,26 +505,332 @@ pub async fn put_llm_handler(
         "models": body.models,
         "default_model": default_model,
         "api_key_updated": api_key_enc.is_some(),
+        "active_provider": active,
     }))
     .into_response())
 }
 
-/// DELETE /api/accounts/me/llm — desconecta el proveedor LLM de la cuenta
-/// (botón "Desconectar" del modal Modelos del dapp). El agente (brain)
-/// vuelve al backend global del ecosistema (llama-stack/ollama).
+#[derive(Deserialize)]
+pub struct ActivateLlmBody {
+    provider: Option<String>,
+    model: Option<String>,
+}
+
+/// Lógica compartida (panel con Bearer de cuenta + dispositivo con Bearer
+/// de device): selecciona el ÚNICO proveedor activo y/o su modelo por
+/// defecto. Al menos uno de los dos debe venir.
+pub(crate) fn set_active_llm(
+    state: &SharedState,
+    account_id: &str,
+    provider: Option<&str>,
+    model: Option<&str>,
+) -> AppResult<Value> {
+    let provider = provider
+        .map(|p| p.trim().to_lowercase())
+        .filter(|p| !p.is_empty());
+    let model = model.map(str::trim).filter(|m| !m.is_empty());
+    if provider.is_none() && model.is_none() {
+        return Err(AppError::bad_request("manda provider y/o model a activar"));
+    }
+    if let Some(p) = provider.as_deref() {
+        let row: Option<(String, bool)> = state
+            .db
+            .with(|c| {
+                c.query_row(
+                    "SELECT models, api_key_enc IS NOT NULL FROM account_llm_providers \
+                     WHERE account_id = ?1 AND provider = ?2",
+                    params![account_id, p],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+            })
+            .ok();
+        let (models_json, has_key) = row.ok_or_else(|| {
+            AppError::not_found(format!("provider «{p}» no configurado en tu cuenta"))
+        })?;
+        if !has_key {
+            return Err(AppError::bad_request(format!(
+                "provider «{p}» sin api_key — guárdala primero"
+            )));
+        }
+        if let Some(m) = model {
+            let models: Vec<String> = serde_json::from_str(&models_json).unwrap_or_default();
+            if !models.contains(&m.to_string()) {
+                return Err(AppError::bad_request(format!(
+                    "modelo «{m}» no está en la lista de «{p}»"
+                )));
+            }
+        }
+        state.db.with(|c| {
+            c.execute(
+                "UPDATE account_llm_providers SET is_active = 0, updated_at = ?2 WHERE account_id = ?1",
+                params![account_id, now_ms()],
+            )?;
+            c.execute(
+                "UPDATE account_llm_providers SET is_active = 1, updated_at = ?3 \
+                 WHERE account_id = ?1 AND provider = ?2",
+                params![account_id, p, now_ms()],
+            )?;
+            Ok(())
+        })?;
+        tracing::info!("account {account_id} llm activo → {p}");
+    }
+    if let Some(m) = model {
+        let target: Option<String> = provider.clone().or_else(|| {
+            state
+                .db
+                .with(|c| {
+                    c.query_row(
+                        "SELECT provider FROM account_llm_providers \
+                         WHERE account_id = ?1 AND is_active = 1",
+                        params![account_id],
+                        |r| r.get(0),
+                    )
+                })
+                .ok()
+        });
+        let target =
+            target.ok_or_else(|| AppError::bad_request("sin proveedor activo — elige uno primero"))?;
+        let models_json: Option<String> = state
+            .db
+            .with(|c| {
+                c.query_row(
+                    "SELECT models FROM account_llm_providers \
+                     WHERE account_id = ?1 AND provider = ?2",
+                    params![account_id, target],
+                    |r| r.get(0),
+                )
+            })
+            .ok();
+        let models: Vec<String> = models_json
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or_default();
+        if !models.contains(&m.to_string()) {
+            return Err(AppError::bad_request(format!(
+                "modelo «{m}» no está en la lista de «{target}»"
+            )));
+        }
+        state.db.with(|c| {
+            c.execute(
+                "UPDATE account_llm_providers SET default_model = ?3, updated_at = ?4 \
+                 WHERE account_id = ?1 AND provider = ?2",
+                params![account_id, target, m, now_ms()],
+            )?;
+            Ok(())
+        })?;
+        tracing::info!("account {account_id} llm [{target}] modelo → {m}");
+    }
+    let active: Option<String> = state
+        .db
+        .with(|c| {
+            c.query_row(
+                "SELECT provider FROM account_llm_providers WHERE account_id = ?1 AND is_active = 1",
+                params![account_id],
+                |r| r.get(0),
+            )
+        })
+        .ok();
+    Ok(json!({ "active_provider": active }))
+}
+
+/// POST /api/accounts/me/llm/active — selecciona el ÚNICO proveedor que
+/// usa el agente y/o su modelo: {provider?, model?} (al menos uno).
+pub async fn activate_llm_handler(
+    State(state): State<SharedState>,
+    auth: AuthedAccount,
+    Json(body): Json<ActivateLlmBody>,
+) -> AppResult<Response> {
+    let v = set_active_llm(
+        &state,
+        &auth.account_id,
+        body.provider.as_deref(),
+        body.model.as_deref(),
+    )?;
+    Ok(Json(json!({ "ok": true, "active_provider": v["active_provider"] })).into_response())
+}
+
+/// DELETE /api/accounts/me/llm?provider=X — borra la config de ESE
+/// proveedor (botón "Desconectar" del modal Modelos). Sin provider, borra
+/// el activo. Si era el activo, la cuenta queda SIN agente hasta elegir
+/// otro: no hay fallback global, la cuenta es 100% responsable de sus keys.
 pub async fn delete_llm_handler(
     State(state): State<SharedState>,
     auth: AuthedAccount,
+    query: axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> AppResult<Response> {
+    let target = query
+        .get("provider")
+        .map(|p| p.trim().to_lowercase())
+        .filter(|p| !p.is_empty());
+    let deleted: i64 = state
+        .db
+        .with(|c| {
+            if let Some(p) = target.as_deref() {
+                c.execute(
+                    "DELETE FROM account_llm_providers WHERE account_id = ?1 AND provider = ?2",
+                    params![auth.account_id, p],
+                )
+            } else {
+                c.execute(
+                    "DELETE FROM account_llm_providers WHERE account_id = ?1 AND is_active = 1",
+                    params![auth.account_id],
+                )
+            }
+            .map(|n| n as i64)
+        })
+        .unwrap_or(0);
+    let active: Option<String> = state
+        .db
+        .with(|c| {
+            c.query_row(
+                "SELECT provider FROM account_llm_providers WHERE account_id = ?1 AND is_active = 1",
+                params![auth.account_id],
+                |r| r.get(0),
+            )
+        })
+        .ok();
+    tracing::info!(
+        "account {} desconectó LLM {:?} (activo ahora: {})",
+        auth.account_id, target, active.as_deref().unwrap_or("— ninguno —")
+    );
+    Ok(Json(json!({
+        "ok": true,
+        "deleted": deleted,
+        "active_provider": active,
+        "llm": null,
+    }))
+    .into_response())
+}
+
+/// Subcadenas (minúsculas) que delatan modelos NO conversacionales en un
+/// listado `/models` OpenAI-compat (embeddings, guardas, TTS, difusión…).
+/// Espejo aproximado del filtro del modal (dapp filtra con el catálogo
+/// models.dev; aquí no hay catálogo: blocklist conservadora).
+const NON_CHAT_HINTS: &[&str] = &[
+    "embed", "rerank", "whisper", "tts", "flux", "diffusion", "guard", "safety", "moderation",
+    "moderate", "ocr", "vocos", "melotts", "asr", "tokenizer", "vocoder",
+];
+
+#[derive(Deserialize)]
+pub struct RefreshLlmBody {
+    provider: Option<String>,
+}
+
+/// POST /api/accounts/me/llm/refresh-models — re-lista los modelos del
+/// proveedor DESDE EL SERVIDOR (la key sellada nunca sale del api) y
+/// actualiza la lista guardada. Body opcional `{provider}` (defecto: el
+/// activo). Preserva `default_model` si sigue existiendo; si no, el
+/// primero de la lista. Best-effort: si el proveedor falla o no trae
+/// modelos de chat, error SIN tocar la lista guardada.
+pub async fn refresh_llm_models_handler(
+    State(state): State<SharedState>,
+    auth: AuthedAccount,
+    Json(body): Json<RefreshLlmBody>,
+) -> AppResult<Response> {
+    let wanted = body
+        .provider
+        .as_deref()
+        .map(|p| p.trim().to_lowercase())
+        .filter(|p| !p.is_empty());
+    let row: Option<(String, String, Option<String>, String, Option<String>)> = state
+        .db
+        .with(|c| {
+            if let Some(p) = wanted.as_deref() {
+                c.query_row(
+                    "SELECT provider, base_url, api_key_enc, models, default_model \
+                     FROM account_llm_providers WHERE account_id = ?1 AND provider = ?2",
+                    params![auth.account_id, p],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+                )
+            } else {
+                c.query_row(
+                    "SELECT provider, base_url, api_key_enc, models, default_model \
+                     FROM account_llm_providers WHERE account_id = ?1 AND is_active = 1",
+                    params![auth.account_id],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+                )
+            }
+        })
+        .ok();
+    let (provider, base_url, key_enc, _old_models, default_model) = row.ok_or_else(|| {
+        AppError::not_found("sin proveedor LLM que refrescar — conecta uno primero")
+    })?;
+    let sealed = key_enc
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| AppError::bad_request("ese proveedor no tiene api_key — guárdala primero"))?;
+    let mk = master_key_of(&state)?;
+    let key_bytes = crypto::open(&mk, &sealed)?;
+    let api_key = String::from_utf8(key_bytes)
+        .map_err(|_| AppError::internal("api_key sellada corrupta"))?;
+
+    let url = format!("{}/models", base_url.trim_end_matches('/'));
+    let res = state
+        .http
+        .get(&url)
+        .bearer_auth(&api_key)
+        .timeout(std::time::Duration::from_secs(15))
+        .send()
+        .await
+        .map_err(|e| AppError::unavailable(format!("el proveedor no responde ({e})")))?;
+    if !res.status().is_success() {
+        return Err(AppError::unavailable(format!(
+            "el proveedor devolvió HTTP {}",
+            res.status()
+        )));
+    }
+    let body_json: Value = res
+        .json()
+        .await
+        .map_err(|_| AppError::unavailable("el proveedor devolvió un listado inválido"))?;
+    let mut ids: Vec<String> = body_json
+        .get("data")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|m| m.get("id")?.as_str().map(str::to_string))
+                .filter(|id| {
+                    let lower = id.to_lowercase();
+                    !NON_CHAT_HINTS.iter().any(|h| lower.contains(h))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    ids.sort();
+    ids.dedup();
+    if ids.is_empty() {
+        return Err(AppError::unavailable(
+            "el proveedor no devolvió modelos de chat",
+        ));
+    }
+    // Preservar el default que funcionaba; si desapareció, el primero.
+    let default_kept = default_model.as_deref().is_some_and(|d| ids.contains(&d.to_string()));
+    let new_default = if default_kept {
+        default_model.unwrap_or_else(|| ids[0].clone())
+    } else {
+        ids[0].clone()
+    };
+    let models_json = serde_json::to_string(&ids)?;
     state.db.with(|c| {
         c.execute(
-            "DELETE FROM account_llm WHERE account_id = ?1",
-            params![auth.account_id],
+            "UPDATE account_llm_providers SET models = ?1, default_model = ?2, updated_at = ?3 \
+             WHERE account_id = ?4 AND provider = ?5",
+            params![models_json, new_default, now_ms(), auth.account_id, provider],
         )?;
         Ok(())
     })?;
-    tracing::info!("account {} desconectó su proveedor LLM", auth.account_id);
-    Ok(Json(json!({ "ok": true, "llm": null })).into_response())
+
+    tracing::info!(
+        "account {} llm [{provider}] lista refrescada: {} modelos (default {})",
+        auth.account_id, ids.len(), new_default,
+    );
+    Ok(Json(json!({
+        "ok": true,
+        "provider": provider,
+        "models": ids,
+        "default_model": new_default,
+        "default_kept": default_kept,
+    }))
+    .into_response())
 }
 
 #[derive(Deserialize)]
@@ -696,6 +1051,63 @@ pub async fn import_keypair_handler(
     .into_response())
 }
 
+/// POST /api/accounts/me/chain/keypair/generate — crea la wallet dPaaS de
+/// la cuenta (botón "Crear wallet" del modal): genera ed25519 con OsRng,
+/// sella el keypair (AEAD) y fija wallet+payee. Idempotente de a una: si
+/// ya existe keypair, 409 (borrar/importar para rotar).
+pub async fn generate_keypair_handler(
+    State(state): State<SharedState>,
+    auth: AuthedAccount,
+) -> AppResult<Response> {
+    let exists: bool = state
+        .db
+        .with(|c| {
+            c.query_row(
+                "SELECT payer_keypair_enc IS NOT NULL FROM account_chain WHERE account_id = ?1",
+                params![auth.account_id],
+                |r| r.get(0),
+            )
+        })
+        .unwrap_or(false);
+    if exists {
+        return Err(AppError::conflict(
+            "la cuenta ya tiene wallet dPaaS (importa otra para rotar)",
+        ));
+    }
+    let mut seed = [0u8; 32];
+    rand::rngs::OsRng.fill_bytes(&mut seed);
+    let signing = ed25519_dalek::SigningKey::from_bytes(&seed);
+    let mut kp = [0u8; 64];
+    kp[..32].copy_from_slice(&seed);
+    kp[32..].copy_from_slice(signing.verifying_key().as_bytes());
+    let pubkey = crate::b58::encode(&kp[32..]);
+    let raw_json = serde_json::to_string(&kp.to_vec()).unwrap_or_default();
+    let mk = master_key_of(&state)?;
+    let sealed = crypto::seal(&mk, &raw_json)?;
+    let now = now_ms();
+    state.db.with(|c| {
+        c.execute(
+            "INSERT INTO account_chain (account_id, network, wallet_pubkey, payer_keypair_enc, \
+             payee, updated_at) VALUES (?1, 'devnet', ?2, ?3, ?4, ?5) \
+             ON CONFLICT(account_id) DO UPDATE SET \
+               wallet_pubkey = excluded.wallet_pubkey, \
+               payer_keypair_enc = excluded.payer_keypair_enc, \
+               payee = COALESCE(account_chain.payee, excluded.payee), \
+               updated_at = excluded.updated_at",
+            params![auth.account_id, pubkey, sealed, pubkey, now],
+        )?;
+        Ok(())
+    })?;
+
+    tracing::info!("account {}: wallet dPaaS generada → {pubkey}", auth.account_id);
+    Ok(Json(json!({
+        "ok": true,
+        "wallet_pubkey": pubkey,
+        "encrypted_at_rest": true,
+    }))
+    .into_response())
+}
+
 // ---------------------------------------------------------------------------
 // Sub-wallets (Gestor de Wallet & Sub-Wallets del diagrama)
 // ---------------------------------------------------------------------------
@@ -837,6 +1249,51 @@ pub async fn connect_wallet_handler(
     if pubkey.len() < 20 {
         return Err(AppError::bad_request("pubkey inválida"));
     }
+    // EVM (0x…): normalizar a minúsculas para que el dedupe no falle por
+    // checksum EIP-55 (misma dirección, distinta capitalización).
+    let pubkey = if chain == "evm" { pubkey.to_lowercase() } else { pubkey };
+
+    // Dedupe: misma (cuenta, provider, pubkey) → reactivar la existente
+    // en vez de crear otra fila (UNIQUE lo blinda a nivel DB).
+    let existing: Option<(String, String)> = state
+        .db
+        .with(|c| {
+            c.query_row(
+                "SELECT id, label FROM account_connected_wallets \
+                 WHERE account_id = ?1 AND provider = ?2 AND pubkey = ?3",
+                params![auth.account_id, provider, pubkey],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+        })
+        .ok();
+    if let Some((id, label)) = existing {
+        if body.set_active {
+            state.db.with(|c| {
+                c.execute(
+                    "UPDATE account_connected_wallets SET is_active = 0 WHERE account_id = ?1",
+                    params![auth.account_id],
+                )?;
+                c.execute(
+                    "UPDATE account_connected_wallets SET is_active = 1 WHERE id = ?1",
+                    params![id],
+                )?;
+                Ok(())
+            })?;
+        }
+        tracing::info!(
+            "account {} wallet ya conectada «{label}» ({provider}/{chain}) — reactivada",
+            auth.account_id
+        );
+        return Ok(Json(json!({
+            "ok": true,
+            "deduped": true,
+            "wallet": {
+                "id": id, "label": label, "provider": provider,
+                "chain": chain, "pubkey": pubkey, "is_active": body.set_active,
+            }
+        }))
+        .into_response());
+    }
 
     // label por defecto: "{provider} · N" según las ya conectadas de ese proveedor
     let label = match body.label.as_deref().map(str::trim).filter(|l| !l.is_empty()) {
@@ -903,11 +1360,27 @@ pub async fn connect_wallet_handler(
 }
 
 /// GET /api/accounts/me/connected-wallets — lista + la que está en uso.
+/// Las de chain=solana traen `balance_lamports` vivo (RPC de la red de la
+/// cuenta; null si falla). Las EVM lo resuelven en el navegador con su
+/// propia extensión (ella sabe en qué red está).
 pub async fn list_connected_wallets_handler(
     State(state): State<SharedState>,
     auth: AuthedAccount,
 ) -> AppResult<Response> {
-    let wallets: Vec<Value> = state
+    let network: String = state
+        .db
+        .with(|c| {
+            c.query_row(
+                "SELECT network FROM account_chain WHERE account_id = ?1",
+                params![auth.account_id],
+                |r| r.get(0),
+            )
+        })
+        .unwrap_or_else(|_| "devnet".to_string());
+    let client = crate::modules::x402::client_for_network(&state, &network)
+        .await
+        .ok();
+    let mut wallets: Vec<Value> = state
         .db
         .with(|c| {
             let mut stmt = c.prepare(
@@ -928,6 +1401,16 @@ pub async fn list_connected_wallets_handler(
             rows.collect()
         })
         .unwrap_or_default();
+    if let Some(client) = client {
+        for w in wallets.iter_mut() {
+            if w["chain"] == "solana" {
+                if let Some(pk) = w["pubkey"].as_str() {
+                    w["balance_lamports"] =
+                        json!(client.get_balance(pk).await.ok());
+                }
+            }
+        }
+    }
     let active = wallets
         .iter()
         .find(|w| w.get("is_active").map_or(false, |v| v == &json!(true)))
@@ -1150,13 +1633,14 @@ pub async fn context_handler(
         )
     })?;
 
-    // LLM de la cuenta (api_key desencriptada).
+    // LLM de la cuenta: SOLO el proveedor ACTIVO (api_key desencriptada).
+    // Sin activo → llm null y el agente exige configurar (sin fallback global).
     let llm: Option<Value> = state
         .db
         .with(|c| {
             c.query_row(
                 "SELECT provider, base_url, api_key_enc, models, default_model \
-                 FROM account_llm WHERE account_id = ?1",
+                 FROM account_llm_providers WHERE account_id = ?1 AND is_active = 1",
                 params![auth.account_id],
                 |r| {
                     let models: Value =
@@ -1266,7 +1750,8 @@ pub async fn context_handler(
     Ok(Json(json!({
         "ok": true,
         "account": account,
-        "llm": llm,        // null si la cuenta no configuró proveedor
+        "llm": llm,        // null si no hay proveedor ACTIVO (el agente lo exige)
+        "llm_providers": llm_providers_list(&state, &auth.account_id),
         "chain": chain,    // null si la cuenta no configuró red/wallet
         "wallets": wallets,
         "connected_wallets": connected_wallets,       // Phantom/MetaMask… (solo pubkeys)

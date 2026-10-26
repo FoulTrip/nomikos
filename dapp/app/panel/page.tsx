@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { Cpu, LogOut, Mouse, Move, Pointer, User, ZoomIn } from "lucide-react";
+import { Cpu, LogOut, User } from "lucide-react";
 import { auth } from "@/auth";
 import { logoutAction } from "@/app/actions/auth";
 import DeviceViewer from "@/components/DeviceViewer";
@@ -30,13 +30,6 @@ const SPECS: [string, string][] = [
   ["Memoria", "16 MB Flash · 8 MB PSRAM"],
   ["Inalámbrico", "Wi‑Fi 2.4 GHz · BLE 5"],
   ["Extras", "microSD · SPI · I2C · RGB LED"],
-];
-
-const HINTS = [
-  { icon: Mouse, label: "Arrastra para", bold: "rotar" },
-  { icon: ZoomIn, label: "Rueda para", bold: "zoom" },
-  { icon: Move, label: "Clic derecho para", bold: "mover" },
-  { icon: Pointer, label: "Toca la pantalla para", bold: "interactuar" },
 ];
 
 export default async function PanelPage() {
@@ -108,15 +101,6 @@ export default async function PanelPage() {
             </CardContent>
           </Card>
         </div>
-
-        <footer className="absolute bottom-3.5 left-1/2 z-[5] flex -translate-x-1/2 items-center gap-4 rounded-full border bg-card/85 px-4 py-2 text-xs whitespace-nowrap text-muted-foreground shadow-sm backdrop-blur max-md:gap-2.5 max-md:text-[11px]">
-          {HINTS.map(({ icon: Icon, label, bold }) => (
-            <span key={bold} className="flex items-center gap-1.5">
-              <Icon className="size-3.5 text-primary" />
-              {label} <b className="font-semibold text-foreground">{bold}</b>
-            </span>
-          ))}
-        </footer>
       </main>
     </div>
   );

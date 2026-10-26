@@ -12,7 +12,7 @@
  *
  * El IdP real es `api` (suite 02); Auth.js solo envuelve su Bearer.
  */
-import { test, expect, api, json, randomEmail, randomPassword, dapp, dappCsrf, locationPath, DAPP_URL } from './_helpers';
+import { test, expect, api, json, randomEmail, randomPassword, dapp, dappCsrf, locationPath, DAPP_URL, LoginSchema, setupAccountLLM } from './_helpers';
 
 test('① "/" renderiza la página de login sin sesión', async () => {
   const res = await dapp('/');
@@ -66,7 +66,12 @@ test('④⑤⑥ login vía Auth.js → cookie → /panel autenticado y "/" redir
 
   // ⑦ el gateway agéntico funciona con el Bearer de la sesión:
   //    brain autentica el token de api y ejecuta tools reales (retries:
-  //    usa LLM real, como las suites 05/06)
+  //    usa LLM real, como las suites 05/06). La cuenta trae SU key —
+  //    sin LLM configurado el gateway responde 400, no razona.
+  const { token: apiToken } = LoginSchema.parse(
+    await (await api('/auth/login', json({ email, password }))).json(),
+  );
+  await setupAccountLLM(apiToken);
   const gw = await dapp('/api/agent/gateway', {
     method: 'POST',
     jar,

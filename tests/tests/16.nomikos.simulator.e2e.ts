@@ -6,8 +6,12 @@
  *   ① GET simulation — estado del OS (retoma: boots/toques persisten)
  *   ② boot → el agentd simulado se presenta → claim code en pantalla
  *   ②b código expirado → AGREGAR lo renueva solo (nunca 409 sin salida)
- *   ③ claim (AGREGAR) → ONLINE: token del dispositivo + entra a la flota
- *   ④ tap — la pantalla táctil cicla home ⇄ apps ⇄ x402 ⇄ settings
+ *   ③ claim (AGREGAR) → ONLINE bloqueado: token + flota + lock screen
+ *   ③b press — navegación táctil: unlock → home → apps → appdetail →
+ *      settings → providers/models → lock (bloqueo real, como la placa)
+ *   ③c ajustes LLM del device: listas + selección explícita
+ *      provider:/model: (el device solo elige; las keys son de la cuenta)
+ *   ④ tap — compat: cicla home ⇄ apps ⇄ x402 ⇄ settings
  *   ④b say — hablar con el agente: turno de voz real con el device
  *   ⑤ x402 — el peaje del dispositivo: factura con device_id → dPaaS
  *      firma (tx real; la cuenta se fondea del faucet) → ACCESO one-shot
@@ -17,7 +21,7 @@
  */
 import {
   test, expect, api, json, LoginSchema, generateSolanaKeypair,
-  dapp, dappCsrf, randomEmail, randomPassword, DAPP_URL,
+  dapp, dappCsrf, randomEmail, randomPassword, DAPP_URL, setupAccountLLM,
 } from './_helpers';
 import { execSync } from 'node:child_process';
 
@@ -26,12 +30,19 @@ interface Sim {
   device_id: string | null;
   claim_code: string | null;
   claimed: boolean;
+  locked: boolean;
+  detail_app: string | null;
   boot_count: number;
   taps: number;
   screen: string;
-  apps: { slug: string }[];
+  apps: { slug: string; name: string; tools_count?: number }[];
   last_x402: { resource: string; status: string; access?: string } | null;
   last_reply: { text: string; reply: string; ts: number } | null;
+  llm: {
+    active_provider: string | null;
+    providers: { provider: string; models: string[]; default_model: string | null; has_key: boolean; is_active: boolean }[];
+  } | null;
+  agent_wallet: { wallet_pubkey: string | null; network: string | null; balance_lamports: number | null } | null;
   events: { ts: number; ev: string }[];
 }
 
@@ -97,15 +108,70 @@ test('①→⑦ el OS NomikOS simulado: retoma, empareja, paga y se reconstruye'
   expect(renewed.claim_code).toMatch(/^[0-9A-F]{8}$/);
   expect(renewed.events.some((e) => e.ev === 'code-renewed')).toBe(true);
 
-  // ③ AGREGAR (con el código renovado) → ONLINE (flota real)
+  // ③ AGREGAR (con el código renovado) → ONLINE bloqueado (flota real)
   const online = await simStep(jar, 'claim');
   expect(online.stage).toBe('online');
   expect(online.claimed).toBe(true);
+  expect(online.locked).toBe(true); // como la placa: arranca bloqueado
   const fleet = (await (await dapp('/api/account/devices', withJ(jar))).json()) as {
     devices?: { id: string; status: string }[];
   };
   const simDev = (fleet.devices ?? []).find((d) => d.id === online.device_id);
   expect(simDev, 'el dispositivo simulado debe estar en la flota de la cuenta').toBeTruthy();
+
+  // ③b navegación táctil (press): unlock → home → apps → appdetail →
+  // settings → lock. Con bloqueo, solo unlock vale.
+  const navDenied = await dapp('/api/account/simulation', withJ(jar, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'press', target: 'settings' }),
+  }));
+  expect(navDenied.status).toBe(403);
+  expect((await simStep(jar, 'press', { target: 'unlock' })).locked).toBe(false);
+  expect((await simStep(jar, 'press', { target: 'apps' })).screen).toBe('apps');
+  const detail = await simStep(jar, 'press', { target: 'app:payload-cms' });
+  expect(detail.screen).toBe('appdetail');
+  expect(detail.detail_app).toBe('payload-cms');
+  expect((await simStep(jar, 'press', { target: 'apps' })).screen).toBe('apps');
+  expect((await simStep(jar, 'press', { target: 'settings' })).screen).toBe('settings');
+  expect((await simStep(jar, 'press', { target: 'home' })).screen).toBe('home');
+  expect((await simStep(jar, 'press', { target: 'lock' })).locked).toBe(true);
+  expect((await simStep(jar, 'press', { target: 'unlock' })).locked).toBe(false);
+  // dapp inexistente → 404 (sin pantalla rota)
+  const badApp = await dapp('/api/account/simulation', withJ(jar, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'press', target: 'app:no-existe' }),
+  }));
+  expect(badApp.status).toBe(404);
+
+  // ③c ajustes LLM del device: listas providers/models + selección
+  // explícita (el device solo elige entre lo configurado en la cuenta)
+  const H = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  await api('/accounts/me/llm', { method: 'PUT', headers: H, body: JSON.stringify({
+    provider: 'openai', api_key: 'sk-TEST-solo-seleccion', models: ['gpt-a', 'gpt-b'], default_model: 'gpt-a',
+  }) });
+  await api('/accounts/me/llm', { method: 'PUT', headers: H, body: JSON.stringify({
+    provider: 'custom', base_url: 'https://llm.local/v1', api_key: 'k-TEST',
+    models: ['m1'], default_model: 'm1',
+  }) });
+  expect((await simStep(jar, 'press', { target: 'providers' })).screen).toBe('providers');
+  const sel1 = await simStep(jar, 'press', { target: 'provider:openai' });
+  expect(sel1.llm?.active_provider).toBe('openai');
+  expect(sel1.screen).toBe('settings'); // tras elegir vuelve a ajustes
+  expect((await simStep(jar, 'press', { target: 'models' })).screen).toBe('models');
+  const sel2 = await simStep(jar, 'press', { target: 'model:gpt-b' });
+  expect(sel2.llm?.providers?.find((p) => p.provider === 'openai')?.default_model).toBe('gpt-b');
+  expect(sel2.screen).toBe('settings');
+  // selección inválida → 400, sin romper estado
+  const badSel = await dapp('/api/account/simulation', withJ(jar, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'press', target: 'model:no-existe' }),
+  }));
+  expect(badSel.status).toBe(400);
+  // key real de la cuenta para el turno de voz (④b): re-PUT nvidia + activar
+  await setupAccountLLM(token);
+  await api('/accounts/me/llm/active', { method: 'POST', headers: H, body: JSON.stringify({ provider: 'nvidia-nim' }) });
+  const backTo = await simStep(jar, 'press', { target: 'home' });
+  expect(backTo.llm?.active_provider).toBe('nvidia-nim');
 
   // ④ tap: la pantalla cicla home → apps → x402 → settings → home
   // (el claim deja screen=home, la pantalla principal del OS)
@@ -127,12 +193,17 @@ test('①→⑦ el OS NomikOS simulado: retoma, empareja, paga y se reconstruye'
     body: JSON.stringify({ keypair_json: keypair }),
   });
   expect(imp.status).toBe(200);
+  const { wallet_pubkey } = (await imp.json()) as { wallet_pubkey: string };
   const drip = await api('/dev/faucet', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
   expect(drip.status).toBe(200);
 
   const x402 = await simStep(jar, 'x402');
   expect(x402.last_x402).not.toBeNull();
   expect(x402.last_x402!.resource).toBe('x402:device:GET:/api/device');
+  // la pantalla x402 muestra la wallet dPaaS del agente + balance vivo
+  expect(x402.agent_wallet?.wallet_pubkey).toBe(wallet_pubkey);
+  expect(x402.agent_wallet?.network).toBe('devnet');
+  expect(x402.agent_wallet?.balance_lamports ?? 0).toBeGreaterThan(0);
   if (x402.last_x402!.status === 'settled') {
     expect(x402.last_x402!.access).toContain('ACCESO CONCEDIDO (one-shot)');
   } else {

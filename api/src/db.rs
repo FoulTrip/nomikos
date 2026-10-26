@@ -120,6 +120,8 @@ impl Db {
              );
              CREATE INDEX IF NOT EXISTS idx_sessions_account ON sessions(account_id);
 
+             -- LEGACY (fuente de migración — ver abajo): una sola fila LLM
+             -- por cuenta. El esquema vivo es account_llm_providers.
              CREATE TABLE IF NOT EXISTS account_llm (
                  account_id    TEXT PRIMARY KEY REFERENCES accounts(id),
                  provider      TEXT NOT NULL,
@@ -254,6 +256,50 @@ impl Db {
         // provocó, y tokens de dispositivo (= sesiones con device_id).
         Self::add_column_if_missing(conn, "x402_invoices", "device_id", "TEXT")?;
         Self::add_column_if_missing(conn, "sessions", "device_id", "TEXT")?;
+        // Multi-proveedor LLM por cuenta (un solo activo): la tabla vieja
+        // account_llm (una fila por cuenta) migra a account_llm_providers.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS account_llm_providers (
+                 account_id    TEXT NOT NULL REFERENCES accounts(id),
+                 provider      TEXT NOT NULL,
+                 base_url      TEXT NOT NULL,
+                 api_key_enc   TEXT,
+                 models        TEXT NOT NULL DEFAULT '[]',
+                 default_model TEXT,
+                 is_active     INTEGER NOT NULL DEFAULT 0,
+                 updated_at    INTEGER NOT NULL,
+                 PRIMARY KEY (account_id, provider)
+             )",
+            [],
+        )?;
+        conn.execute(
+            "INSERT OR IGNORE INTO account_llm_providers \
+             (account_id, provider, base_url, api_key_enc, models, default_model, is_active, updated_at) \
+             SELECT account_id, provider, base_url, api_key_enc, models, default_model, 1, updated_at \
+             FROM account_llm",
+            [],
+        )?;
+        conn.execute("DROP TABLE IF EXISTS account_llm", [])?;
+        // Wallets conectadas: una sola fila por (cuenta, provider, pubkey).
+        // Limpia duplicados históricos (conservar la activa, si no la última)
+        // y lo blinda con índice único: reconectar la misma wallet la
+        // reactiva en vez de duplicarla.
+        conn.execute(
+            "DELETE FROM account_connected_wallets WHERE rowid NOT IN (
+                 SELECT rowid FROM (
+                   SELECT rowid, ROW_NUMBER() OVER (
+                     PARTITION BY account_id, provider, pubkey
+                     ORDER BY is_active DESC, rowid DESC
+                   ) AS rn FROM account_connected_wallets
+                 ) WHERE rn = 1
+             )",
+            [],
+        )?;
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_connected_wallets_unique \
+             ON account_connected_wallets (account_id, provider, pubkey)",
+            [],
+        )?;
         Ok(())
     }
 

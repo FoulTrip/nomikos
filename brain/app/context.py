@@ -6,7 +6,8 @@ resuelve TODO el contexto de la cuenta contra la API (OpenID Provider):
   - chain: red + wallet del orquestador + límites dPaaS
   - wallets: sub-wallets
 
-Sin Bearer → None → la petición opera como "system" (config global de brain).
+Sin Bearer → el gateway rechaza con 401 AUTH_REQUIRED (sin cuenta no
+hay LLM: la cuenta es 100% responsable de sus keys, sin backend global).
 Token inválido → la API responde 401 y se propaga.
 """
 

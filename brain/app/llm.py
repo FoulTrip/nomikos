@@ -1,9 +1,8 @@
-"""Cliente LLM — Llama Stack (global) o el proveedor DE LA CUENTA (multi-tenant).
+"""Cliente LLM — SIEMPRE el proveedor DE LA CUENTA (multi-tenant).
 
-Fase 5: si la petición llega autenticada (Bearer) y la cuenta configuró su
-proveedor (nvidia-nim / openai / custom …), el razonamiento usa ESE
-proveedor con SUS modelos y SU api_key. Sin cuenta → Llama Stack global
-(fallback Ollama), como siempre.
+Sin fallback global: la cuenta es 100% responsable de cargar sus api_keys
+(modal Modelos del panel). Sin Bearer o sin proveedor activo, el gateway
+responde error explícito en vez de razonar.
 
 Loop del orquestador (tool-calling):
   1. El modelo razona la intención y emite ``tool_calls``.
@@ -19,7 +18,6 @@ import json
 import logging
 from dataclasses import dataclass, field
 
-import httpx
 from openai import AsyncOpenAI
 
 from .config import settings
@@ -63,48 +61,36 @@ class AgentRun:
     reply: str
     tools_used: list[str] = field(default_factory=list)
     iterations: int = 0
-    backend: str = ""  # "llama-stack" | "ollama" | "account:<provider>"
+    backend: str = ""  # "account:<provider>" (sin fallback global)
     model: str = ""
     error: str = ""
     x402_events: list[dict] = field(default_factory=list)
 
 
-async def _llama_stack_alive() -> bool:
-    try:
-        async with httpx.AsyncClient(timeout=3) as client:
-            res = await client.get(
-                f"{settings.llama_stack_url}/models",
-                headers={"Authorization": f"Bearer {settings.llama_stack_api_key}"},
-            )
-            return res.status_code == 200
-    except Exception:  # noqa: BLE001
-        return False
+class LLMNotConfigured(Exception):
+    """La cuenta no tiene proveedor LLM activo (o no hay cuenta)."""
 
 
 async def _resolve_backend(ctx: AccountContext | None) -> tuple[AsyncOpenAI, str, str]:
     """Devuelve (cliente, backend, modelo).
 
-    Orden: LLM de la cuenta (si existe) → Llama Stack → Ollama.
+    Solo existe el LLM DE LA CUENTA: sin contexto o sin proveedor activo
+    se lanza LLMNotConfigured (el gateway lo convierte en error claro).
     """
-    if ctx and ctx.llm_base_url and ctx.llm_model:
-        client = AsyncOpenAI(
-            base_url=ctx.llm_base_url,
-            api_key=ctx.llm_api_key,
-            timeout=120,
+    if not (ctx and ctx.llm_base_url and ctx.llm_model):
+        raise LLMNotConfigured(
+            "sin proveedor LLM: configura tu key en Modelos del agente"
         )
-        return client, f"account:{ctx.llm_provider}", ctx.llm_model
-
-    if await _llama_stack_alive():
-        client = AsyncOpenAI(
-            base_url=settings.llama_stack_url,
-            api_key=settings.llama_stack_api_key,
-            timeout=120,
+    if not ctx.llm_api_key or ctx.llm_api_key == "fake":
+        raise LLMNotConfigured(
+            f"el proveedor «{ctx.llm_provider}» no tiene api_key: cárgala en Modelos del agente"
         )
-        return client, "llama-stack", settings.llm_model
-
-    # Fallback: Ollama expone /v1 (OpenAI-compatible)
-    client = AsyncOpenAI(base_url=f"{settings.ollama_url}/v1", api_key="ollama", timeout=300)
-    return client, "ollama", settings.llm_model
+    client = AsyncOpenAI(
+        base_url=ctx.llm_base_url,
+        api_key=ctx.llm_api_key,
+        timeout=120,
+    )
+    return client, f"account:{ctx.llm_provider}", ctx.llm_model
 
 
 async def run_agent(

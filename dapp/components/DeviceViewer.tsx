@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
-import { Canvas } from "@react-three/fiber";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Canvas, useThree } from "@react-three/fiber";
 import {
   Bounds,
   Center,
@@ -15,6 +15,43 @@ import {
 import * as THREE from "three";
 import { LoaderCircle } from "lucide-react";
 import DeviceScreen from "./DeviceScreen";
+import { useViewLocked } from "@/lib/viewer/view";
+
+/** Cámara frontal fija: la pantalla (que mira a +Z) queda de frente. */
+const FRONT_POS: [number, number, number] = [0, 10, 80];
+
+/**
+ * ViewLocker — al bloquear: guarda la pose, centra la cámara de frente
+ * y congela. Al desbloquear: restaura la pose anterior.
+ */
+function ViewLocker() {
+  const locked = useViewLocked();
+  const camera = useThree((s) => s.camera);
+  const controls = useThree((s) => s.controls) as unknown as {
+    target: THREE.Vector3;
+    update: () => void;
+  } | null;
+  const saved = useRef<{ pos: THREE.Vector3; target: THREE.Vector3 } | null>(null);
+
+  useEffect(() => {
+    if (!controls) return;
+    if (locked) {
+      if (!saved.current) {
+        saved.current = { pos: camera.position.clone(), target: controls.target.clone() };
+      }
+      camera.position.set(...FRONT_POS);
+      controls.target.set(0, 0, 0);
+      controls.update();
+    } else if (saved.current) {
+      camera.position.copy(saved.current.pos);
+      controls.target.copy(saved.current.target);
+      controls.update();
+      saved.current = null;
+    }
+  }, [locked, camera, controls]);
+
+  return null;
+}
 
 /** Ruta del modelo glb: proxy local → agent-os-api → Cloudflare R2. */
 const MODEL_URL = "/api/device/model";
@@ -74,6 +111,7 @@ function Device() {
 
 export default function DeviceViewer() {
   const [autoRotate, setAutoRotate] = useState(true);
+  const locked = useViewLocked();
 
   return (
     <div className="absolute inset-0">
@@ -130,16 +168,20 @@ export default function DeviceViewer() {
 
         {/* Rotación con el ratón, zoom con la rueda, pan con clic derecho */}
         {/* Auto-rotate hasta que el usuario interactúa con los controles */}
+        {/* Bloqueado: sin rotación ni paneo (el zoom sigue para acercar) */}
         <OrbitControls
           makeDefault
           enableDamping
           dampingFactor={0.08}
-          autoRotate={autoRotate}
+          autoRotate={autoRotate && !locked}
+          enableRotate={!locked}
+          enablePan={!locked}
           onStart={() => setAutoRotate(false)}
           autoRotateSpeed={1.2}
           minDistance={15}
           maxDistance={250}
         />
+        <ViewLocker />
       </Canvas>
     </div>
   );

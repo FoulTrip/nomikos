@@ -1136,22 +1136,32 @@ pub async fn me_x402_summary_handler(
         })
         .unwrap_or(json!([]));
 
-    let (tx_limit, daily_limit, wallet, payee): (Option<i64>, Option<i64>, Option<String>, Option<String>) =
+    let (tx_limit, daily_limit, wallet, payee, network): (Option<i64>, Option<i64>, Option<String>, Option<String>, String) =
         state
             .db
             .with(|c| {
                 c.query_row(
-                    "SELECT tx_limit_lamports, daily_limit_lamports, wallet_pubkey, payee \
+                    "SELECT tx_limit_lamports, daily_limit_lamports, wallet_pubkey, payee, network \
                      FROM account_chain WHERE account_id = ?1",
                     params![auth.account_id],
                     |r| {
                         Ok((
                             r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?,
+                            r.get::<_, Option<String>>(4)?.unwrap_or_else(|| "devnet".to_string()),
                         ))
                     },
                 )
             })
-            .unwrap_or((None, None, None, None));
+            .unwrap_or((None, None, None, None, "devnet".to_string()));
+
+    // Balance vivo de la wallet dPaaS (best-effort: null si el RPC falla).
+    let balance_lamports: Option<i64> = match wallet.as_deref().filter(|w| !w.is_empty()) {
+        Some(w) => match client_for_network(&state, &network).await {
+            Ok(client) => client.get_balance(w).await.ok(),
+            Err(_) => None,
+        },
+        None => None,
+    };
 
     let daily_used: i64 = state
         .db
@@ -1169,6 +1179,8 @@ pub async fn me_x402_summary_handler(
         "ok": true,
         "dpaas": {
             "wallet": wallet,
+            "network": network,
+            "balance_lamports": balance_lamports,
             "payee": payee,
             "tx_limit_lamports": tx_limit,
             "daily_limit_lamports": daily_limit,

@@ -1,5 +1,7 @@
 "use client";
 /** ModalShell — overlay + tarjeta de los modales del panel del dapp (estilo shadcn). */
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -12,7 +14,15 @@ export default function Modal({
   onClose: () => void;
   children: React.ReactNode;
 }) {
-  return (
+  // Portal a body: los modales se montan dentro del <header>, que lleva
+  // backdrop-blur — y backdrop-filter crea un containing block que rompe
+  // `fixed` (el inset-0 se resolvía contra el header y el modal salía
+  // arriba del todo). El guard mounted evita mismatch de hidratación.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return null;
+
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-5"
       onClick={onClose}
@@ -39,6 +49,7 @@ export default function Modal({
         </header>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

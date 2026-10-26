@@ -13,6 +13,26 @@ export interface SimApp {
   slug: string;
   name: string;
   status: string;
+  tools_count?: number;
+}
+
+export interface SimLlmProvider {
+  provider: string;
+  models?: string[];
+  default_model?: string | null;
+  has_key?: boolean;
+  is_active?: boolean;
+}
+
+export interface SimLlm {
+  active_provider: string | null;
+  providers: SimLlmProvider[];
+}
+
+export interface SimWallet {
+  wallet_pubkey: string | null;
+  network: string | null;
+  balance_lamports: number | null;
 }
 
 export interface SimX402 {
@@ -20,6 +40,7 @@ export interface SimX402 {
   invoice_id?: string;
   status: string;
   access?: string;
+  hint?: string;
   lamports?: number;
 }
 
@@ -43,10 +64,14 @@ export interface NomikOSState {
   claimed: boolean;
   boot_count: number;
   taps: number;
-  screen: "home" | "apps" | "x402" | "settings" | "status"; // "status" = legacy → home
+  screen: "home" | "apps" | "appdetail" | "x402" | "settings" | "providers" | "models" | "status"; // "status" = legacy → home
+  locked: boolean;
+  detail_app: string | null;
   apps: SimApp[];
   last_x402: SimX402 | null;
   last_reply: SimReply | null;
+  llm?: SimLlm | null;
+  agent_wallet?: SimWallet | null;
   events: SimEvent[];
 }
 
@@ -175,4 +200,21 @@ export async function simApps() {
 }
 export async function simSay(text: string) {
   await stepStrict("say", { text }); // propaga el error: el panel lo muestra
+}
+
+/** Toque posicionado resuelto por hit-testing (navegación directa). */
+export async function simPress(target: string) {
+  const res = await fetch("/api/account/simulation", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "press", target }),
+  });
+  if (res.ok) {
+    const data = await res.json();
+    if (data.ok) {
+      snapshot = data.simulation as NomikOSState;
+      emit();
+    }
+  }
+  // best-effort como tap(): un toque fuera de zona no debe romper nada
 }

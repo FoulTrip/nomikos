@@ -2,7 +2,7 @@
  * 03.api.cuenta.e2e.ts — Config por cuenta: proveedor LLM, red/wallet,
  * keypair del orquestador (dPaaS, cifrado en reposo), sub-wallets y contexto.
  */
-import { test, expect, api, json, auth, ContextSchema, generateSolanaKeypair } from './_helpers';
+import { test, expect, api, json, auth, ContextSchema, generateSolanaKeypair, nvidiaKeyFromApiEnv } from './_helpers';
 
 const withToken = (token: string) => ({ 'Authorization': `Bearer ${token}` });
 
@@ -44,6 +44,103 @@ test('PUT /me/llm con api_key la sella (AEAD) y NO vuelve en /me/context... exce
   expect(ctx.llm?.provider).toBe('nvidia-nim');
   expect(ctx.llm?.api_key).toBe('nvapi-TEST-KEY-no-valida-solo-estructura');
   expect(ctx.llm?.models).toHaveLength(2);
+});
+
+test('LLM multi-proveedor: N keys guardadas, UN solo activo + cambio de modelo', async ({ account }) => {
+  const H = { ...withToken(account.token), 'Content-Type': 'application/json' };
+  const put = (body: unknown) => api('/accounts/me/llm', { method: 'PUT', headers: H, body: JSON.stringify(body) });
+
+  // dos providers con key: el primero queda activo solo
+  expect((await put({ provider: 'nvidia-nim', api_key: 'nvapi-A', models: ['m-nv'], default_model: 'm-nv' })).status).toBe(200);
+  expect((await put({ provider: 'openai', api_key: 'sk-B', models: ['gpt-x', 'gpt-y'], default_model: 'gpt-x' })).status).toBe(200);
+  let ctx = (await (await api('/accounts/me/context', auth(account.token))).json()) as {
+    llm: { provider: string } | null;
+    llm_providers: { provider: string; has_key: boolean; is_active: boolean }[];
+    active_provider?: string | null;
+  };
+  expect(ctx.llm?.provider).toBe('nvidia-nim'); // el primero auto-activo
+  expect(ctx.llm_providers).toHaveLength(2);
+  expect(ctx.llm_providers.every((p) => p.has_key)).toBe(true);
+
+  // cambiar el activo + su modelo
+  const act = await api('/accounts/me/llm/active', { method: 'POST', headers: H, body: JSON.stringify({ provider: 'openai' }) });
+  expect(act.status).toBe(200);
+  const mod = await api('/accounts/me/llm/active', { method: 'POST', headers: H, body: JSON.stringify({ model: 'gpt-y' }) });
+  expect(mod.status).toBe(200);
+  ctx = (await (await api('/accounts/me/context', auth(account.token))).json()) as typeof ctx & {
+    llm: { provider: string; default_model: string } | null;
+  };
+  expect(ctx.llm?.provider).toBe('openai');
+  expect(ctx.llm?.default_model).toBe('gpt-y');
+
+  // modelo que no está en la lista → 400
+  const bad = await api('/accounts/me/llm/active', { method: 'POST', headers: H, body: JSON.stringify({ model: 'no-existe' }) });
+  expect(bad.status).toBe(400);
+
+  // borrar el activo → sin activo (el agente exige reconfigurar, sin fallback)
+  const del = await api('/accounts/me/llm?provider=openai', { method: 'DELETE', headers: withToken(account.token) });
+  expect(del.status).toBe(200);
+  const ctx2 = (await (await api('/accounts/me/context', auth(account.token))).json()) as { llm: unknown | null };
+  expect(ctx2.llm).toBeNull();
+});
+
+test('POST /me/llm/refresh-models re-lista desde el servidor (NIM vivo, key sellada)', async ({ account }) => {
+  const H = { ...withToken(account.token), 'Content-Type': 'application/json' };
+  const refresh = (body: unknown) =>
+    api('/accounts/me/llm/refresh-models', { method: 'POST', headers: H, body: JSON.stringify(body) });
+
+  // sin proveedores → 404
+  expect((await refresh({})).status).toBe(404);
+
+  // lista vieja de 1 modelo + key REAL → el servidor re-lista (NIM vivo)
+  const nvKey = await nvidiaKeyFromApiEnv();
+  const put = await api('/accounts/me/llm', {
+    method: 'PUT', headers: H,
+    body: JSON.stringify({
+      provider: 'nvidia-nim', api_key: nvKey,
+      models: ['modelo-viejo-inexistente'], default_model: 'modelo-viejo-inexistente',
+    }),
+  });
+  expect(put.status).toBe(200); // queda auto-activo (es el primero)
+
+  const ref = await refresh({});
+  expect(ref.status).toBe(200);
+  const rb = (await ref.json()) as { provider: string; models: string[]; default_model: string; default_kept: boolean };
+  expect(rb.provider).toBe('nvidia-nim');
+  expect(rb.models.length).toBeGreaterThan(10); // lista viva completa, no 1
+  expect(rb.models).not.toContain('modelo-viejo-inexistente');
+  expect(rb.models.some((m) => m.includes('embed'))).toBe(false); // filtro no-chat
+  expect(rb.default_kept).toBe(false); // el viejo desapareció…
+  expect(rb.default_model).toBe(rb.models[0]); // …→ primero de la lista
+
+  // segundo refresh: el default ya es válido → se preserva
+  const ref2 = (await (await refresh({})).json()) as { default_model: string; default_kept: boolean };
+  expect(ref2.default_kept).toBe(true);
+  expect(ref2.default_model).toBe(rb.default_model);
+
+  // el contexto (lo que lee brain) refleja la lista nueva
+  const ctx = ContextSchema.parse(await (await api('/accounts/me/context', auth(account.token))).json());
+  expect(ctx.llm?.models.length).toBeGreaterThan(10);
+
+  // proveedor explícito sin key → 400 y SU lista queda intacta
+  await api('/accounts/me/llm', {
+    method: 'PUT', headers: H,
+    body: JSON.stringify({
+      provider: 'llama-stack', base_url: 'http://localhost:8321/v1',
+      models: ['meta/muse-glimmer-30b'], default_model: 'meta/muse-glimmer-30b',
+    }),
+  });
+  expect((await refresh({ provider: 'llama-stack' })).status).toBe(400);
+  const ctx2 = (await (await api('/accounts/me/context', auth(account.token))).json()) as {
+    llm_providers: { provider: string; models: string[] }[];
+  };
+  expect(ctx2.llm_providers.find((p) => p.provider === 'llama-stack')?.models).toEqual(['meta/muse-glimmer-30b']);
+
+  // proveedor explícito inexistente → 404 · sin Bearer → 401
+  expect((await refresh({ provider: 'openai' })).status).toBe(404);
+  expect((await api('/accounts/me/llm/refresh-models', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+  })).status).toBe(401);
 });
 
 test('PUT /me/chain con red y límites dPaaS', async ({ account }) => {

@@ -1,0 +1,77 @@
+{
+  "title": "NomikOS",
+  "subtitle": "Zero-UI agéntico con micro-peajes x402 en Solana",
+  "themeId": "dots_plush",
+  "hasAudio": false,
+  "scenes": [
+    {
+      "id": "hook",
+      "durationInFrames": 450,
+      "narrationText": "Los agentes de IA actuales son pasivos: razonan y chatean, pero no pueden comprar servicios ni consumir APIs sin que un humano firme con tarjeta.",
+      "audioFile": "audio/scene-01.mp3",
+      "actionType": "hero_dots"
+    },
+    {
+      "id": "tesis",
+      "durationInFrames": 750,
+      "narrationText": "Presento NomikOS: una capa operativa donde los modelos de Meta razonan, y un protocolo de micro-peajes x402 con firmas delegadas en memoria paga cada recurso de forma invisible, segura y en milisegundos.",
+      "audioFile": "audio/scene-02.mp3",
+      "codeSnippet": "Meta Llama → Llama Guard → x402 → dPaaS → Solana devnet",
+      "codeLanguage": "bash",
+      "actionType": "diagram"
+    },
+    {
+      "id": "shields",
+      "durationInFrames": 900,
+      "narrationText": "Pido acceso al modelo 3D. La petición pasa por Llama Guard 3: el escudo de entrada filtra contenido inseguro antes de razonar, y el escudo de salida valida la respuesta del agente y sus quince herramientas.",
+      "audioFile": "audio/scene-03.mp3",
+      "codeSnippet": "shield_in(text) → run_agent(15 tools) → shield_out(reply)",
+      "codeLanguage": "python",
+      "actionType": "shields"
+    },
+    {
+      "id": "peaje",
+      "durationInFrames": 900,
+      "narrationText": "El agente llama a la herramienta y el recurso responde 402 con un invoice de micro-centavos. La capa dPaaS descifra la wallet en RAM, valida el límite diario, firma ed25519 y envía a Solana devnet.",
+      "audioFile": "audio/scene-04.mp3",
+      "codeLanguage": "rust",
+      "httpStatus": 402,
+      "actionType": "solana_tx"
+    },
+    {
+      "id": "confirm",
+      "durationInFrames": 600,
+      "narrationText": "La transacción se confirma una sola vez: anti-replay por diseño. El recurso se ejecuta y el agente entrega el resultado. Cero botones de pago presionados.",
+      "audioFile": "audio/scene-05.mp3",
+      "codeSnippet": "settled + consumed_at → recurso ejecutado · replay → 409",
+      "codeLanguage": "rust",
+      "httpStatus": 200,
+      "actionType": "diagram"
+    },
+    {
+      "id": "stack",
+      "durationInFrames": 600,
+      "narrationText": "Backend en Rust con Axum como fuente única de verdad, llaves cifradas con XChaCha20, y motor cognitivo en Python con Llama Stack orquestando herramientas y shields.",
+      "audioFile": "audio/scene-06.mp3",
+      "codeSnippet": "$ cargo build -p agent-os-api   # Axum · XChaCha20\n$ uvicorn app.main:app --port 8322  # Llama Stack · 15 tools",
+      "codeLanguage": "bash",
+      "actionType": "terminal"
+    },
+    {
+      "id": "limites",
+      "durationInFrames": 600,
+      "narrationText": "Cada cuenta define límites estrictos de gasto diario en lamports. El agente opera veinticuatro siete sin gastar jamás más de lo autorizado.",
+      "audioFile": "audio/scene-07.mp3",
+      "codeSnippet": "check_limits() antes de firmar · daily_limit + tx_limit por cuenta",
+      "codeLanguage": "rust",
+      "actionType": "diagram"
+    },
+    {
+      "id": "cierre",
+      "durationInFrames": 600,
+      "narrationText": "NomikOS: agentes que pagan solos, usuarios que solo hablan. Código abierto y settlement real en devnet. Gracias.",
+      "audioFile": "audio/scene-08.mp3",
+      "actionType": "outro_cta"
+    }
+  ]
+}

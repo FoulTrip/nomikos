@@ -58,14 +58,15 @@ app-init:
 install:
 	@cd "$(ROOT)/api" && cargo build
 	@cd "$(ROOT)/brain" && [ -x .venv/bin/python ] || { python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt; }
-	@cd "$(ROOT)/brain" && [ -x .venv-stack/bin/llama ] || { echo "  (stack de NIM: make install-stack)"; }
+	@cd "$(ROOT)/brain" && [ -x .venv-stack/bin/llama ] || { echo "  (stack opcional: make install-stack)"; }
 	@cd "$(ROOT)/dapp" && [ -d node_modules ] || npm install
 	@cd "$(ROOT)/tests" && [ -d node_modules ] || npm install
 	@command -v ollama >/dev/null || { echo "⚠ instala ollama: curl -fsSL https://ollama.com/install.sh | sh"; exit 1; }
 	@for m in llama-guard3:1b llama3.2:1b; do ollama list 2>/dev/null | grep -q "$$m" || ollama pull "$$m"; done
 	@echo "install listo — make up"
 
-## install-stack: venv de Llama Stack (NIM real para razonamiento fluido)
+## install-stack: venv de Llama Stack (opcional — solo si self-hosteas
+## tu propio stack y lo apuntas como provider custom de tu cuenta)
 install-stack:
 	@cd "$(ROOT)/brain" && { [ -x .venv-stack/bin/llama ] || \
 		{ python3 -m venv .venv-stack && .venv-stack/bin/pip install -q llama-stack openai "mcp==1.23.0" chardet pypdf; }; }
@@ -79,20 +80,26 @@ up:
 	@cd "$(ROOT)" && test -f .env || { echo "falta .env — cp .env.example .env && make secrets"; exit 1; }
 	@$(MAKE) --no-print-directory env
 	@echo "── arrancando (logs en $(LOGS)/):"
-	@# ollama (shields Llama Guard + fallback LLM)
+	@# ollama (shields Llama Guard — el razonamiento es 100% de la cuenta).
+	@# CPU a propósito: la iGPU compartida se queda sin VRAM con el prompt
+	@# largo del guard (ErrorOutOfDeviceMemory → 500s intermitentes) y esta
+	@# build ignora OLLAMA_NUM_GPU; VK_ICD_FILENAMES=/dev/null oculta las
+	@# GPUs a Vulkan y llama.cpp cae a CPU (el 1B tarda segundos).
 	@bash -c '(echo > /dev/tcp/localhost/$(P_OLLAMA)) 2>/dev/null || \
-		{ nohup ollama serve > "$(LOGS)/ollama.log" 2>&1 & echo "  ↑ ollama :$(P_OLLAMA)"; }'
+		{ VK_ICD_FILENAMES=/dev/null OLLAMA_NUM_GPU=0 nohup ollama serve > "$(LOGS)/ollama.log" 2>&1 & echo "  ↑ ollama :$(P_OLLAMA) (CPU)"; }'
 	@# api (binario ya compilado por make install)
 	@test -x "$(ROOT)/api/target/debug/agent-os-api" || { $(MAKE) --no-print-directory install; }
 	@bash -c '(echo > /dev/tcp/localhost/$(P_API)) 2>/dev/null || \
 		{ cd "$(ROOT)/api" && nohup ./target/debug/agent-os-api > "$(LOGS)/api.log" 2>&1 & echo "  ↑ api :$(P_API)"; }'
-	@# brain
+	@# brain (0.0.0.0 a propósito: los contenedores api/dapp lo alcanzan
+	@# por host.docker.internal, que NO es 127.0.0.1 — con localhost el
+	@# /api/voice y el proxy del panel devuelven 503. Sigue exigiendo
+	@# Bearer de cuenta: sin sesión no razona)
 	@bash -c '(echo > /dev/tcp/localhost/$(P_BRAIN)) 2>/dev/null || \
-		{ cd "$(ROOT)/brain" && nohup .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port $(P_BRAIN) > "$(LOGS)/brain.log" 2>&1 & echo "  ↑ brain :$(P_BRAIN)"; }'
-	@# llama stack (solo con key NIM viva y venv-stack)
-	@bash -c 'grep -qE "^NVIDIA_API_KEY=." "$(ROOT)/.env" && [ -x "$(ROOT)/brain/.venv-stack/bin/llama" ] && \
-		{ (echo > /dev/tcp/localhost/$(P_STACK)) 2>/dev/null || \
-		{ cd "$(ROOT)/brain" && nohup ./scripts/stack-up.sh > "$(LOGS)/stack.log" 2>&1 & echo "  ↑ llama-stack :$(P_STACK)"; }; } || echo "  · stack: sin NVIDIA_API_KEY (brain usa ollama)"'
+		{ cd "$(ROOT)/brain" && nohup .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port $(P_BRAIN) > "$(LOGS)/brain.log" 2>&1 & echo "  ↑ brain :$(P_BRAIN)"; }'
+	@# llama stack: YA NO SE USA (sin backend global — cada cuenta trae sus
+	@# keys; ver Modelos del agente). Se deja el venv por si alguien
+	@# self-hostea (provider custom apuntando a su propio stack).
 	@# la app local (Payload CMS u otra; ver dapps/README.md)
 	@bash -c '[ -d "$(ROOT)/dapps/payload-cms/templates/with-cloudflare-d1" ] && \
 		{ (echo > /dev/tcp/localhost/$(P_APP)) 2>/dev/null || \
@@ -115,7 +122,7 @@ down:
 ## status: salud de los servicios
 status:
 	@echo "── NomikOS:"
-	@for p in "$(P_API)=api" "$(P_BRAIN)=brain" "$(P_STACK)=llama-stack" "$(P_OLLAMA)=ollama" "$(P_DAPP)=dapp" "$(P_APP)=app"; do \
+	@for p in "$(P_API)=api" "$(P_BRAIN)=brain" "$(P_OLLAMA)=ollama(shields)" "$(P_DAPP)=dapp" "$(P_APP)=app"; do \
 		port="$${p%%=*}"; name="$${p##*=}"; \
 		if (echo > /dev/tcp/localhost/$$port) 2>/dev/null; then printf "  ✓ :%-5s %s\n" "$$port" "$$name"; \
 		else printf "  ✗ :%-5s %s (DOWN)\n" "$$port" "$$name"; fi; done
@@ -136,10 +143,12 @@ test:
 		tests/13.settlement.real-chain.e2e.ts tests/14.calls.sip-bridge.e2e.ts \
 		$(suite)
 
-## test-smoke: una sola vuelta de humo del gateway agéntico
+## test-smoke: salud + guardarraíles del gateway (401 sin Bearer)
 test-smoke:
-	@curl -s --max-time 120 -X POST http://localhost:$(P_BRAIN)/v1/agentic-gateway \
-		-H 'Content-Type: application/json' -d '{"text":"estado de salud de la API"}' | head -c 400; echo
+	@curl -sm3 http://localhost:$(P_API)/api/health -o /dev/null -w "api /health → %{http_code}\n"
+	@curl -sm3 http://localhost:$(P_BRAIN)/v1/health -o /dev/null -w "brain /v1/health → %{http_code}\n"
+	@curl -s --max-time 30 -X POST http://localhost:$(P_BRAIN)/v1/agentic-gateway \
+		-H 'Content-Type: application/json' -d '{"text":"hola"}' -o /dev/null -w "gateway sin Bearer → %{http_code} (401 esperado: la cuenta trae sus keys)\n"
 
 ## ── LA PLACA (NomikOS en la Raspberry Pi 4) ────────────────────────────
 

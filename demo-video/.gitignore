@@ -1,0 +1,6 @@
+node_modules/
+out/
+src/config/data.json
+public/audio/*.mp3
+public/audio/*.wav
+.remotion/

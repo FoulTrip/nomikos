@@ -47,9 +47,8 @@ Claude Code, Cursor, etc.). **Antes de tocar código de un proyecto, lee su
 | Puerto | Servicio | Cómo arrancar |
 |---|---|---|
 | 8080 | `api` (Rust) | `cd api && cargo run` |
-| 8321 | Llama Stack (NVIDIA NIM) | `cd brain && ./scripts/stack-up.sh &` (key NIM en `brain/.env`) |
-| 8322 | `brain` (FastAPI) | `cd brain && .venv/bin/python -m uvicorn app.main:app --port 8322` |
-| 11434 | Ollama (Llama Guard 3) | `~/.local/bin/ollama serve` |
+| 8322 | `brain` (FastAPI, exige Bearer + LLM de cuenta) | `cd brain && .venv/bin/python -m uvicorn app.main:app --port 8322` |
+| 11434 | Ollama (SOLO shields Llama Guard) | `~/.local/bin/ollama serve` |
 | 3123 | `dapp` (Next.js) | `cd dapp && npm run dev` |
 
 ## Prueba de humo rápida (todo el flujo)
