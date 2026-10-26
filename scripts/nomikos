@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# nomikos — CLI del ecosistema (PC · docker exec · consola de la placa).
+#
+# La TIENDA DE APPS del worker: lista las dapps del registro, las
+# instala con «apretar AGREGAR» (confirmación interactiva) y muestra
+# las tools que gana el agente.
+#
+#   nomikos apps                    — catálogo del worker (estado + tools)
+#   nomikos apps add <slug>         — instalar (pide confirmación)
+#   nomikos apps info <slug>        — manifiesto + log de instalación
+#   nomikos apps call <slug> <tool> '{"limit":2}'  — probar una tool
+#
+# Config: NOMIKOS_API (default http://localhost:8080/api; en la placa
+# suele ser http://<host-del-api>:8080/api) · NOMIKUS_TOKEN o login
+# interactivo (email/password) para instalar.
+set -euo pipefail
+
+API="${NOMIKOS_API:-http://localhost:8080/api}"
+TOKEN="${NOMIKOS_TOKEN:-}"
+
+req() { # req <método> <ruta> [json-body]
+  local m="$1" p="$2" body="${3:-}"
+  local args=(-s -X "$m" "$API$p" -H "Content-Type: application/json")
+  [ -n "$TOKEN" ] && args+=(-H "Authorization: Bearer $TOKEN")
+  [ -n "$body" ] && args+=(-d "$body")
+  curl -m 600 "${args[@]}"
+}
+
+ensure_token() {
+  if [ -z "$TOKEN" ]; then
+    echo "── login (cuenta del agente):"
+    printf '  email: '; read -r EMAIL
+    printf '  password: '; read -rs PASSWORD; echo
+    TOKEN=$(req POST /auth/login "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}" | python3 -c "import json,sys; print(json.load(sys.stdin).get('token',''))")
+    [ -n "$TOKEN" ] || { echo "login fallido"; exit 1; }
+  fi
+}
+
+cmd_apps() {
+  if [ "${1:-}" = "add" ]; then
+    local slug="${2:?uso: nomikos apps add <slug>}"
+    echo "── catálogo del worker:"
+    req GET /apps | python3 -c "
+import json,sys
+apps = json.load(sys.stdin).get('apps') or []
+for a in apps:
+    mark = '✓ INSTALADA' if a['status']=='installed' else '· disponible'
+    print(f\"  [{a['slug']}] {a['name']} — {a['description'][:60]}…\")
+    print(f\"      estado: {mark} · tools: {a['tools_count']}\")
+"
+    printf '¿instalar «%s» (AGREGAR al agente)? [s/N] ' "$slug"
+    local ans; read -r ans
+    [ "$ans" = "s" ] || [ "$ans" = "S" ] || { echo "cancelado"; exit 0; }
+    ensure_token
+    echo "── instalando (script probado del registro)…"
+    req POST "/apps/$slug/install" | python3 -c "
+import json,sys
+d = json.load(sys.stdin)
+print('  ', 'instalando ✓' if d.get('ok') else d.get('error','fallo'))
+"
+    # sondear hasta installed/failed
+    for _ in $(seq 1 240); do
+      ST=$(req GET "/apps/$slug" | python3 -c "
+import json,sys
+a = json.load(sys.stdin).get('app') or {}
+print(a.get('status','?'))
+")
+      case "$ST" in
+        installed)
+          echo "── ✅ INSTALADA. Tools que ganó el agente:"
+          req GET "/apps/$slug" | python3 -c "
+import json,sys
+a = json.load(sys.stdin)['app']
+print('  base_url:', a['base_url'])
+for t in a['tools']:
+    print(f\"  · {t['name']}({', '.join((t.get('parameters') or {}).get('properties', {}).keys())})\")
+"
+          echo "── ya disponibles en el catálogo del agente (brain /v1/tools)"
+          exit 0 ;;
+        failed)
+          echo "── ✗ FALLÓ. Log:"
+          req GET "/apps/$slug" | python3 -c "
+import json,sys
+print((json.load(sys.stdin)['app'].get('install_log') or '')[-800:])
+"
+          exit 1 ;;
+      esac
+      sleep 2
+    done
+    echo "timeout esperando la instalación"; exit 1
+
+  elif [ "${1:-}" = "info" ]; then
+    local slug="${2:?uso: nomikos apps info <slug>}"
+    req GET "/apps/$slug" | python3 -c "
+import json,sys
+a = json.load(sys.stdin)['app']
+print(f\"{a['name']} [{a['slug']}] — {a['description']}\")
+print('  estado:', a['status'], '· base_url:', a['base_url'])
+print('  tools:')
+for t in a['tools']:
+    print(f\"   · {t['name']}({', '.join((t.get('parameters') or {}).get('properties', {}).keys())}) — {t['description'][:70]}\")
+log = (a.get('install_log') or '').strip()
+if log: print('  install_log (cola):'); print('   ', log[-400:])
+"
+
+  elif [ "${1:-}" = "call" ]; then
+    local slug="${2:?uso: nomikos apps call <slug> <tool> '{args}'}"
+    local tool="${3:?falta la tool}"
+    local args="${4:-{\}}"
+    echo "── tool $tool del MCP manager del agente:"
+    req POST /agent/call "{\"tool\":\"$tool\",\"args\":$args}" | python3 -m json.tool | head -30
+
+  else
+    echo "── apps del worker ($API):"
+    req GET /apps | python3 -c "
+import json,sys
+apps = json.load(sys.stdin).get('apps') or []
+if not apps: print('  (registro vacío)')
+for a in apps:
+    mark = '✓ INSTALADA' if a['status']=='installed' else '· disponible'
+    print(f\"  [{a['slug']}] {a['name']} — {mark} · tools: {a['tools_count']}\")
+    print(f\"      {a['description'][:90]}\")
+"
+  fi
+}
+
+case "${1:-}" in
+  apps) shift; cmd_apps "$@" ;;
+  *)
+    cat <<EOF
+nomikos — CLI del ecosistema NomikOS
+
+  nomikos apps                     catálogo de dapps del worker
+  nomikos apps add <slug>          AGREGAR una app al agente (instala)
+  nomikos apps info <slug>         manifiesto + estado + log
+  nomikos apps call <slug> <tool>  probar una tool del MCP manager
+
+env: NOMIKES_API=$API · NOMIKOS_TOKEN=<Bearer> (si no, login interactivo)
+EOF
+    ;;
+esac

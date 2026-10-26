@@ -1,0 +1,4 @@
+# NomikOS — Raspberry Pi 4 (64 bits)
+arm_64bit=1
+enable_uart=1
+dtparam=audio=off

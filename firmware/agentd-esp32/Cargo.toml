@@ -1,0 +1,51 @@
+[package]
+name = "agentd-esp32"
+version = "0.1.0"
+edition = "2021"
+description = "Firmware NomikOS para el ESP32-S3-Touch-AMOLED-1.43 (Waveshare)"
+
+[[bin]]
+name = "agentd-esp32"
+path = "src/main.rs"
+
+# Su propio workspace: firmware/Cargo.toml lo EXCLUYE (requiere el
+# toolchain xtensa de espup) — esto evita el "believes it's in a workspace".
+[workspace]
+
+[dependencies]
+# ── Ciclo del agente (compartido con el simulador host) ──
+agentd-core = { path = "../agentd-core" }
+
+# ── Familia esp-rs v0.23 (espressif) — versiones liberadas en lockstep ──
+esp-hal = { version = "0.23.1", features = ["esp32s3", "unstable"] }
+esp-wifi = { version = "0.12.0", features = ["esp32s3", "wifi", "utils", "log"] }
+esp-alloc = "0.6.0"
+esp-backtrace = { version = "0.15.0", features = ["esp32s3", "panic-handler", "exception-handler", "println"] }
+esp-println = { version = "0.13.0", features = ["esp32s3", "log"] }
+# Persistencia: PENDIENTE — esp-storage 0.4 escribe flash a offsets crudos
+# (requiere el mapa de particiones del bootloader para no arriesgar la
+# placa); la v0.1 re-enrola en cada arranque (ver state.rs).
+
+# ── Red: stack blocking propio sobre smoltcp (misma versión que esp-wifi) ──
+smoltcp = { version = "0.12", default-features = false, features = [
+    "medium-ethernet",
+    "proto-ipv4",
+    "socket-tcp",
+    "socket-dhcpv4",
+] }
+embedded-io = "0.6"
+embedded-hal = "1.0"
+heapless = "0.8"
+
+# ── Pantalla AMOLED 466×466 (RM67162 por QSPI) ──
+embedded-graphics = "0.8"
+
+[features]
+default = []
+# Sin hardware: compila el driver con la secuencia de init provisional.
+mock-display = []
+
+[profile.release]
+lto = true
+strip = true
+opt-level = "s"

@@ -1,0 +1,28 @@
+# agentd-voice — bucle de voz de NomikOS (W1, diagram.d2 A1-A8):
+#   mic (arecord) → whisper-cli (STT) → POST /api/voice (worker) →
+#   brain (orquestador) → reply → piper (TTS) → altavoz (aplay)
+# Arranca cuando agentd ya tiene token (dispositivo emparejado desde
+# el panel: 📡 Flota → Emparejar).
+[Unit]
+Description=NomikOS voz — mic→whisper→/api/voice→piper→altavoz
+After=agentd.service network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/agentd/agentd.conf
+Environment=WHISPER_BIN=/usr/bin/whisper-cli
+Environment=WHISPER_MODEL=/usr/share/whisper/ggml-base.bin
+Environment=PIPER_BIN=/opt/piper/piper
+Environment=PIPER_MODEL=/opt/piper/voices/es_ES-sharvard-medium.onnx
+Environment=PIPER_SAMPLE_RATE=22050
+Environment=LD_LIBRARY_PATH=/opt/piper
+# espera a que el dispositivo esté emparejado (token en el estado)
+ExecStartPre=/usr/bin/wait-agent-token.sh
+ExecStart=/usr/bin/voice-loop.sh
+Restart=always
+RestartSec=10
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

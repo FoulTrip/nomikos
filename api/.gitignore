@@ -1,0 +1,18 @@
+# ──────────────────────────────────────────────────────────────────────
+# NomikOS — api/ (Rust)
+# ──────────────────────────────────────────────────────────────────────
+
+# Build artifacts
+target/
+**/*.rs.bk
+
+# Datos vivos (ledger con secretos cifrados)
+data/
+
+# Secretos y credenciales
+.env
+*.env
+!*.env.example
+
+# Logs
+*.log

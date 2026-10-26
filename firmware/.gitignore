@@ -1,0 +1,11 @@
+# ──────────────────────────────────────────────────────────────────────
+# NomikOS — firmware/ (Rust no_std + simulador host + esp32)
+# ──────────────────────────────────────────────────────────────────────
+
+# Build artifacts (host + esp32)
+target/
+agentd-esp32/target/
+**/*.rs.bk
+
+# Logs
+*.log

@@ -1,0 +1,13 @@
+{
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "e2e": "^0.21.3"
+  },
+  "scripts": {
+    "test:e2e": "e2e run"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  }
+}

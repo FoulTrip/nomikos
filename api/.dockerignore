@@ -1,0 +1,7 @@
+# contexto de build del api: SOLO fuentes (target/ pesa GBs y data/ es
+# el ledger vivo con secretos cifrados)
+target/
+data/
+.env
+nohup.out
+*.log

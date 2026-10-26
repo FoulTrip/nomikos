@@ -1,0 +1,29 @@
+# NomikOS OTA — descriptor swupdate
+#
+# Estructura del update A/B del rootfs (agentd + sistema). El bundle
+# (.swu) se sirve desde el api del ecosistema y el dispositivo lo aplica
+# con `swupdate -i bundle.swu` (Fase 5: el agente lo dispara como un
+# comando remoto del orquestador).
+#
+# Generación del bundle (cuando BR2_PACKAGE_SWUPDATE esté activo):
+#   cd nomikos/swupdate && swugenerate nomikos.swdescription -o . \
+#     -f rootfs.ext4:images/rootfs.ext4
+
+software = {
+	version = "0.1.0-nomikos-rpi4";
+
+	nomikos = {
+		stable = {
+			images = (
+				{
+					filename = "rootfs.ext4";
+					device = "/dev/mmcblk0p2";
+					compressed = "false";
+					installed-directly = "true";
+				}
+			);
+			scripts = ( );
+			bootenv = ( );
+		};
+	};
+}

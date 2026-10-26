@@ -1,0 +1,12 @@
+[package]
+name = "agentd-host"
+version = "0.1.0"
+edition = "2021"
+description = "Simulador host (std) del agente de dispositivos HackatOS"
+
+[dependencies]
+agentd-core = { path = "../agentd-core" }
+
+[profile.release]
+lto = true
+strip = true

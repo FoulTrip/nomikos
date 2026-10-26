@@ -1,0 +1,9 @@
+# DHCP en ethernet por systemd-networkd (systemd uso Nativo en NomikOS).
+[Match]
+Name=eth0
+
+[Network]
+DHCP=yes
+
+[DHCP]
+RouteMetric=10

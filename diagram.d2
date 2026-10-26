@@ -1,0 +1,270 @@
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 0
+    pad: 56
+  }
+}
+
+direction: down
+
+# ───────── Estilos ─────────
+classes: {
+  capa_slate: {
+    style: {
+      fill: "#F1F5F9"
+      stroke: "#CBD5E1"
+      border-radius: 12
+      font-size: 20
+      bold: true
+      font-color: "#0F172A"
+      shadow: false
+    }
+  }
+  capa_azul: {
+    style: {
+      fill: "#EFF6FF"
+      stroke: "#BFDBFE"
+      border-radius: 12
+      font-size: 20
+      bold: true
+      font-color: "#1E3A8A"
+      shadow: false
+    }
+  }
+  capa_teal: {
+    style: {
+      fill: "#F0FDFA"
+      stroke: "#99F6E4"
+      border-radius: 12
+      font-size: 20
+      bold: true
+      font-color: "#115E59"
+      shadow: false
+    }
+  }
+  capa_ambar: {
+    style: {
+      fill: "#FFFBEB"
+      stroke: "#FDE68A"
+      border-radius: 12
+      font-size: 20
+      bold: true
+      font-color: "#92400E"
+      shadow: false
+    }
+  }
+  capa_violeta: {
+    style: {
+      fill: "#F5F3FF"
+      stroke: "#DDD6FE"
+      border-radius: 12
+      font-size: 20
+      bold: true
+      font-color: "#4C1D95"
+      shadow: false
+    }
+  }
+
+  nodo: {
+    shape: rectangle
+    width: 220
+    height: 90
+    style: {
+      fill: "#FFFFFF"
+      stroke: "#475569"
+      stroke-width: 2
+      border-radius: 8
+      font-size: 15
+      font-color: "#0F172A"
+      shadow: false
+    }
+  }
+  nodo_azul: {
+    shape: rectangle
+    width: 220
+    height: 90
+    style: {
+      fill: "#FFFFFF"
+      stroke: "#1E40AF"
+      stroke-width: 2
+      border-radius: 8
+      font-size: 15
+      font-color: "#0F172A"
+      shadow: false
+    }
+  }
+  nodo_teal: {
+    shape: rectangle
+    width: 220
+    height: 90
+    style: {
+      fill: "#FFFFFF"
+      stroke: "#0F766E"
+      stroke-width: 2
+      border-radius: 8
+      font-size: 15
+      font-color: "#0F172A"
+      shadow: false
+    }
+  }
+  nodo_ambar: {
+    shape: rectangle
+    width: 220
+    height: 90
+    style: {
+      fill: "#FFFFFF"
+      stroke: "#B45309"
+      stroke-width: 2
+      border-radius: 8
+      font-size: 15
+      font-color: "#0F172A"
+      shadow: false
+    }
+  }
+  nodo_violeta: {
+    shape: rectangle
+    width: 220
+    height: 90
+    style: {
+      fill: "#FFFFFF"
+      stroke: "#5B21B6"
+      stroke-width: 2
+      border-radius: 8
+      font-size: 15
+      font-color: "#0F172A"
+      shadow: false
+    }
+  }
+
+  f_voz: {
+    style: {
+      stroke: "#475569"
+      stroke-width: 2
+      font-size: 13
+      font-color: "#334155"
+      bold: true
+    }
+  }
+  f_pago: {
+    style: {
+      stroke: "#1E40AF"
+      stroke-width: 2
+      font-size: 13
+      font-color: "#1E3A8A"
+      bold: true
+    }
+  }
+  f_flota: {
+    style: {
+      stroke: "#0F766E"
+      stroke-width: 2
+      font-size: 13
+      font-color: "#115E59"
+      bold: true
+    }
+  }
+  f_call: {
+    style: {
+      stroke: "#B45309"
+      stroke-width: 2
+      font-size: 13
+      font-color: "#92400E"
+      bold: true
+    }
+  }
+  f_dapp: {
+    style: {
+      stroke: "#5B21B6"
+      stroke-width: 2
+      stroke-dash: 3
+      font-size: 13
+      font-color: "#4C1D95"
+      bold: true
+    }
+  }
+  f_base: {
+    style: {
+      stroke: "#94A3B8"
+      stroke-width: 1
+      font-size: 12
+      font-color: "#64748B"
+    }
+  }
+}
+
+# ───────── 1 · Personas y dispositivos ─────────
+Personas: "👥 1 · Personas y dispositivos" {
+  class: capa_slate
+
+  Usuario: "👤 Usuario\nHabla y gestiona" { class: nodo }
+  Dispositivo: "📟 Dispositivo NomikOS\nMicrófono y altavoz" { class: nodo }
+  Panel: "🖥️ Panel web\nCuenta y dispositivos" { class: nodo }
+}
+
+# ───────── 2 · Plataforma ─────────
+Plataforma: "☁️ 2 · Plataforma TripKode" {
+  class: capa_azul
+
+  Cuentas: "🔑 Cuentas\nLogin e identidad" { class: nodo_azul }
+  Voz: "🎙️ Voz\nRecibe y responde" { class: nodo_azul }
+  Flota: "📡 Flota\nRegistro y estado" { class: nodo_azul }
+}
+
+# ───────── 3 · Asistente IA ─────────
+IA: "🤖 3 · Asistente IA" {
+  class: capa_teal
+
+  Asistente: "🤖 Asistente\nDecide y ejecuta" { class: nodo_teal }
+  Modelo: "🧠 Modelo de lenguaje\nEntiende y razona" { class: nodo_teal }
+  Filtro: "🛡️ Filtro de seguridad\nRevisa mensajes" { class: nodo_teal }
+}
+
+# ───────── 4 · Acceso y pagos ─────────
+Pagos: "💳 4 · Acceso y pagos" {
+  class: capa_ambar
+
+  Acceso: "🔒 Control de acceso\nExige y verifica el pago" { class: nodo_ambar }
+  Billetera: "👛 Billetera\nFirma los pagos" { class: nodo_ambar }
+  Blockchain: "⛓️ Blockchain Solana\nConfirma el pago" { class: nodo_ambar }
+  Historial: "🗄️ Historial\nPagos y movimientos" { class: nodo_ambar }
+}
+
+# ───────── 5 · Ecosistema de dApps ─────────
+Dapps: "🧩 5 · Ecosistema de dApps" {
+  class: capa_violeta
+
+  Payload: "🗂️ Payload CMS\nGestión de contenido" { class: nodo_violeta }
+  Llamadas: "📞 Llamadas\nCobro por minuto" { class: nodo_violeta }
+  Nuevas: "➕ Nuevas dApps\nSe conectan al mismo acceso" { class: nodo_violeta }
+}
+
+# ───────── Relaciones internas ─────────
+IA.Asistente <-> IA.Modelo: "razona" { class: f_base }
+IA.Asistente <-> IA.Filtro: "revisa" { class: f_base }
+Pagos.Blockchain -> Pagos.Historial: "guarda" { class: f_base }
+
+# ───────── A · Voz ─────────
+Personas.Usuario -> Personas.Dispositivo: "A1 · habla" { class: f_voz }
+Personas.Dispositivo <-> Plataforma.Voz: "A2 · envía\nA5 · responde" { class: f_voz }
+Plataforma.Voz <-> IA.Asistente: "A3 · consulta\nA4 · respuesta" { class: f_voz }
+
+# ───────── B · Servicio con pago ─────────
+IA.Asistente <-> Pagos.Acceso: "B1 · pide servicio\nB2 · exige pago" { class: f_pago }
+IA.Asistente <-> Pagos.Billetera: "B3 · firma pago" { class: f_pago }
+Pagos.Acceso -> Dapps.Payload: "B4 · verifica y entrega" { class: f_pago }
+Pagos.Acceso -> Pagos.Blockchain: "B5 · registra pago" { class: f_pago }
+
+# ───────── C · Registro de dispositivo ─────────
+Personas.Dispositivo <-> Plataforma.Flota: "C1 · pide registro\nC3 · queda activo" { class: f_flota }
+Personas.Panel -> Plataforma.Flota: "C2 · confirma código" { class: f_flota }
+
+# ───────── D · Llamadas ─────────
+Pagos.Acceso -> Dapps.Llamadas: "D1 · inicia llamada" { class: f_call }
+
+# ───────── Futuro ─────────
+Pagos.Acceso -> Dapps.Nuevas: "mismo acceso" { class: f_dapp }
+
+# ───────── E · Panel ─────────
+Personas.Panel -> Plataforma.Cuentas: "E1 · inicia sesión" { class: f_base }
+IA.Asistente -> Plataforma.Cuentas: "verifica identidad" { class: f_base }

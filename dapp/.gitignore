@@ -1,0 +1,15 @@
+# Dependencias
+/node_modules
+
+# Build de Next.js
+/.next/
+/out/
+
+# Misceláneo
+*.log
+.DS_Store
+*.pem
+
+# Entorno
+.env*
+!.env.example

@@ -1,0 +1,148 @@
+"use client";
+
+import { Suspense, useMemo, useState } from "react";
+import { Canvas } from "@react-three/fiber";
+import {
+  Bounds,
+  Center,
+  ContactShadows,
+  Environment,
+  Lightformer,
+  OrbitControls,
+  useGLTF,
+  useProgress,
+} from "@react-three/drei";
+import * as THREE from "three";
+import { LoaderCircle } from "lucide-react";
+import DeviceScreen from "./DeviceScreen";
+
+/** Ruta del modelo glb: proxy local → agent-os-api → Cloudflare R2. */
+const MODEL_URL = "/api/device/model";
+
+/**
+ * Overlay de carga como DOM plano, FUERA del <Canvas>.
+ *
+ * El `<Html>` de drei crea un root de ReactDOM dentro del canvas y lo
+ * desmonta en el cleanup de useLayoutEffect — durante el commit de React
+ * — lo que con React 19 produce:
+ *   "Attempted to synchronously unmount a root while React was already
+ *    rendering" + NotFoundError removeChild al navegar login⇄panel.
+ * `useProgress` lee un store externo y no crea roots: mismo UX, sin carrera.
+ */
+function ModelLoader() {
+  const { active, progress, errors } = useProgress();
+  if (!active || errors.length > 0) return null;
+  return (
+    <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center gap-2 bg-[radial-gradient(600px_300px_at_50%_45%,rgba(20,17,11,0.85),rgba(20,17,11,0.55))] text-sm tracking-wide text-muted-foreground">
+      <LoaderCircle className="size-4 animate-spin text-primary" />
+      Cargando modelo 3D… {Math.round(progress)}%
+    </div>
+  );
+}
+
+function Device() {
+  // (path, useDraco, useMeshOpt): el GLB usa compresión meshopt,
+  // cuyo decodificador se incluye localmente (sin CDN).
+  const { scene } = useGLTF(MODEL_URL, false, true);
+
+  // Material estilizado (el STEP no exporta texturas) + sombras por malla.
+  useMemo(() => {
+    scene.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (mesh.isMesh) {
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.material = new THREE.MeshStandardMaterial({
+          color: "#23272e",
+          metalness: 0.55,
+          roughness: 0.42,
+        });
+      }
+    });
+  }, [scene]);
+
+  // El CAD llega "acostado" (pantalla hacia +Y). Se pone de pie,
+  // con la pantalla mirando a la cámara (+Z).
+  return (
+    <group rotation={[Math.PI / 2, 0, 0]}>
+      <primitive object={scene} />
+      {/* Superponemos la pantalla táctil / OS en el frente del dispositivo */}
+      <DeviceScreen />
+    </group>
+  );
+}
+
+export default function DeviceViewer() {
+  const [autoRotate, setAutoRotate] = useState(true);
+
+  return (
+    <div className="absolute inset-0">
+      <ModelLoader />
+      {/* shadows="percentage": R3F mapea `true` → PCFSoftShadowMap, enum
+          removido en three 0.186 (warning); PCFShadowMap es el fallback
+          que three usa de todos modos. */}
+      <Canvas shadows="percentage" dpr={[1, 2]} camera={{ position: [30, 22, 80], fov: 40 }}>
+        <color attach="background" args={["#14110b"]} />
+
+        {/* Iluminación local (sin descargas externas) */}
+        <ambientLight intensity={0.35} />
+        <directionalLight
+          position={[40, 60, 30]}
+          intensity={2.2}
+          castShadow
+          shadow-mapSize={[1024, 1024]}
+        />
+        <directionalLight position={[-50, 15, -40]} intensity={0.8} color="#8fb6ff" />
+        <Environment resolution={256}>
+          <Lightformer intensity={3} position={[0, 5, 2]} scale={[12, 12, 1]} />
+          <Lightformer
+            intensity={1.6}
+            position={[-6, 0, -1]}
+            rotation-y={Math.PI / 2}
+            scale={[12, 12, 1]}
+            color="#9fc4ff"
+          />
+          <Lightformer
+            intensity={1.6}
+            position={[6, 0, 1]}
+            rotation-y={-Math.PI / 2}
+            scale={[12, 12, 1]}
+            color="#ffd9a0"
+          />
+        </Environment>
+
+        {/* fallback={null}: el loader vive fuera del Canvas (ModelLoader) */}
+        <Suspense fallback={null}>
+          {/* Encaja automáticamente el modelo en cámara, sea cual sea su escala */}
+          <Bounds fit clip observe margin={1.2}>
+            <Center>
+              <Device />
+            </Center>
+          </Bounds>
+          <ContactShadows
+            position={[0, -24.5, 0]}
+            opacity={0.55}
+            scale={80}
+            blur={2.5}
+            far={20}
+          />
+        </Suspense>
+
+        {/* Rotación con el ratón, zoom con la rueda, pan con clic derecho */}
+        {/* Auto-rotate hasta que el usuario interactúa con los controles */}
+        <OrbitControls
+          makeDefault
+          enableDamping
+          dampingFactor={0.08}
+          autoRotate={autoRotate}
+          onStart={() => setAutoRotate(false)}
+          autoRotateSpeed={1.2}
+          minDistance={15}
+          maxDistance={250}
+        />
+      </Canvas>
+    </div>
+  );
+}
+
+useGLTF.preload(MODEL_URL, false, true);

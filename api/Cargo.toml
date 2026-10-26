@@ -1,0 +1,25 @@
+[package]
+name = "agent-os-api"
+version = "0.1.0"
+edition = "2021"
+description = "API del Agente OS: módulos ERP (Medusa.js / Kodetap), x402 Solana y estado del dispositivo (R2)"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.7", features = ["cors", "trace"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.31", features = ["bundled"] }
+sha2 = "0.10"
+hmac = "0.12"
+hex = "0.4"
+base64 = "0.22"
+ed25519-dalek = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# ── Gestión de cuentas (email+password, dPaaS) ──
+argon2 = "0.5"                 # hashing de passwords (argon2id, PHC)
+rand = "0.8"                   # tokens de sesión y nonces AEAD
+chacha20poly1305 = "0.10"      # cifrado de secretos en reposo (XChaCha20-Poly1305)

@@ -1,0 +1,64 @@
+# ──────────────────────────────────────────────────────────────────────
+# NomikOS — .gitignore del monorepo
+# Regla de oro: los SECRETOS y los DATOS VIVOS no se suben NUNCA
+# (ver "Seguridad" en README.md y la regla #7 de AGENTS.md).
+# ──────────────────────────────────────────────────────────────────────
+
+# ── Secretos y credenciales ──────────────────────────────────────────
+.env
+*.env
+!*.env.example
+dapp/credentials.json
+api/scripts/faucet/nomikos-treasury.json
+
+# ── Datos vivos ──────────────────────────────────────────────────────
+# Ledger SQLite (keypairs cifrados, tokens, facturas, treasury fondeado)
+api/data/
+
+# ── Build artifacts (Rust) ───────────────────────────────────────────
+target/
+**/*.rs.bk
+
+# ── Node ─────────────────────────────────────────────────────────────
+node_modules/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# ── Python ───────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+.venv-*/
+.mypy_cache/
+.ruff_cache/
+
+# ── dapps — clon upstream de Payload (no se sube) ────────────────────
+# dapps/payload-cms/ tiene .git PROPIO: si git desciende ahí registra un
+# gitlink roto en vez de archivos. Por eso el directorio entero queda
+# ignorado y su doc local vive FUERA: dapps/CONTEXT-payload-cms-local.md
+dapps/*
+!dapps/README.md
+!dapps/registry/
+!dapps/CONTEXT-payload-cms-local.md
+
+# ── Pruebas ──────────────────────────────────────────────────────────
+tests/.e2e/
+tests/playwright-report/
+
+# ── Varios ───────────────────────────────────────────────────────────
+*.log
+nohup.out
+.DS_Store
+*.swp
+.vscode/
+# dirs creados por mala expansión de ~ en herramientas (junk runtime)
+~/
+
+# ── Capa OS embebida (os/): solo se excluyen artefactos de voz ──────
+# (buildroot-external, context.md, README.md y swupdate SÍ se versionan;
+# whisper.cpp y los modelos se re-crean con os/voice/host-setup.sh)
+os/voice/.venv-host/
+os/voice/whisper.cpp/
+os/voice/models/
+os/voice/voices/

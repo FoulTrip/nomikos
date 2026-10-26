@@ -1,0 +1,90 @@
+services:
+  # ──────────────────────────────────────────────────────────────────
+  # NomikOS — el ecosistema local en docker.
+  # `docker compose up --build` deja el panel en http://localhost:3000
+  # con el api en :8080. brain/ollama/la app corren en el host (make up)
+  # y los contenedores los alcanzan por host.docker.internal.
+  # Credenciales: el .env de la RAÍZ (nunca horneadas en las imágenes).
+  # ──────────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: nomikos-api
+    # TODO el .env central de la raíz + los overrides de red del container
+    # (environment: gana sobre env_file). La regla #4: una sola fuente.
+    env_file:
+      - .env
+    environment:
+      # La app del ecosistema (a la que el agente paga peaje por petición).
+      # HARD-CODED al host: el .env central trae localhost:3100 (correcto
+      # para procesos del host, incorrecto dentro del contenedor).
+      PAYLOAD_URL: "http://host.docker.internal:3100"
+      PAYLOAD_EMAIL: "${PAYLOAD_EMAIL:-}"
+      PAYLOAD_PASSWORD: "${PAYLOAD_PASSWORD:-}"
+      PAYLOAD_TOKEN: "${PAYLOAD_TOKEN:-}"
+      SOLANA_NETWORK: "${SOLANA_NETWORK:-devnet}"
+      SOLANA_DEVNET_URL: "${SOLANA_DEVNET_URL:-https://api.devnet.solana.org}"
+      AGENT_OS_API_HOST: "0.0.0.0"
+      AGENT_OS_API_PORT: "8080"
+      # Orquestador (voz): POST /api/voice → BRAIN_URL (hard-coded: el
+      # .env central trae localhost — dentro del contenedor no aplica)
+      BRAIN_URL: "http://host.docker.internal:8322"
+      # Cifrado de secretos de cuentas (keypairs, api_keys) — 32 B base64.
+      ACCOUNTS_MASTER_KEY: "${ACCOUNTS_MASTER_KEY:?genera con: make secrets}"
+      # Tienda de dapps: catálogo del host montado read-only (las tools
+      # de apps instaladas se comparten vía DB). El INSTALL corre en el
+      # host (necesita node/git): ver scripts/nomikos.
+      DAPPS_REGISTRY: "/workspace/dapps/registry"
+      APP_INSTALL_SCRIPT: "/workspace/scripts/install-app.sh"
+      # la app vive gestionada en el host (make up); el contenedor solo
+      # registra su base_url + credenciales al instalar
+      NOMIKOS_APP_URL: "http://172.17.0.1:3100"
+      # Faucet Devnet (settlement real): keypair del host
+      FAUCET_ENABLED: "${FAUCET_ENABLED:-1}"
+      FAUCET_KEYPAIR: "/workspace/api/scripts/faucet/nomikos-treasury.json"
+      FAUCET_LAMPORTS: "${FAUCET_LAMPORTS:-50000000}"
+      X402_APP_LAMPORTS: "${X402_APP_LAMPORTS:-1000}"
+      X402_PATH_LAMPORTS: "${X402_PATH_LAMPORTS:-1000}"
+      # Cloudflare R2 (modelo 3D del simulador)
+      R2_ACCOUNT_ID: "${R2_ACCOUNT_ID:?falta R2_ACCOUNT_ID en .env}"
+      R2_ACCESS_KEY_ID: "${R2_ACCESS_KEY_ID:?falta R2_ACCESS_KEY_ID en .env}"
+      R2_SECRET_ACCESS_KEY: "${R2_SECRET_ACCESS_KEY:?falta R2_SECRET_ACCESS_KEY en .env}"
+      R2_BUCKET: "${R2_BUCKET:-}"
+      R2_MODEL_KEY: "${R2_MODEL_KEY:-models/ESP32-S3-Touch-AMOLED-1.43.glb}"
+      R2_PUBLIC_URL_BASE: "${R2_PUBLIC_URL_BASE:-}"
+    volumes:
+      # el ledger vive en el host (persiste; el api del host debe estar DOWN)
+      - ./api/data:/app/data
+      # registro de dapps + treasury del faucet, read-only desde el host
+      - ./dapps/registry:/workspace/dapps/registry:ro
+      - ./scripts:/workspace/scripts:ro
+      - ./api/scripts/faucet:/workspace/api/scripts/faucet:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  dapp:
+    build:
+      context: ./dapp
+      dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* se inyectan en BUILD time
+        NEXT_PUBLIC_DEPLOYMENT: "docker"
+    container_name: nomikos-dapp
+    depends_on:
+      - api
+    environment:
+      API_GATEWAY_URL: "http://api:8080/api"
+      AUTH_SECRET: "${AUTH_SECRET:?AUTH_SECRET requerido (make secrets)}"
+      BRAIN_URL: "http://host.docker.internal:8322"
+      NEXT_PUBLIC_DEPLOYMENT: "docker"
+      NODE_ENV: "production"
+      PORT: "3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "3000:3000"
+    restart: unless-stopped

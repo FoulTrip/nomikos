@@ -1,0 +1,13 @@
+# ──────────────────────────────────────────────────────────────────────
+# NomikOS — os/ (capa OS embebida, Buildroot + agentd, voz)
+# Referenciada en el root .gitignore como /os/.
+# ──────────────────────────────────────────────────────────────────────
+
+# Voz: whisper.cpp y piper se re-crean con host-setup.sh
+voice/.venv-host/
+voice/whisper.cpp/
+voice/models/
+voice/voices/
+
+# Logs
+*.log

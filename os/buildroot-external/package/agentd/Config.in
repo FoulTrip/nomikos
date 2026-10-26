@@ -1,0 +1,8 @@
+config BR2_PACKAGE_AGENTD
+	bool "agentd"
+	select BR2_PACKAGE_RUST_TARGET_ARCH_SUPPORTS
+	help
+	  Agente de dispositivo del ecosistema NomikOS: ciclo
+	  enroll → claim → token → heartbeat + peaje x402 contra el api
+	  (agent-os-api). Compila el workspace firmware/ (agentd-core +
+	  agentd-host) — sin dependencias externas, build offline.

@@ -1,0 +1,7 @@
+# NomikOS — árbol BR2_EXTERNAL
+# Registra el paquete agentd (Rust, sin dependencias externas) y las
+# configuraciones por placa (defconfigs nomikos_*).
+menu "NomikOS"
+source "$BR2_EXTERNAL_NOMIKOS_PATH/package/agentd/Config.in"
+source "$BR2_EXTERNAL_NOMIKOS_PATH/package/whisper-cpp/Config.in"
+endmenu

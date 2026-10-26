@@ -1,0 +1,19 @@
+# agentd — agente de dispositivo NomikOS.
+# El claim code y los logs salen por la consola serial; el estado vive
+# en /var/lib/agentd (equivalente NVS del firmware MCU).
+[Unit]
+Description=NomikOS agentd — agente de dispositivo del ecosistema (x402)
+After=network-online.target systemd-networkd.service
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/agentd/agentd.conf
+ExecStart=/usr/bin/agentd
+Restart=always
+RestartSec=5
+# estado persistente + salida por journal (visible en consola serial)
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

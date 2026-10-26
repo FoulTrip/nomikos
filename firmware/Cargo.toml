@@ -1,0 +1,6 @@
+[workspace]
+# HackatOS Fase 3 — agente de dispositivo.
+# agentd-esp32 se compila APARTE (requiere el toolchain xtensa de espup
+# y su propio target): ver agentd-esp32/README.md.
+resolver = "2"
+members = ["agentd-core", "agentd-host"]

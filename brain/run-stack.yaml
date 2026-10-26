@@ -1,0 +1,106 @@
+# Distribución Llama Stack para agent-brain — providers: OpenAI + NVIDIA NIM (+ Muse via tool).
+#
+# Inference   : remote::openai (OPENAI_API_KEY) y remote::nvidia (NVIDIA_API_KEY, NIM real)
+# Responses   : builtin (server-side orchestration con tool-calling)
+# Tool runtime: MCP (client remoto, para servidores MCP a futuro)
+# Llama Guard : corriendo en Ollama local (:11434, llama-guard3:1b) desde agent-brain/shields.py
+# Muse        : no es HTTP (MSP/stdio) → integrado como tool `ask_muse` (muse exec)
+#
+# Arrancar:
+#   NVIDIA_API_KEY=nvapi-... .venv-stack/bin/llama stack run run-stack.yaml
+version: 2
+distro_name: agent-brain
+apis:
+- inference
+- responses
+- tool_runtime
+- vector_io
+- files
+- file_processors
+providers:
+  inference:
+  # OpenAI (se activa solo si OPENAI_API_KEY está en el entorno)
+  - provider_id: ${env.OPENAI_API_KEY:+openai}
+    provider_type: remote::openai
+    config:
+      api_key: ${env.OPENAI_API_KEY:=}
+      base_url: ${env.OPENAI_BASE_URL:=https://api.openai.com/v1}
+  # NVIDIA NIM (se activa solo si NVIDIA_API_KEY está en el entorno)
+  - provider_id: ${env.NVIDIA_API_KEY:+nvidia}
+    provider_type: remote::nvidia
+    config:
+      base_url: ${env.NVIDIA_BASE_URL:=https://integrate.api.nvidia.com/v1}
+      api_key: ${env.NVIDIA_API_KEY:=}
+  vector_io:
+  - provider_id: sqlite-vec
+    provider_type: inline::sqlite-vec
+    config:
+      db_path: ~/.llama/agent-brain/sqlite_vec.db
+      persistence:
+        namespace: vector_io::sqlite_vec
+        backend: kv_default
+  responses:
+  - provider_id: builtin
+    provider_type: inline::builtin
+    config:
+      persistence:
+        agent_state:
+          namespace: agents
+          backend: kv_default
+        responses:
+          table_name: responses
+          backend: sql_default
+          max_write_queue_size: 10000
+          num_writers: 2
+  tool_runtime:
+  - provider_id: model-context-protocol
+    provider_type: remote::model-context-protocol
+  files:
+  - provider_id: builtin-files
+    provider_type: inline::localfs
+    config:
+      storage_dir: ~/.llama/agent-brain/files
+      metadata_store:
+        table_name: files_metadata
+        backend: sql_default
+  file_processors:
+  - provider_id: pypdf
+    provider_type: inline::pypdf
+storage:
+  backends:
+    kv_default:
+      type: kv_sqlite
+      db_path: ~/.llama/agent-brain/kvstore.db
+    sql_default:
+      type: sql_sqlite
+      db_path: ~/.llama/agent-brain/sql_store.db
+  stores:
+    metadata:
+      namespace: registry
+      backend: kv_default
+    inference:
+      table_name: inference_store
+      backend: sql_default
+      max_write_queue_size: 10000
+      num_writers: 2
+    conversations:
+      table_name: openai_conversations
+      backend: sql_default
+    prompts:
+      namespace: prompts
+      backend: kv_default
+registered_resources:
+  models:
+  # Modelos servidos por NVIDIA NIM (provider_id debe coincidir con el de arriba)
+  - provider_id: nvidia
+    model_id: meta/llama-3.1-8b-instruct
+    model_type: llm
+  - provider_id: nvidia
+    model_id: meta/llama-3.3-70b-instruct
+    model_type: llm
+  - provider_id: nvidia
+    model_id: nvidia/llama-3.3-nemotron-super-49b-v1.5
+    model_type: llm
+  shields: []
+server:
+  port: 8321

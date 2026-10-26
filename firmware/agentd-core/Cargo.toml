@@ -1,0 +1,5 @@
+[package]
+name = "agentd-core"
+version = "0.1.0"
+edition = "2021"
+description = "Logica portable del agente de dispositivos HackatOS (no_std)"

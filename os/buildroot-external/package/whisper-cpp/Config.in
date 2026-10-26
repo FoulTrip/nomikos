@@ -1,0 +1,9 @@
+config BR2_PACKAGE_WHISPER_CPP
+	bool "whisper-cpp"
+	depends on BR2_USE_MMU
+	help
+	  whisper.cpp — STT (speech-to-text) local de NomikOS: el audio del
+	  micrófono se transcribe EN la placa (ggml-base multilingüe) y el
+	  turno viaja al worker del ecosistema (POST /api/voice).
+
+	  https://github.com/ggml-org/whisper.cpp

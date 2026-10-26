@@ -1,0 +1,4 @@
+[toolchain]
+# Toolchain xtensa instalado por `espup install --targets esp32s3`:
+# el canal «esp» es el fork de rust para xtensa (esp-rs).
+channel = "esp"

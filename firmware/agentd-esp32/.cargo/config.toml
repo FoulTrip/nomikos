@@ -1,0 +1,22 @@
+[target.xtensa-esp32s3-none-elf]
+runner = "espflash flash --monitor"
+rustflags = [
+    # GNU LD (toolchain xtensa de espup)
+    "-C", "link-arg=-Wl,-Tlinkall.x",
+    "-C", "link-arg=-nostartfiles",
+]
+
+[build]
+target = "xtensa-esp32s3-none-elf"
+
+# El toolchain esp 1.97 ya NO trae rust-std precompilado: core/alloc se
+# compilan desde rust-src (canal esp = fork nightly → -Zbuild-std ok).
+[unstable]
+build-std = ["core", "alloc"]
+
+[env]
+# Credenciales WiFi de provisionamiento (cámbialas aquí o por entorno).
+# El firmware las lee en compile-time (env!) — ver src/config.rs.
+SSID = "Nomikos"
+PASSWORD = "nomikos1234"
+ESP_LOG = "info"

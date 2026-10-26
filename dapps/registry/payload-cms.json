@@ -1,0 +1,62 @@
+{
+  "slug": "payload-cms",
+  "name": "Payload CMS",
+  "description": "La app del ecosistema: CMS headless (upstream de Payload 3, template with-cloudflare-d1 con D1 local). Colecciones REST users/media. Cada petición del agente a esta app cobra un peaje x402.",
+  "version": "3.x",
+  "port": 3100,
+  "tools": [
+    {
+      "name": "payload_list_users",
+      "description": "Lista los usuarios de la app Payload CMS (colección /api/users). Cada llamada paga el peaje x402 de la petición a la app.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Máximo de usuarios a listar (default 5)" }
+        },
+        "required": []
+      },
+      "call": { "method": "GET", "path": "/api/users?limit={limit}&depth=0", "body": null }
+    },
+    {
+      "name": "payload_get_user",
+      "description": "Ficha completa de un usuario de la app por su id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Id numérico del usuario" }
+        },
+        "required": ["id"]
+      },
+      "call": { "method": "GET", "path": "/api/users/{id}", "body": null }
+    },
+    {
+      "name": "payload_list_media",
+      "description": "Lista los medios (colección /api/media) de la app.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "description": "Máximo de medios a listar (default 5)" }
+        },
+        "required": []
+      },
+      "call": { "method": "GET", "path": "/api/media?limit={limit}", "body": null }
+    },
+    {
+      "name": "payload_create_user",
+      "description": "Crea un usuario en la app Payload CMS (POST /api/users).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Email del nuevo usuario" },
+          "password": { "type": "string", "description": "Password del nuevo usuario" }
+        },
+        "required": ["email", "password"]
+      },
+      "call": {
+        "method": "POST",
+        "path": "/api/users",
+        "body": { "email": "{email}", "password": "{password}" }
+      }
+    }
+  ]
+}
