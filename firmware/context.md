@@ -13,7 +13,26 @@ agentd-host/src/main.rs   — std: TCP+HTTP a mano (sin crates de red), NVS≈st
                             loop enroll→claim→token→heartbeat + demo x402
 agentd-esp32/             — scaffold esp-hal (EXCLUIDO del workspace: toolchain
                             xtensa) — ver su README para el port completo
+os-ui/                    — GUI DEL OS, FUENTE ÚNICA (no_std + embedded-graphics
+                            + u8g2): el navegador la EJECUTA vía WASM, la placa
+                            la ejecutará vía framebuffer (ver NOTA-WASM abajo)
 ```
+
+## NOTA-WASM — os-ui (la GUI real, sin imitación)
+
+El panel NO dibuja la pantalla en TypeScript: `dapp/components/DeviceScreen.tsx`
+llama al WASM compilado de `os-ui` (estado JSON → píxeles RGBA → textura 3D)
+y le pasa los toques (`osui_hit`). El mismo crate (sin `std`) compilará para
+la ESP32-S3 cuando el driver AMOLED tenga framebuffer + táctil verificados.
+
+- Editar: `firmware/os-ui/src/{draw,hit,icons,text,palette,state}.rs`
+- Probar: `cargo test -p os-ui` (hits + humo de render, 12 tests) y
+  `cargo check -p os-ui --no-default-features --target thumbv7em-none-eabihf`
+- Reconstruir: `make wasm` (deja `dapp/public/wasm/os-ui/*`, COMMITEADO
+  porque la imagen docker de node no lleva Rust) + rebuild del dapp.
+- Diferencias honestas vs el canvas viejo: velo (no blur) en el shade,
+  fuentes u8g2 bitmap (no Geist), iconos geométricos (no Papirus/emoji).
+  Geometría, pantallas y textos, idénticos.
 
 ## Contratos clave
 

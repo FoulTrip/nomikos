@@ -371,7 +371,7 @@ async fn sim_x402(state: &SharedState, account: &str, sim: &mut Value) {
             let (access, hint) = if msg.contains("keypair") {
                 (
                     "sin wallet configurada".to_string(),
-                    "impórtala en Wallet·Red del panel".to_string(),
+                    "créala en Wallet·Red del panel".to_string(),
                 )
             } else if msg.contains("fondos")
                 || msg.contains("insufficient")

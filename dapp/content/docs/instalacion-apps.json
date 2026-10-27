@@ -1,0 +1,61 @@
+{
+  "slug": "instalacion-apps",
+  "title": "Instalación de apps en OS",
+  "icon": "PackagePlus",
+  "summary": "Cómo llegan las apps al dispositivo: alta en la cuenta, tools para el agente y acceso desde el AMOLED.",
+  "updated": "2026-10-27",
+  "sections": [
+    {
+      "heading": "El modelo: la cuenta manda",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "En NomikOS las apps no se instalan en la placa: se agregan a tu CUENTA. El dispositivo es un visor táctil + micrófono; la inteligencia y las integraciones viven en el servidor. Cambiar de dispositivo no pierde tus apps: emparejas otro y siguen ahí."
+        }
+      ]
+    },
+    {
+      "heading": "Alta paso a paso",
+      "blocks": [
+        {
+          "type": "steps",
+          "items": [
+            "Abre Servicios y pulsa Agregar a la cuenta en la app deseada.",
+            "El api guarda el vínculo (servicio, recurso x402, red y payer del momento).",
+            "El agente incorpora sus tools en el siguiente turno, sin reiniciar nada.",
+            "En el AMOLED, la app aparece en la pantalla de aplicaciones."
+          ]
+        },
+        {
+          "type": "code",
+          "lang": "bash",
+          "text": "curl -s http://localhost:8080/api/accounts/me/services -H \"Authorization: Bearer $TOKEN\" | jq '.services[] | {service, added}'"
+        }
+      ]
+    },
+    {
+      "heading": "Uso desde el dispositivo",
+      "blocks": [
+        {
+          "type": "list",
+          "items": [
+            "Toca Aplicaciones en el dock del AMOLED y elige la app.",
+            "Las listas largas se desplazan con la rueda o deslizando.",
+            "Cada acción real paga su peaje x402 con tu wallet dPaaS (verás el estado en el dashboard).",
+            "Con la voz puedes pedirle al agente que use la app por ti."
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Quitar una app",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "Quitar el vínculo desde Servicios revoca el acceso al instante: sus tools dejan de ofrecerse al agente y desaparecen del dispositivo. El historial de peajes ya liquidados se conserva en Análisis x402."
+        }
+      ]
+    }
+  ],
+  "related": ["aplicaciones", "instalacion-os", "orquestacion"]
+}

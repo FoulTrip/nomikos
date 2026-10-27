@@ -11,7 +11,8 @@ export const Terminal: React.FC<{
   durationInFrames: number;
   theme: VisualTheme;
   delay?: number;
-}> = ({ code, title = 'nomikos — demo', language = 'bash', durationInFrames, theme, delay = 15 }) => {
+  width?: number;
+}> = ({ code, title = 'nomikos — demo', language = 'bash', durationInFrames, theme, delay = 15, width = 1240 }) => {
   const frame = useCurrentFrame();
   const { scale } = useResponsive();
   const lines = code.split('\n');
@@ -42,7 +43,7 @@ export const Terminal: React.FC<{
   return (
     <div
       style={{
-        width: `${1240 * scale}px`,
+        width: `${width * scale}px`,
         maxWidth: '92%',
         border: `1px solid ${theme.colors.border}`,
         borderRadius: `${18 * scale}px`,

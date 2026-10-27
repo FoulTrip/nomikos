@@ -36,7 +36,8 @@ api/src/
 |---|---|
 | `accounts` | email único, `password_hash` (argon2id PHC), display_name, is_active |
 | `account_llm_providers` | N proveedores por cuenta (PK account+provider): base_url, api_key_enc (AEAD), models JSON, default_model, is_active (uno solo) |
-| `account_chain` | network, wallet_pubkey, payer_keypair_enc (AEAD), payee, daily/tx_limit, **active_wallet_label** (wallet operativa del agente: label de sub-wallet o NULL = principal dPaaS) |
+| `account_chain` | red ACTIVA + espejo dPaaS (network, wallet_pubkey, payer_keypair_enc (AEAD), payee, daily/tx_limit, **active_wallet_label** (wallet operativa: label de sub-wallet o NULL = principal dPaaS)) |
+| `account_chain_wallets` | **bóveda dPaaS: UNA wallet auto-generada por (cuenta, red)** — devnet+mainnet al registrar, las demás al cambiar de red; el panel solo las muestra para fondear |
 | `account_wallets` | sub-wallets por cuenta: label, network, pubkey, keypair_enc, daily_limit |
 | `account_connected_wallets` | **wallets del navegador (Phantom/MetaMask/…)**: label, provider, chain (solana\|evm), **solo pubkey** (la clave privada nunca sale de la wallet), is_active (una por cuenta), UNIQUE(account_id, label) |
 | `account_services` | **dapps que el agente usará con x402**: service, display_name, via_x402=1, resource del peaje (`x402:path:…`), snapshot payer_pubkey/network, status, UNIQUE(account_id, service) |
@@ -70,7 +71,7 @@ api/src/
 | Grupo | Rutas |
 |---|---|
 | Auth | `POST /auth/register` (201/409/400) · `POST /auth/login` (token Bearer; 401; 429 tras 5 fallos) · `POST /auth/logout` · `GET /auth/me` |
-| Cuenta | `PUT /accounts/me/llm` (upsert UN proveedor: api_key AEAD, base_url, models, default_model; el primero auto-activa) · `POST /accounts/me/llm/active {provider?, model?}` (elige el ÚNICO activo) · `DELETE /accounts/me/llm?provider=X` (borra ese; sin activo el agente exige configurar — sin fallback global) · `GET/POST /devices/me/llm[/active]` (el device SOLO lista/elige de su cuenta, sin secretos) · `PUT /accounts/me/chain` (network + **active_wallet_label** tri-state: label/null/ausente) · `POST /accounts/me/chain/keypair/import` (cifra; acepta array o string) · `GET /accounts/me/context` (resolución completa para brain, incluye active_wallet_pubkey) · `GET/POST /accounts/me/wallets` · `GET/POST /accounts/me/connected-wallets` (Phantom/MetaMask/… — solo pubkeys; conectar la marca como en uso, `PUT …/connected-wallets/activate {label}` cambia cuál) · `GET/POST /accounts/me/services` (catálogo de dapps x402 + alta que persiste cuenta→servicio→x402 con snapshot dPaaS; 201/409/400) |
+| Cuenta | `PUT /accounts/me/llm` (upsert UN proveedor: api_key AEAD, base_url, models, default_model; el primero auto-activa) · `POST /accounts/me/llm/active {provider?, model?}` (elige el ÚNICO activo) · `DELETE /accounts/me/llm?provider=X` (borra ese; sin activo el agente exige configurar — sin fallback global) · `GET/POST /devices/me/llm[/active]` (el device SOLO lista/elige de su cuenta, sin secretos) · `PUT /accounts/me/chain` (network + **active_wallet_label** tri-state: label/null/ausente; cambiar de red auto-crea SU dPaaS) · `POST /accounts/me/chain/keypair/import` (ROTA la wallet de la red activa; acepta array o string) · `POST /accounts/me/chain/keypair/generate` (relleno si falta; 409 si existe — el registro ya genera devnet+mainnet solas) · `GET /accounts/me/context` (resolución completa para brain, incluye active_wallet_pubkey + `chain.wallets[]` por red para fondear) · `GET/POST /accounts/me/wallets` · `GET/POST /accounts/me/connected-wallets` (Phantom/MetaMask/… — solo pubkeys; conectar la marca como en uso, `PUT …/connected-wallets/activate {label}` cambia cuál) · `GET/POST /accounts/me/services` (catálogo de dapps x402 + alta que persiste cuenta→servicio→x402 con snapshot dPaaS; 201/409/400) |
 | dPaaS | `GET /accounts/me/x402/summary` · `GET /accounts/me/x402/invoices` · `POST /accounts/me/x402/pay` · `POST /accounts/me/x402/pay-invoice` |
 | Flota (NomikOS) | `POST /devices/enroll` (placa sin auth → claim_code 15 min + enroll_secret) · `POST /devices/claim {code}` (Bearer cuenta, atómico) · `POST /devices/token` (la placa sondea con enroll_secret → Bearer de dispositivo, 202 antes del claim) · `GET /devices/me` + `POST /devices/me/heartbeat` (token de dispositivo) · `GET /devices` (flota de la cuenta) · `PUT /devices/{id}/limits` (dPaaS por device) · facturas x402 con `device_id` |
 | Llamadas (NomikOS F5) | `POST /calls` (sin X-Payment → crea ringing + peaje del min 0 → **402**; con X-Payment settled → consume el minuto one-shot, pasa a `active` y emite el peaje del SIGUIENTE en la respuesta — cadencia un POST/min, precio `X402_CALL_LAMPORTS`) · `GET /calls/{id}` · `POST /calls/{id}/end` · brain tools `place_call`/`end_call` (guarded_call paga y reintenta solo) |
@@ -102,3 +103,25 @@ para cifrar; sin ella las ops de cifrado fallan con 503 claro) · R2 (`R2_ACCOUN
 - Settler por cuenta: usa el keypair y la red DE LA CUENTA (no el global).
 - Límites: tx_limit y daily (24 h, excluye `failed`).
 - `cargo test`: 12 tests (fmt_sol, base58, tx shape, crypto round-trip).
+
+## Verificador legal S2 (workshop northbridge-v-caldera)
+
+Capa externa que el agente NO puede manipular: vive en este proceso,
+lee `ground_truth/` (0600) y evalúa con reglas deterministas (sin LLM).
+Tablas: `legal_runs` (draft→submitted→verified|failed→escalated→signed),
+`legal_turns` (traza, role=world solo vía /world), `legal_verdicts`
+(pass/fail + omisiones + score), `legal_events` (created/submitted/
+verdict/new_evidence/escalation/signoff). Env: `VERIFIER_ENABLED`,
+`VERIFIER_GT_DIR`, `VERIFIER_CASES_DIR`, `VERIFIER_UI_PORT=8765`,
+`VERIFIER_WORLD_TOKEN`. Módulo `modules/verify.rs`.
+
+| Grupo | Rutas |
+|---|---|
+| Casos visibles | `GET /legal/cases/{id}/docs` · `GET /legal/cases/{id}/docs/{name}` (Files API S1; antitraversal, sin GT) |
+| Runs | `POST /legal/runs {case_id}` · `GET /legal/runs/{id}` (ownership 403) · `POST /legal/runs/{id}/turns` · `POST /legal/runs/{id}/submit` (dispara reglas) · `GET /legal/runs/{id}/events?since=` · `GET /legal/runs/{id}/stream` (SSE snapshot) · `GET /legal/runs/{id}/checklist` (SOLO humanos vía UI :8765 — brain no tiene tool) |
+| HITL | `POST /legal/runs/{id}/escalate` · `POST /legal/runs/{id}/signoff {attorney}` (solo cuenta humana 403 device, exige pass, one-shot 409, run inmutable tras firma) · `POST /legal/runs/{id}/world` (Bearer cuenta o X-World-Token; doc .md seguro, excerpt ≤4k) |
+
+Reglas (`verify_now`): must_cite literales → omisión; citas `*.md:` con doc
+fuera de permitidos (+world) → HALLUCINATION; distintas < min → MIN_CITATIONS;
+world no citado sin frase de refusal → REFUSAL. pass ⟺ cero omisiones.
+auto_escalate → failed pasa a escalated. Fail-closed: GT ilegible → fail.

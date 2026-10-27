@@ -115,7 +115,7 @@ async fn app_auth_token(state: &SharedState, target: &AppTarget) -> Option<Strin
     }
     let login = state
         .http
-        .post(format!("{}/api/users/login", target.base_url))
+        .post(format!("{}/api/users/login", host_url(&target.base_url)))
         .timeout(Duration::from_secs(8))
         .json(&json!({ "email": email, "password": password }))
         .send()
@@ -157,6 +157,19 @@ fn resolve_target_of_row(row: &AppRow) -> AppTarget {
     }
 }
 
+/// La app vive en el HOST (:3100): dentro del contenedor, localhost es el
+/// propio contenedor → reescribir al host (extra_hosts en compose). En el
+/// host, la URL pasa intacta (ambos despliegues funcionan).
+fn host_url(base_url: &str) -> String {
+    if std::path::Path::new("/.dockerenv").exists() {
+        base_url
+            .replace("http://localhost:", "http://host.docker.internal:")
+            .replace("http://127.0.0.1:", "http://host.docker.internal:")
+    } else {
+        base_url.to_string()
+    }
+}
+
 async fn fetch(
     state: &SharedState,
     target: &AppTarget,
@@ -164,7 +177,8 @@ async fn fetch(
     path: &str,
     body: Option<Value>,
 ) -> AppResult<(u16, Value)> {
-    let url = format!("{}{}", target.base_url, path);
+    let base = host_url(&target.base_url);
+    let url = format!("{base}{path}");
     let mut call = state
         .http
         .request(reqwest::Method::from_bytes(method.as_bytes()).unwrap(), &url)
@@ -216,8 +230,8 @@ pub async fn app_request_handler(
         return Err(AppError::bad_request("path inválido: debe ser una ruta interna de la app (/…)"));
     }
     let method = req.method.trim().to_uppercase();
-    if !["GET", "POST", "PUT"].contains(&method.as_str()) {
-        return Err(AppError::bad_request("method inválido: GET | POST | PUT"));
+    if !["GET", "POST", "PUT", "PATCH", "DELETE"].contains(&method.as_str()) {
+        return Err(AppError::bad_request("method inválido: GET | POST | PUT | PATCH | DELETE"));
     }
 
     // identidad: cuenta (o dispositivo → peaje atribuible a la placa)

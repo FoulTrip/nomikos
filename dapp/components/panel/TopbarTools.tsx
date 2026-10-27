@@ -18,6 +18,7 @@ import {
   Bot,
   Check,
   CircleCheck,
+  Copy,
   Droplets,
   Ghost,
   LoaderCircle,
@@ -33,6 +34,7 @@ import {
 } from "lucide-react";
 import Modal from "./ModalShell";
 import FleetModal from "./FleetModal";
+import SandboxIndicator from "./SandboxIndicator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -139,6 +141,7 @@ interface DpaasSummary {
   wallet: string | null;
   network?: string | null;
   balance_lamports?: number | null;
+  wallets?: { network: string; wallet_pubkey: string; balance_lamports?: number | null }[];
 }
 
 /** Nombres legibles de chains EVM habituales (eth_chainId → nombre). */
@@ -217,6 +220,18 @@ function WalletModal({ onClose }: { onClose: () => void }) {
   const [dpaas, setDpaas] = useState<DpaasSummary | null>(null);
   const [generating, setGenerating] = useState(false);
   const [evmBalance, setEvmBalance] = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  /** Copiar dirección dPaaS para fondearla (portapapeles). */
+  const copyAddr = async (addr: string) => {
+    try {
+      await navigator.clipboard.writeText(addr);
+      setCopied(addr);
+      setTimeout(() => setCopied((c) => (c === addr ? null : c)), 1600);
+    } catch {
+      /* sin portapapeles: silencioso */
+    }
+  };
 
   const loadSummary = async () => {
     try {
@@ -431,27 +446,85 @@ function WalletModal({ onClose }: { onClose: () => void }) {
             <h4 className="text-xs font-medium text-muted-foreground">
               Wallet firmante · Solana (dPaaS)
             </h4>
-            <button
-              type="button"
-              onClick={() => setWalletLabel("")}
-              className={cn(
-                "flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-left transition-colors",
-                walletLabel === ""
+            {/* dPaaS por red (auto-generadas; solo se muestran para fondear).
+                La fila de la red ACTIVA además elige la wallet principal. */}
+            {(dpaas?.wallets ?? []).map((dw) => {
+              const isActiveNet = dw.network === (dpaas?.network ?? network);
+              const inner = (
+                <>
+                  <span className="flex flex-1 flex-col gap-0.5">
+                    <b className="flex items-center gap-2 text-[13px] font-semibold">
+                      Wallet dPaaS
+                      <Badge variant="secondary" className="font-mono text-[10px]">
+                        {dw.network}
+                      </Badge>
+                    </b>
+                    <small className="text-xs text-muted-foreground">
+                      {shortKey(dw.wallet_pubkey)} · {fmtSol(dw.balance_lamports)} · firma los peajes x402
+                    </small>
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    title={`Copiar dirección ${dw.network} para fondear`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void copyAddr(dw.wallet_pubkey);
+                    }}
+                    className="size-7"
+                  >
+                    {copied === dw.wallet_pubkey ? (
+                      <Check className="size-3.5 text-emerald-400" />
+                    ) : (
+                      <Copy className="size-3.5" />
+                    )}
+                  </Button>
+                  {isActiveNet && walletLabel === "" && <Check className="size-4 shrink-0 text-primary" />}
+                </>
+              );
+              const cls = cn(
+                "flex items-center gap-3 rounded-lg border p-3 text-left transition-colors",
+                isActiveNet && "cursor-pointer",
+                isActiveNet && walletLabel === ""
                   ? "border-primary bg-primary/10"
-                  : "hover:border-muted-foreground/40",
-              )}
-            >
-              <span className="flex flex-1 flex-col gap-0.5">
-                <b className="text-[13px] font-semibold">Wallet principal (dPaaS)</b>
-                <small className="text-xs text-muted-foreground">
-                  {dpaas?.wallet
-                    ? `${shortKey(dpaas.wallet)} · ${fmtSol(dpaas.balance_lamports)} · firma los peajes x402`
-                    : "sin configurar · firma los peajes x402"}
-                </small>
-              </span>
-              {walletLabel === "" && dpaas?.wallet && <Check className="size-4 shrink-0 text-primary" />}
-            </button>
-            {!dpaas?.wallet && (
+                  : isActiveNet
+                    ? "hover:border-muted-foreground/40"
+                    : "",
+              );
+              return isActiveNet ? (
+                <button key={dw.network} type="button" onClick={() => setWalletLabel("")} className={cls}>
+                  {inner}
+                </button>
+              ) : (
+                <div key={dw.network} className={cls}>
+                  {inner}
+                </div>
+              );
+            })}
+            {!dpaas?.wallets?.length && (
+              <button
+                type="button"
+                onClick={() => setWalletLabel("")}
+                className={cn(
+                  "flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-left transition-colors",
+                  walletLabel === ""
+                    ? "border-primary bg-primary/10"
+                    : "hover:border-muted-foreground/40",
+                )}
+              >
+                <span className="flex flex-1 flex-col gap-0.5">
+                  <b className="text-[13px] font-semibold">Wallet principal (dPaaS)</b>
+                  <small className="text-xs text-muted-foreground">
+                    {dpaas?.wallet
+                      ? `${shortKey(dpaas.wallet)} · ${fmtSol(dpaas.balance_lamports)} · firma los peajes x402`
+                      : "sin configurar · firma los peajes x402"}
+                  </small>
+                </span>
+                {walletLabel === "" && dpaas?.wallet && <Check className="size-4 shrink-0 text-primary" />}
+              </button>
+            )}
+            {!dpaas?.wallets?.length && !dpaas?.wallet && (
               <Button
                 type="button"
                 variant="outline"
@@ -859,6 +932,13 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
       });
       return;
     }
+    if (/[^\x21-\x7E]/.test(apiKey.trim())) {
+      setStatus({
+        ok: false,
+        text: "Esa key trae caracteres inválidos (¿emoji o espacios pegados?) — cópiala de nuevo, solo la key",
+      });
+      return;
+    }
     void doConnect({ idx: providerIdx, key: apiKey, baseUrl: customBaseUrl });
   };
 
@@ -1030,7 +1110,8 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                {/* item-aligned: lista alta (70 modelos), no el popper corto */}
+                <SelectContent position="item-aligned">
                   {showGroups ? (
                     <>
                       {freeModels.length > 0 && (
@@ -1275,9 +1356,10 @@ export default function TopbarTools() {
         size="sm"
         onClick={() => setModal("wallet")}
         title="Wallet operativa y red blockchain del agente"
+        className="h-8 px-2 sm:h-9 sm:px-3"
       >
         <Wallet />
-        Wallet · Red
+        <span className="hidden min-[480px]:inline">Wallet</span>
       </Button>
       <Button
         type="button"
@@ -1285,9 +1367,10 @@ export default function TopbarTools() {
         size="sm"
         onClick={() => setModal("models")}
         title="Proveedor, API key y modelo del agente"
+        className="h-8 px-2 sm:h-9 sm:px-3"
       >
         <Bot />
-        Modelos
+        <span className="hidden min-[480px]:inline">Modelos</span>
       </Button>
       <Button
         type="button"
@@ -1295,9 +1378,10 @@ export default function TopbarTools() {
         size="sm"
         onClick={() => setModal("services")}
         title="Dapps que el agente usará con x402"
+        className="h-8 px-2 sm:h-9 sm:px-3"
       >
         <Blocks />
-        Servicios
+        <span className="hidden min-[480px]:inline">Servicios</span>
       </Button>
       <Button
         type="button"
@@ -1305,10 +1389,12 @@ export default function TopbarTools() {
         size="sm"
         onClick={() => setModal("fleet")}
         title="Flota de dispositivos: emparejar, instalar y monitorear"
+        className="h-8 px-2 sm:h-9 sm:px-3"
       >
         <Radio />
-        Flota
+        <span className="hidden min-[480px]:inline">Flota</span>
       </Button>
+      <SandboxIndicator />
 
       {modal === "wallet" && <WalletModal onClose={() => setModal(null)} />}
       {modal === "models" && <ModelsModal onClose={() => setModal(null)} />}

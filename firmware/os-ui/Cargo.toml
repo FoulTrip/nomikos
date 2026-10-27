@@ -1,0 +1,30 @@
+# os-ui — GUI del OS NomikOS, fuente única compartida.
+#
+# El MISMO código dibuja en la placa (ESP32-S3 AMOLED vía embedded-graphics)
+# y en el navegador (WASM → framebuffer RGBA → textura 3D). Sin imitación:
+# lo que ves en el panel es este crate ejecutándose.
+#
+# no_std por defecto (placa); `std` para host/tests. El pegamento WASM
+# (serde_json, wasm-bindgen, qrcode) solo existe en wasm32.
+[package]
+name = "os-ui"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+# Placa: --no-default-features (no_std). Host/wasm: std.
+default = ["std"]
+std = []
+
+[dependencies]
+embedded-graphics = "0.8"
+u8g2-fonts = "0.8"
+micromath = { version = "2", default-features = false }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+serde_json = "1"
+qrcode = "0.14"
+
+[lib]
+crate-type = ["cdylib", "rlib"]

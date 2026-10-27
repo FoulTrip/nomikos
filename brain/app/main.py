@@ -25,6 +25,7 @@ from .context import AccountContext, bearer_from_headers, fetch_account_context
 from .llm import LLMNotConfigured, run_agent
 from .shields import GuardVerdict, run_llama_guard
 from .tools import TOOLS
+from . import legal as legal_gate
 
 logging.basicConfig(
     level=logging.INFO,
@@ -56,6 +57,7 @@ class AgenticResponse(BaseModel):
     backend: str = ""
     model: str = ""
     iterations: int = 0
+    verification: dict = {}
 
 
 def _verdict_dict(v: GuardVerdict) -> dict:
@@ -129,6 +131,45 @@ async def agentic_gateway(req: AgenticRequest, request: Request) -> AgenticRespo
             x402=run.x402_events,
         )
 
+    # ④b S2 post-check (defensa en profundidad; el gate pre-ejecución vive en
+    # llm.py): efectos en contexto legal exigen run verificado. Además,
+    # refusal del agente en contexto legal → auto-escalado a humano.
+    verification: dict = {}
+    run_id = legal_gate.extract_run_id(req.text, extra)
+    legal_tools_used = any(
+        t in ("list_case_docs", "read_case_doc", "legal_turn", "submit_memorandum")
+        for t in run.tools_used
+    )
+    effect_used = sorted(set(run.tools_used) & set(legal_gate.EFFECTFUL_TOOLS))
+    if run_id:
+        data = await legal_gate.fetch_run(ctx, run_id)
+        passed, omissions, status, score = legal_gate.run_passed(data)
+        omit_ids = [o.get("id", "?") for o in omissions] if isinstance(omissions, list) else []
+        verification = {"run_id": run_id, "status": status,
+                        "verdict": "pass" if passed else "fail",
+                        "omissions": omit_ids, "score": score}
+        if effect_used and not passed:
+            log.warning("⛔ S2 post-check bloqueó respuesta (efectos %s sin pass en %s)",
+                        effect_used, run_id)
+            return AgenticResponse(
+                ok=False,
+                reply=(f"Efectos bloqueados por verificación S2: el run {run_id} está "
+                       f"«{status}» con omisiones {omit_ids}. Corrige el memorándum "
+                       f"y vuelve a entregar antes de pedir efectos."),
+                tools_used=run.tools_used,
+                shield_in=_verdict_dict(shield_in),
+                backend=run.backend,
+                model=run.model,
+                iterations=run.iterations,
+                x402=run.x402_events,
+                verification=verification,
+            )
+        if (legal_tools_used or legal_gate.is_legal_text(req.text)) and legal_gate.has_refusal(run.reply):
+            ok_esc = await legal_gate.escalate_run(ctx, run_id, "auto: refusal del agente")
+            verification["escalated"] = ok_esc
+            verification["refusal_detected"] = True
+            log.info("S2 refusal en %s → escalado=%s", run_id, ok_esc)
+
     # ⑤ Shield salida: Llama Guard valida la respuesta del agente
     shield_out = await run_llama_guard(run.reply, output=True, original_user_text=req.text)
     if shield_out.verdict == "unsafe":
@@ -143,6 +184,7 @@ async def agentic_gateway(req: AgenticRequest, request: Request) -> AgenticRespo
             model=run.model,
             iterations=run.iterations,
             x402=run.x402_events,
+            verification=verification,
         )
 
     log.info(
@@ -163,6 +205,7 @@ async def agentic_gateway(req: AgenticRequest, request: Request) -> AgenticRespo
         backend=run.backend,
         model=run.model,
         iterations=run.iterations,
+        verification=verification,
     )
 
 

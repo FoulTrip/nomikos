@@ -246,7 +246,7 @@ test('reconectar la misma wallet NO duplica (upsert + EIP-55 insensible)', async
   expect(wallets).toHaveLength(1);
 });
 
-test('lista trae balance Solana vivo; dPaaS se crea con un clic (generate)', async ({ account }) => {
+test('dPaaS automática: registro genera devnet+mainnet; summary lista para fondear', async ({ account }) => {
   const H = { Authorization: `Bearer ${account.token}`, 'Content-Type': "application/json" };
   // Solana con fondos conocidos (treasury e2e no aplica; solo forma): conectamos
   await api('/accounts/me/connected-wallets', {
@@ -257,21 +257,43 @@ test('lista trae balance Solana vivo; dPaaS se crea con un clic (generate)', asy
   const { wallets } = (await list.json()) as { wallets: { balance_lamports?: number | null }[] };
   expect(typeof wallets[0].balance_lamports === 'number' || wallets[0].balance_lamports === null).toBe(true);
 
-  // generate: crea la dPaaS sellada; segunda vez → 409
-  const g1 = await api('/accounts/me/chain/keypair/generate', { method: 'POST', headers: H });
-  expect(g1.status).toBe(200);
-  const g1b = (await g1.json()) as { wallet_pubkey: string; encrypted_at_rest: boolean };
-  expect(g1b.wallet_pubkey).toMatch(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
-  expect(g1b.encrypted_at_rest).toBe(true);
-  expect((await api('/accounts/me/chain/keypair/generate', { method: 'POST', headers: H })).status).toBe(409);
-
-  // el summary expone wallet + red + balance para el modal
+  // recién registrada: la cuenta YA tiene dPaaS (devnet activa + mainnet)
   const sum = await api('/accounts/me/x402/summary', { method: 'GET', headers: { Authorization: `Bearer ${account.token}` } });
   expect(sum.status).toBe(200);
-  const dpaas = ((await sum.json()) as { dpaas: { wallet: string; network: string; balance_lamports: number | null } }).dpaas;
-  expect(dpaas.wallet).toBe(g1b.wallet_pubkey);
+  const dpaas = ((await sum.json()) as { dpaas: {
+    wallet: string; network: string; balance_lamports: number | null;
+    wallets: { network: string; wallet_pubkey: string; balance_lamports: number | null }[];
+  } }).dpaas;
   expect(dpaas.network).toBe('devnet');
+  expect(dpaas.wallet).toMatch(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
   expect(typeof dpaas.balance_lamports === 'number').toBe(true);
+  const nets = dpaas.wallets.map((w) => w.network).sort();
+  expect(nets).toEqual(['devnet', 'mainnet']);
+  expect(dpaas.wallets[0].wallet_pubkey).not.toBe(dpaas.wallets[1].wallet_pubkey);
+  for (const w of dpaas.wallets) {
+    expect(typeof w.balance_lamports === 'number' || w.balance_lamports === null).toBe(true);
+  }
+
+  // generate sobra (ya existe) → 409; el contexto expone la lista para fondear
+  expect((await api('/accounts/me/chain/keypair/generate', { method: 'POST', headers: H })).status).toBe(409);
+  const ctx = (await (await api('/accounts/me/context', auth(account.token))).json()) as {
+    chain: { wallet_pubkey: string; payer_configured: boolean; wallets: { network: string }[] };
+  };
+  expect(ctx.chain.payer_configured).toBe(true);
+  expect(ctx.chain.wallet_pubkey).toBe(dpaas.wallet);
+  expect(ctx.chain.wallets.map((w) => w.network).sort()).toEqual(['devnet', 'mainnet']);
+
+  // cambiar de red auto-crea SU wallet (nunca una red sin dPaaS)
+  const sw = await api('/accounts/me/chain', {
+    method: 'PUT', headers: H, body: JSON.stringify({ network: 'testnet' }),
+  });
+  expect(sw.status).toBe(200);
+  const ctx2 = (await (await api('/accounts/me/context', auth(account.token))).json()) as {
+    chain: { network: string; wallet_pubkey: string; wallets: { network: string }[] };
+  };
+  expect(ctx2.chain.network).toBe('testnet');
+  expect(ctx2.chain.wallets.map((w) => w.network).sort()).toEqual(['devnet', 'mainnet', 'testnet']);
+  expect(ctx2.chain.wallet_pubkey).toMatch(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
 });
 
 test('nivel dapp: el proxy /api/account/llm guarda proveedor, key y modelo de la cuenta', async () => {

@@ -8,14 +8,6 @@
           "-y",
           "@modelcontextprotocol/server-filesystem"
         ]
-      },
-      "tester-army-e2e": {
-        "type": "local",
-        "command": [
-          "npx",
-          "-y",
-          "@testerarmy/mcp"
-        ]
       }
     }
   }

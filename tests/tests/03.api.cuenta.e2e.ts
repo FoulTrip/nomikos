@@ -46,6 +46,20 @@ test('PUT /me/llm con api_key la sella (AEAD) y NO vuelve en /me/context... exce
   expect(ctx.llm?.models).toHaveLength(2);
 });
 
+test('PUT /me/llm rechaza keys con caracteres raros (emoji/espacios pegados) → 400', async ({ account }) => {
+  const res = await api('/accounts/me/llm', {
+    method: 'PUT',
+    headers: { ...withToken(account.token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      provider: 'nvidia-nim',
+      api_key: '🤖 nvapi-pego-mal',
+      models: ['m'],
+      default_model: 'm',
+    }),
+  });
+  expect(res.status).toBe(400);
+});
+
 test('LLM multi-proveedor: N keys guardadas, UN solo activo + cambio de modelo', async ({ account }) => {
   const H = { ...withToken(account.token), 'Content-Type': 'application/json' };
   const put = (body: unknown) => api('/accounts/me/llm', { method: 'PUT', headers: H, body: JSON.stringify(body) });

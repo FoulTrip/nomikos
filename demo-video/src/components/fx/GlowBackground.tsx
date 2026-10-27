@@ -39,7 +39,21 @@ export const GlowBackground: React.FC<{ theme: VisualTheme; tint?: string; cycle
           opacity: b2,
         }}
       />
-      {theme.textures.overlay !== 'none' && <NoiseOverlay opacity={theme.textures.noiseOpacity} />}
+      {/* trama material estilo dot-grid */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          opacity: 0.05,
+          backgroundImage: 'radial-gradient(rgba(255,255,255,0.9) 1px, transparent 1.5px)',
+          backgroundSize: '26px 26px',
+        }}
+      />
+      {theme.textures.overlay !== 'none' && (
+        <div style={{ position: 'absolute', inset: -40, transform: `translate(${Math.sin(frame / 9) * 18}px, ${Math.cos(frame / 11) * 18}px)` }}>
+          <NoiseOverlay opacity={theme.textures.noiseOpacity} />
+        </div>
+      )}
     </AbsoluteFill>
   );
 };

@@ -1,0 +1,72 @@
+{
+  "slug": "proveedores",
+  "title": "Proveedores de IA",
+  "icon": "KeyRound",
+  "summary": "Tus keys, tu modelo: multi-proveedor con uno solo activo, llaves selladas y cambio de modelo al vuelo.",
+  "updated": "2026-10-27",
+  "sections": [
+    {
+      "heading": "El modelo de cuenta",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "Cada cuenta trae SUS propias API keys, guardadas selladas (AEAD) en el api. Puedes conectar varios proveedores pero solo UNO está activo: ese razona tus turnos. No existe proveedor global ni fallback silencioso a otra key."
+        },
+        {
+          "type": "table",
+          "head": ["Proveedor", "Etiqueta en Modelos", "Formato de key"],
+          "rows": [
+            ["NVIDIA NIM", "NVIDIA NIM", "nvapi-…"],
+            ["OpenAI", "OpenAI", "sk-…"],
+            ["Meta Llama API", "Meta Llama API", "llama-…"],
+            ["Otro compatible", "Personalizado (OpenAI-compat)", "Según proveedor + Base URL"]
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Conectar una key",
+      "blocks": [
+        {
+          "type": "steps",
+          "items": [
+            "Abre Modelos en el navbar y elige el proveedor.",
+            "Pega tu API key completa (se muestra una sola vez al crearla en el proveedor).",
+            "Pulsa Conectar: el dapp valida en vivo y lista los modelos disponibles.",
+            "El primer modelo gratuito (o el primero de la lista) queda como activo."
+          ]
+        },
+        {
+          "type": "callout",
+          "tone": "warn",
+          "title": "Pega solo la key",
+          "text": "Si trae espacios o emojis pegados, la validación la rechaza: cópiala de nuevo, solo la key."
+        }
+      ]
+    },
+    {
+      "heading": "Cambiar de proveedor o modelo",
+      "blocks": [
+        {
+          "type": "list",
+          "items": [
+            "Marca el radio del proveedor que quieras: el cambio es inmediato para el siguiente turno.",
+            "El desplegable Modelo lista los modelos guardados del activo (se actualiza solo al abrir).",
+            "Cambiar de modelo guarda al vuelo, sin reconectar.",
+            "El 🗑 de cada fila desconecta ese proveedor (borra key y lista)."
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Seguridad",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "Las keys viajan solo por TLS, se almacenan cifradas y el navegador nunca ve tu Bearer del api (el dapp lo transporta en servidor). El dispositivo jamás toca tus keys: solo elige proveedor activo."
+        }
+      ]
+    }
+  ],
+  "related": ["orquestacion", "aplicaciones", "instalacion-apps"]
+}

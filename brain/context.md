@@ -111,3 +111,17 @@ x402 sin config local: el gateway de `api` manda.
 - Con Bearer de cuenta + LLM activo: `backend: account:nvidia-nim`, 1 tool call,
   handshake delegado settled → la ficha técnica REAL llega al reply.
 - Token inválido → 401 antes de razonar. Input inseguro (S11) → bloqueado.
+
+## Verificador legal S2 (workshop — gate, no verdad)
+
+Brain CONSULTA al verificador de `api`, nunca ve `ground_truth/`.
+Tools nuevas (vía `guarded_call`): `list_case_docs`, `read_case_doc`,
+`legal_turn`, `submit_memorandum` (19 tools total). `brain/app/legal.py`:
+`extract_run_id`, `ensure_verified_for_effect` (efectos `app_request`,
+`place_call`, `x402_pay_toll` bloqueados sin pass), `poll_world_events`
+(new_evidence mid-run como mensaje user), `escalate_run`, `has_refusal`.
+`llm.py`: gate pre-ejecución + world poll por iteración. `main.py`:
+post-check (efectos sin pass → `ok:false` + `verification{}`) y refusal
+en contexto legal → auto-escalado. Respuesta añade `verification{run_id,
+status, verdict, omissions, score}` (aditivo; sin contexto legal = `{}`).
+No existe tool de checklist/verdict: el LLM no puede auto-verificarse.

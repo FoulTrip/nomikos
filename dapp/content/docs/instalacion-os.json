@@ -1,0 +1,74 @@
+{
+  "slug": "instalacion-os",
+  "title": "Instalación de OS",
+  "icon": "Cpu",
+  "summary": "Del firmware al ONLINE: flashear agentd en el ESP32-S3, emparejar con claim code y entrar a tu flota.",
+  "updated": "2026-10-27",
+  "sections": [
+    {
+      "heading": "Requisitos",
+      "blocks": [
+        {
+          "type": "table",
+          "head": ["Pieza", "Detalle"],
+          "rows": [
+            ["Placa", "ESP32-S3-Touch-AMOLED-1.43 (AMOLED 1.43\" 466×466, táctil, Wi-Fi 2.4 GHz)"],
+            ["Firmware", "agentd + os-ui (Rust no_std, UI compartida con el panel)"],
+            ["Cuenta", "Email y contraseña del ecosistema (esta misma cuenta)"],
+            ["Red", "La placa y tu móvil/PC en la misma red para emparejar"]
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Flasheo",
+      "blocks": [
+        {
+          "type": "steps",
+          "items": [
+            "Descarga el firmware de tu flota (o compílalo desde firmware/ con cargo).",
+            "Conecta la placa por USB y flashea con la herramienta oficial de Espressif.",
+            "Al arrancar verás el logo NomikOS y, si es nueva, un claim code en pantalla.",
+            "Si la pantalla muestra la hora y el dock, el OS ya está corriendo."
+          ]
+        },
+        {
+          "type": "callout",
+          "tone": "warn",
+          "title": "No apagues a mitad del flasheo",
+          "text": "Interrumpir la escritura puede dejar la placa sin arranque: repite el flasheo completo si pasa."
+        }
+      ]
+    },
+    {
+      "heading": "Emparejamiento",
+      "blocks": [
+        {
+          "type": "steps",
+          "items": [
+            "En el panel, abre Flota en el navbar.",
+            "Elige emparejar e introduce el claim code que muestra el AMOLED.",
+            "El dispositivo pasa a ONLINE dentro de TU cuenta: toques, voz y peajes quedan asociados a ella.",
+            "Pruébalo en el sandbox del navegador antes de salir a producción."
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Estados del dispositivo",
+      "blocks": [
+        {
+          "type": "table",
+          "head": ["Estado", "Significado", "Qué hacer"],
+          "rows": [
+            ["boot", "agentd arrancando y presentándose", "Esperar unos segundos"],
+            ["claim", "Muestra claim code, sin cuenta", "Emparejar desde Flota"],
+            ["online 🔒", "Vinculado pero bloqueado", "Tocar el AMOLED para desbloquear"],
+            ["online", "Operativo en tu cuenta", "Usar apps, banco y voz"]
+          ]
+        }
+      ]
+    }
+  ],
+  "related": ["aplicaciones", "instalacion-apps", "orquestacion"]
+}

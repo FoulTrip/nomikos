@@ -106,7 +106,8 @@ pub async fn faucet_drip_handler(
         map.insert(auth.account_id.clone(), now);
     }
 
-    // La cuenta debe tener chain configurada y red devnet.
+    // La cuenta debe tener chain configurada y red devnet (la wallet se
+    // crea sola si falta: el faucet nunca pide importar nada manual).
     let (wallet, network) = state
         .db
         .with(|c| {
@@ -119,14 +120,15 @@ pub async fn faucet_drip_handler(
         .map_err(|_| {
             AppError::bad_request("configura tu cadena primero: PUT /api/accounts/me/chain (devnet)")
         })?;
-    let wallet = wallet
-        .filter(|w| !w.is_empty())
-        .ok_or_else(|| AppError::bad_request("importa tu keypair dPaaS primero (chain/keypair/import)"))?;
     if network != "devnet" {
         return Err(AppError::bad_request(format!(
             "el faucet solo opera en devnet (tu red: {network})"
         )));
     }
+    let wallet = match wallet.filter(|w| !w.is_empty()) {
+        Some(w) => w,
+        None => crate::modules::accounts::ensure_dpaas_wallet(&state, &auth.account_id, "devnet")?,
+    };
 
     // Transfer REAL del treasury → wallet de la cuenta.
     let (treasury, kp) = load_treasury(&state)?;

@@ -15,7 +15,7 @@ import {
 import * as THREE from "three";
 import { LoaderCircle } from "lucide-react";
 import DeviceScreen from "./DeviceScreen";
-import { useViewLocked } from "@/lib/viewer/view";
+import { useViewLocked, useModalOpen, useOverScreen } from "@/lib/viewer/view";
 
 /** Cámara frontal fija: la pantalla (que mira a +Z) queda de frente. */
 const FRONT_POS: [number, number, number] = [0, 10, 80];
@@ -70,7 +70,7 @@ function ModelLoader() {
   const { active, progress, errors } = useProgress();
   if (!active || errors.length > 0) return null;
   return (
-    <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center gap-2 bg-[radial-gradient(600px_300px_at_50%_45%,rgba(20,17,11,0.85),rgba(20,17,11,0.55))] text-sm tracking-wide text-muted-foreground">
+    <div className="pointer-events-none absolute inset-0 z-5 flex items-center justify-center gap-2 bg-[radial-gradient(600px_300px_at_50%_45%,rgba(20,17,11,0.85),rgba(20,17,11,0.55))] text-sm tracking-wide text-muted-foreground">
       <LoaderCircle className="size-4 animate-spin text-primary" />
       Cargando modelo 3D… {Math.round(progress)}%
     </div>
@@ -112,6 +112,9 @@ function Device() {
 export default function DeviceViewer() {
   const [autoRotate, setAutoRotate] = useState(true);
   const locked = useViewLocked();
+  const modal = useModalOpen();
+  const overScreen = useOverScreen();
+  const interactive = !locked && !modal;
 
   return (
     <div className="absolute inset-0">
@@ -169,13 +172,16 @@ export default function DeviceViewer() {
         {/* Rotación con el ratón, zoom con la rueda, pan con clic derecho */}
         {/* Auto-rotate hasta que el usuario interactúa con los controles */}
         {/* Bloqueado: sin rotación ni paneo (el zoom sigue para acercar) */}
+        {/* Modal abierto: todo quieto (la rueda es del desplegable) */}
+        {/* Sobre la pantalla: la rueda scrollea la lista del OS, no zoom */}
         <OrbitControls
           makeDefault
           enableDamping
           dampingFactor={0.08}
           autoRotate={autoRotate && !locked}
-          enableRotate={!locked}
-          enablePan={!locked}
+          enableRotate={interactive}
+          enablePan={interactive}
+          enableZoom={!modal && !overScreen}
           onStart={() => setAutoRotate(false)}
           autoRotateSpeed={1.2}
           minDistance={15}

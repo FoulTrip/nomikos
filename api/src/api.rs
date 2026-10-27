@@ -3,7 +3,7 @@
 
 use crate::db::now_ms;
 use crate::error::{AppError, AppResult};
-use crate::modules::{accounts, app, apps, calls, device, devices, faucet, mcp, simulation, solana, voice, x402};
+use crate::modules::{accounts, app, apps, calls, device, devices, faucet, mcp, simulation, solana, verify, voice, x402};
 use crate::state::SharedState;
 use axum::extract::State;
 use axum::response::IntoResponse;
@@ -153,6 +153,19 @@ pub fn router(state: SharedState) -> Router {
             "/api/accounts/me/x402/pay-invoice",
             post(x402::me_x402_pay_invoice_handler),
         )
+        // [ Verificador legal S2 — workshop northbridge-v-caldera ]
+        .route("/api/legal/runs", post(verify::create_run_handler))
+        .route("/api/legal/runs/{id}", get(verify::get_run_handler))
+        .route("/api/legal/runs/{id}/turns", post(verify::append_turn_handler))
+        .route("/api/legal/runs/{id}/submit", post(verify::submit_handler))
+        .route("/api/legal/runs/{id}/stream", get(verify::stream_handler))
+        .route("/api/legal/runs/{id}/checklist", get(verify::checklist_handler))
+        .route("/api/legal/runs/{id}/events", get(verify::list_events_handler))
+        .route("/api/legal/runs/{id}/escalate", post(verify::escalate_handler))
+        .route("/api/legal/runs/{id}/signoff", post(verify::signoff_handler))
+        .route("/api/legal/runs/{id}/world", post(verify::world_handler))
+        .route("/api/legal/cases/{id}/docs", get(verify::list_case_docs_handler))
+        .route("/api/legal/cases/{id}/docs/{name}", get(verify::get_case_doc_handler))
         // Fase 3 — gateway 402 reactivo sobre X402_PROTECTED_PATHS
         // (matching exacto de path; el resto de la API pasa sin peaje).
         .layer(axum::middleware::from_fn_with_state(state.clone(), x402::x402_gate))

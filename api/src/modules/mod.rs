@@ -11,6 +11,7 @@ pub mod devices;
 pub mod erp;
 pub mod mcp;
 pub mod solana;
+pub mod verify;
 pub mod voice;
 pub mod x402;
 

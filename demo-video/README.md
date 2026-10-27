@@ -26,6 +26,8 @@ python3 scripts/generate-tts.py --only peaje --engine edge
 npx remotion preview                        # vista interactiva
 npx remotion render HeroCheck out/hero.mp4  # check rápido 450f
 npm run render:ambient                      # fondo YouTube 16:9, loop 20s sin audio
+npm run render:backdrop                     # fondo YouTube 16:9, 3:00 mudo 100% motion graphics
+node scripts/record-dapp.mjs                # (opcional) graba la dapp real con Playwright
 ```
 
 Env: `MODEL_API_KEY` (dev.meta.ai), `MODEL_API_MODEL` (default `muse-spark-1.3`),

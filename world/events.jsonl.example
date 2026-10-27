@@ -1,0 +1,6 @@
+# world/events.jsonl.example — plantilla del log local del inyector world/.
+# El log real (world/events.jsonl) se IGNORA en git (.gitignore): lo escribe
+# inject.py en cada inyección y referencia runs efímeros. Copiar si se quiere
+# un log inicial:
+#   cp world/events.jsonl.example world/events.jsonl
+{"run": "run-...", "doc": "exhibit-D.md", "excerpt": "peritaje: ..."}

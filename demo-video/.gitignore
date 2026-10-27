@@ -3,4 +3,5 @@ out/
 src/config/data.json
 public/audio/*.mp3
 public/audio/*.wav
+public/browser/*.webm
 .remotion/

@@ -32,6 +32,11 @@ services:
       BRAIN_URL: "http://host.docker.internal:8322"
       # Cifrado de secretos de cuentas (keypairs, api_keys) — 32 B base64.
       ACCOUNTS_MASTER_KEY: "${ACCOUNTS_MASTER_KEY:?genera con: make secrets}"
+      # Verificador legal S2 (workshop): GT solo lo lee este proceso.
+      VERIFIER_ENABLED: "${VERIFIER_ENABLED:-1}"
+      VERIFIER_GT_DIR: "/app/ground_truth"
+      VERIFIER_CASES_DIR: "/app/cases"
+      VERIFIER_WORLD_TOKEN: "${VERIFIER_WORLD_TOKEN:-}"
       # Tienda de dapps: catálogo del host montado read-only (las tools
       # de apps instaladas se comparten vía DB). El INSTALL corre en el
       # host (necesita node/git): ver scripts/nomikos.
@@ -60,6 +65,9 @@ services:
       - ./dapps/registry:/workspace/dapps/registry:ro
       - ./scripts:/workspace/scripts:ro
       - ./api/scripts/faucet:/workspace/api/scripts/faucet:ro
+      # workshop S2: casos visibles + ground truth (0600, solo este proceso)
+      - ./cases:/app/cases:ro
+      - ./ground_truth:/app/ground_truth:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Verifier UI :8765 — northbridge-v-caldera</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Verifier UI <small>S2 · northbridge-v-caldera</small></h1>
+  <div id="conn" class="pill off">desconectado</div>
+</header>
+<section id="authbar">
+  <label>API <input id="api" size="32" value="http://127.0.0.1:8080/api"></label>
+  <label>Run <input id="run" size="26" placeholder="run-…"></label>
+  <label>Bearer <input id="bearer" type="password" size="30" placeholder="solo memoria, nunca se guarda"></label>
+  <button id="go">Conectar</button>
+  <span id="status" class="mono"></span>
+</section>
+<main>
+  <section class="col">
+    <h2>Turnos <small id="turns-n"></small></h2>
+    <ol id="turns"></ol>
+    <h2>Eventos</h2>
+    <ul id="events"></ul>
+  </section>
+  <section class="col">
+    <h2>Memorándum</h2>
+    <pre id="memo">(sin entregar)</pre>
+    <h2>Checklist <small id="score"></small></h2>
+    <ul id="checklist"></ul>
+  </section>
+  <section class="col">
+    <h2>Evidencia world/</h2>
+    <ul id="world"></ul>
+    <h3>Inyectar evidencia</h3>
+    <input id="wdoc" placeholder="exhibit-D.md" size="20">
+    <input id="wexcerpt" placeholder="excerpt…" size="34">
+    <button id="wgo">Inyectar</button>
+    <h2>HITL</h2>
+    <input id="reason" placeholder="motivo escalado" size="34">
+    <button id="esc">Escalar a humano</button>
+    <input id="attorney" placeholder="Nombre <BAR-id>" size="24">
+    <button id="sign">Firmar (attorney)</button>
+    <pre id="out"></pre>
+  </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

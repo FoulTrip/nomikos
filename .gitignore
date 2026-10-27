@@ -77,3 +77,9 @@ os/voice/.venv-host/
 os/voice/whisper.cpp/
 os/voice/models/
 os/voice/voices/
+
+# ── Workshop S1+S2 (agentes legales): solo el log runtime ──────────────
+# Se VERSIONAN: agent/, cases/, ground_truth/ (fixtures ficticios, ver su
+# README), world/inject.py, world/events.jsonl.example, ui/, tests 17/18.
+# NO se sube el log local que inject.py reescribe en cada corrida.
+world/events.jsonl

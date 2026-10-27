@@ -23,7 +23,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useNomikOS, simClaim, simX402, simRebuild, simSay, simPress } from "@/lib/os/nomikos";
-import { setViewLocked, useViewLocked } from "@/lib/viewer/view";
+import { setBankSendTo, setViewLocked, useBankSendTo, useMicMuted, useViewLocked } from "@/lib/viewer/view";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -80,6 +80,19 @@ export default function SimulatorBar() {
 
   // Vista 3D fija: de frente y sin rotación para tocar con precisión.
   const viewLocked = useViewLocked();
+  // Mute desde el botón de voz del OS: no abre el mic y corta el activo.
+  const micMuted = useMicMuted();
+  const bankSendTo = useBankSendTo();
+  useEffect(() => {
+    if (micMuted && recRef.current) {
+      try {
+        recRef.current.stop();
+      } catch {
+        /* noop */
+      }
+      setListening(false);
+    }
+  }, [micMuted]);
 
   const run = async (label: string, fn: () => Promise<void>) => {
     setBusy(label);
@@ -125,6 +138,10 @@ export default function SimulatorBar() {
     const Ctor = speechRecognition();
     if (!Ctor) {
       setMicError("este navegador no tiene reconocimiento de voz — escríbele abajo");
+      return;
+    }
+    if (micMuted && !listening) {
+      setMicError("mic silenciado desde la pantalla — tócalo para activar");
       return;
     }
     if (listening) {
@@ -261,8 +278,7 @@ export default function SimulatorBar() {
         {os?.stage === "online" && os.locked === false && (
           <>
             <p className="text-xs text-muted-foreground">
-              pantalla táctil: toca los iconos del AMOLED (apps · ajustes
-              · peaje).
+              pantalla táctil: toca los iconos del AMOLED (aplicaciones · banco).
             </p>
             <Button
               type="button"
@@ -306,6 +322,26 @@ export default function SimulatorBar() {
               </p>
             )}
             {micError && <p className="text-xs text-destructive">{micError}</p>}
+            {os.screen === "x402" && (
+              <div className="grid gap-1">
+                <label
+                  htmlFor="bank-send-to"
+                  className="text-[11px] tracking-wider text-muted-foreground uppercase"
+                >
+                  Banco › Enviar › Manual
+                </label>
+                <Input
+                  id="bank-send-to"
+                  type="text"
+                  placeholder="Dirección destino (base58)"
+                  value={bankSendTo}
+                  spellCheck={false}
+                  autoComplete="off"
+                  onChange={(e) => setBankSendTo(e.target.value.trim())}
+                  className="h-8 font-mono text-xs"
+                />
+              </div>
+            )}
             <div className="flex gap-1.5">
               <Input
                 type="text"

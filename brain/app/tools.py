@@ -26,6 +26,7 @@ class ToolResult:
     data: Any
     error: str = ""
     x402: dict | None = None  # outcome del handshake (si hubo 402)
+    verification: dict | None = None  # gate S2 (si hubo verificación legal)
 
     def as_tool_message(self) -> str:
         payload = {"ok": self.ok}
@@ -35,6 +36,8 @@ class ToolResult:
             payload["error"] = self.error
         if self.x402:
             payload["x402"] = self.x402
+        if self.verification:
+            payload["verification"] = self.verification
         return json.dumps(payload, ensure_ascii=False, default=str)[:4000]
 
 
@@ -174,6 +177,50 @@ async def _x402_pay_toll(to: str, lamports: int, memo: str | None = None, ctx=No
 
 async def _x402_payouts(ctx, ev, **_: Any) -> ToolResult:
     return await _call_api("/x402/payouts", ctx=ctx, events=ev)
+
+
+# ---------------------------------------------------------------------------
+# Verificador legal S2 — Files API visible + traza + submit (workshop S1)
+# NUNCA exponen ground_truth/ (solo api lo lee). Todas vía guarded_call.
+# ---------------------------------------------------------------------------
+
+async def _list_case_docs(case_id: str, ctx=None, ev=None, **_: Any) -> ToolResult:
+    """Lista los documentos VISIBLES de un caso legal (cases/)."""
+    from urllib.parse import quote
+
+    return await _call_api(f"/legal/cases/{quote(case_id)}/docs", ctx=ctx, events=ev)
+
+
+async def _read_case_doc(case_id: str, name: str, ctx=None, ev=None, **_: Any) -> ToolResult:
+    """Lee un documento visible del caso (Files API)."""
+    from urllib.parse import quote
+
+    return await _call_api(
+        f"/legal/cases/{quote(case_id)}/docs/{quote(name)}", ctx=ctx, events=ev
+    )
+
+
+async def _legal_turn(run_id: str, content: str, role: str = "agent", ctx=None, ev=None, **_: Any) -> ToolResult:
+    """Añade un turno a la traza auditable del run (role: agent|tool|human)."""
+    from urllib.parse import quote
+
+    return await _call_api(
+        f"/legal/runs/{quote(run_id)}/turns", method="POST",
+        body={"role": role, "content": content},
+        ctx=ctx, events=ev,
+    )
+
+
+async def _submit_memorandum(run_id: str, memorandum: str, ctx=None, ev=None, **_: Any) -> ToolResult:
+    """Entrega el memorándum S1. El verificador S2 (api) lo evalúa con reglas
+    estrictas contra ground_truth y devuelve pass/fail + omisiones."""
+    from urllib.parse import quote
+
+    return await _call_api(
+        f"/legal/runs/{quote(run_id)}/submit", method="POST",
+        body={"memorandum": memorandum},
+        ctx=ctx, events=ev,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -324,8 +371,8 @@ TOOLS: dict[str, Tool] = {
         parameters=_p(
             {
                 "path": {"type": "string", "description": "Ruta interna de la app (ej: /api/users?limit=5)"},
-                "method": {"type": "string", "description": "GET | POST | PUT (default GET)"},
-                "body": {"type": "object", "description": "Cuerpo JSON para POST/PUT (opcional)"},
+                "method": {"type": "string", "description": "GET | POST | PUT | PATCH | DELETE (default GET)"},
+                "body": {"type": "object", "description": "Cuerpo JSON para POST/PUT/PATCH (opcional)"},
             },
             ["path"],
         ),
@@ -379,6 +426,65 @@ TOOLS: dict[str, Tool] = {
             ["question"],
         ),
         handler=_ask_muse,
+    ),
+    "list_case_docs": Tool(
+        name="list_case_docs",
+        description=(
+            "Lista los documentos VISIBLES de un caso legal (workshop S1). "
+            "Usa case_id 'northbridge-v-caldera'. Nunca inventes docs."
+        ),
+        parameters=_p(
+            {"case_id": {"type": "string", "description": "ID del caso (ej: northbridge-v-caldera)"}},
+            ["case_id"],
+        ),
+        handler=_list_case_docs,
+    ),
+    "read_case_doc": Tool(
+        name="read_case_doc",
+        description=(
+            "Lee un documento visible del caso (Files API del workshop). "
+            "Cita con formato exacto nombre.md:sección."
+        ),
+        parameters=_p(
+            {
+                "case_id": {"type": "string", "description": "ID del caso"},
+                "name": {"type": "string", "description": "Nombre del doc (ej: exhibit-A.md)"},
+            },
+            ["case_id", "name"],
+        ),
+        handler=_read_case_doc,
+    ),
+    "legal_turn": Tool(
+        name="legal_turn",
+        description=(
+            "Añade un turno a la traza auditable del run legal (queda en el ledger "
+            "y visible en la UI :8765). Úsala para plan/checklist propia."
+        ),
+        parameters=_p(
+            {
+                "run_id": {"type": "string", "description": "ID del run (run-…)"},
+                "content": {"type": "string", "description": "Contenido del turno (plan, hallazgo…)"},
+                "role": {"type": "string", "description": "agent|tool|human (default agent)"},
+            },
+            ["run_id", "content"],
+        ),
+        handler=_legal_turn,
+    ),
+    "submit_memorandum": Tool(
+        name="submit_memorandum",
+        description=(
+            "Entrega el memorándum S1 del run. El verificador S2 lo evalúa con "
+            "reglas estrictas y devuelve pass/fail + omisiones. Si fail, corrige "
+            "y vuelve a entregar."
+        ),
+        parameters=_p(
+            {
+                "run_id": {"type": "string", "description": "ID del run (run-…)"},
+                "memorandum": {"type": "string", "description": "Memorándum en español con citas nombre.md:sección"},
+            },
+            ["run_id", "memorandum"],
+        ),
+        handler=_submit_memorandum,
     ),
 }
 

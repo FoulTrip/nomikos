@@ -15,7 +15,7 @@ ROOT  := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 LOGS  := /tmp/nomikos
 .DEFAULT_GOAL := help
 .PHONY: help env secrets install up down status logs test test-smoke app-init \
-        image flash esp32 esp32-flash clean
+        image flash esp32 esp32-flash wasm clean ui
 
 # ── puertos del ecosistema ──
 P_API := 8080
@@ -24,6 +24,7 @@ P_STACK := 8321
 P_OLLAMA := 11434
 P_DAPP := 3000
 P_APP := 3100
+P_VERIFIER_UI := 8765
 
 ## ── CONFIGURACIÓN ─────────────────────────────────────────────────────
 
@@ -133,6 +134,10 @@ status:
 logs:
 	@if [ -z "$(svc)" ]; then ls "$(LOGS)" 2>/dev/null; else tail -f "$(LOGS)/$(svc).log"; fi
 
+## ui: consola del verificador legal S2 (workshop) en :8765 (estática → api :8080)
+ui:
+	@cd "$(ROOT)/ui" && python3 -m http.server $(P_VERIFIER_UI)
+
 ## ── PRUEBAS ───────────────────────────────────────────────────────────
 
 ## test: batería rápida (contratos duros). make test suite=tests/13… para una sola
@@ -191,6 +196,14 @@ esp32-flash:
 	cargo flash
 
 ## ── LIMPIEZA ───────────────────────────────────────────────────────────
+
+## wasm: compila firmware/os-ui → dapp/public/wasm (commiteado: docker
+## no lleva Rust, el panel sirve el .wasm ya construido; EDITA el .rs y
+## corre ESTO antes de reconstruir el dapp)
+wasm:
+	@cd "$(ROOT)/firmware/os-ui" && wasm-pack build --release --target web --out-dir ../../dapp/public/wasm/os-ui
+	@rm -f "$(ROOT)/dapp/public/wasm/os-ui/.gitignore" "$(ROOT)/dapp/public/wasm/os-ui/package.json"
+	@ls -la "$(ROOT)/dapp/public/wasm/os-ui/os_ui_bg.wasm" | awk '{print "wasm:", $$5}'
 
 ## clean: apaga el ecosistema y borra logs (no toca builds ni datos)
 clean:

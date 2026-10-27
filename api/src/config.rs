@@ -161,6 +161,14 @@ pub struct Config {
     /// ACCOUNTS_MASTER_KEY = base64 de 32 bytes (`openssl rand -base64 32`).
     /// None = el servidor arranca, pero las operaciones que cifran fallan.
     pub accounts_master_key: Option<[u8; 32]>,
+
+    /// [ Verificador legal S2 ] Solo el proceso api lee estos directorios.
+    /// Brain/dapp/ui jamás tocan ground_truth (0600).
+    pub verifier_enabled: bool,
+    pub verifier_gt_dir: String,
+    pub verifier_cases_dir: String,
+    pub verifier_ui_port: u16,
+    pub verifier_world_token: Option<String>,
 }
 
 impl Config {
@@ -242,6 +250,11 @@ impl Config {
             r2_public_base: env_opt("R2_PUBLIC_URL_BASE").map(|b| b.trim_end_matches('/').to_string()),
             r2,
             accounts_master_key: load_master_key(),
+            verifier_enabled: env_str("VERIFIER_ENABLED", "1") == "1",
+            verifier_gt_dir: env_str("VERIFIER_GT_DIR", "../ground_truth"),
+            verifier_cases_dir: env_str("VERIFIER_CASES_DIR", "../cases"),
+            verifier_ui_port: env_str("VERIFIER_UI_PORT", "8765").parse().unwrap_or(8765),
+            verifier_world_token: env_opt("VERIFIER_WORLD_TOKEN"),
         }
     }
 

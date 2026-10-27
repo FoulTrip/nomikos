@@ -1,0 +1,25 @@
+:root{--bg:#0f172a;--card:#1e293b;--line:#334155;--txt:#e2e8f0;--mut:#94a3b8;--ok:#22c55e;--bad:#ef4444;--warn:#f59e0b}
+body{font-family:system-ui,sans-serif;margin:0;background:var(--bg);color:var(--txt)}
+header{display:flex;align-items:center;gap:12px;background:var(--card);padding:10px 16px;border-bottom:1px solid var(--line)}
+header h1{font-size:18px;margin:0}
+header small{color:var(--mut);font-weight:normal}
+.pill{margin-left:auto;padding:4px 10px;border-radius:12px;font-size:12px}
+.pill.off{background:#7f1d1d}.pill.on{background:#14532d}
+#authbar{display:flex;gap:8px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+#authbar input{background:#0b1220;border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:6px}
+button{background:#2563eb;border:0;color:#fff;border-radius:6px;padding:7px 10px;cursor:pointer;margin:2px}
+button:hover{background:#1d4ed8}
+main{display:grid;grid-template-columns:1fr 1.2fr 1fr;gap:12px;padding:12px}
+.col{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;min-height:60vh}
+.col h2{font-size:15px;margin:8px 0;border-bottom:1px solid var(--line);padding-bottom:6px}
+.col h3{font-size:13px;margin:10px 0 4px;color:var(--mut)}
+.col input{background:#0b1220;border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:6px;margin:2px}
+#turns{padding-left:20px}#turns li{margin:6px 0;font-size:13px}#turns .role{color:var(--mut);font-size:11px;text-transform:uppercase}
+#turns .world{color:var(--warn)}
+#events,#world,#checklist{list-style:none;padding:0;font-size:13px}
+#events li,#world li,#checklist li{margin:4px 0;padding:6px;background:#0b1220;border-radius:6px}
+.pass{color:var(--ok)}.missing{color:var(--bad)}.pending{color:var(--warn)}
+#memo{white-space:pre-wrap;font-size:12px;max-height:300px;overflow:auto;background:#0b1220;padding:8px;border-radius:6px}
+#out{white-space:pre-wrap;font-size:11px;color:var(--mut)}
+.mono{font-family:monospace;font-size:12px}
+@media(max-width:1100px){main{grid-template-columns:1fr}}

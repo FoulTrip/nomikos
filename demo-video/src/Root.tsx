@@ -2,6 +2,7 @@ import React from 'react';
 import { Composition } from 'remotion';
 import { MainComposition } from './compositions/MainHackathonDemo';
 import { AmbientLoop } from './compositions/AmbientLoop';
+import { BackdropMotion } from './compositions/BackdropMotion';
 import { VideoPropsSchema, type VideoProps } from './types';
 import defaultPropsRaw from './config/default-data.json';
 
@@ -50,6 +51,16 @@ export const RemotionRoot: React.FC = () => {
         width={1920}
         height={1080}
         defaultProps={{ vignette: true }}
+      />
+      <Composition
+        id="BackdropMotion"
+        component={BackdropMotion}
+        durationInFrames={5400}
+        fps={30}
+        width={1920}
+        height={1080}
+        schema={VideoPropsSchema}
+        defaultProps={defaultProps}
       />
     </>
   );

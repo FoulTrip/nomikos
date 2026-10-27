@@ -97,10 +97,14 @@ def _make_handler(slug: str, call: dict[str, Any]):
         path = _render(path_tpl, kwargs)
         body = None
         if isinstance(body_tpl, dict):
-            body = {
-                k: _render(v, kwargs) if isinstance(v, str) else v
-                for k, v in body_tpl.items()
-            }
+            body = {}
+            for k, v in body_tpl.items():
+                rv = _render(v, kwargs) if isinstance(v, str) else v
+                # placeholder intacto (arg omitido) → no enviar la clave:
+                # evita mandar "{email}" literales en updates parciales
+                if isinstance(v, str) and v == rv and v.startswith("{") and v.endswith("}"):
+                    continue
+                body[k] = rv
         return await _call_api(
             "/app/request",
             method="POST",

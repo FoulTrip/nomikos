@@ -34,3 +34,77 @@ export function useViewLocked(): boolean {
     () => false, // SSR: desbloqueado (coincide en ambos lados)
   );
 }
+
+// ── Modal abierto: mientras haya un modal encima, el visor 3D no roba
+// interacción (la rueda sobre un desplegable hacía zoom en vez de scroll).
+let modalOpen = false;
+
+export function setModalOpen(v: boolean): void {
+  if (modalOpen === v) return;
+  modalOpen = v;
+  emit();
+}
+
+export function useModalOpen(): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => modalOpen,
+    () => false,
+  );
+}
+
+// ── Puntero sobre la pantalla del dispositivo: la rueda hace scroll de
+// la lista del OS en vez de zoom de cámara (el zoom sigue fuera de ella).
+let overScreen = false;
+
+export function setOverScreen(v: boolean): void {
+  if (overScreen === v) return;
+  overScreen = v;
+  emit();
+}
+
+export function useOverScreen(): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => overScreen,
+    () => false,
+  );
+}
+
+// ── Mic silenciado desde la pantalla del OS (el botón de inicio).
+// En sandbox arranca APAGADO: al encenderlo, el puente del panel
+// (DeviceMicBridge) abre el micrófono del PC y manda lo oído al agente.
+let micMuted = true;
+
+export function setMicMuted(v: boolean): void {
+  if (micMuted === v) return;
+  micMuted = v;
+  emit();
+}
+
+export function useMicMuted(): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => micMuted,
+    () => true, // SSR: apagado (coincide en ambos lados)
+  );
+}
+
+// ── Dirección destino del envío manual (Banco › Enviar › Manual).
+// Se escribe en el panel (el OS de 466px no tiene teclado) y el
+// dispositivo la muestra para confirmar.
+let bankSendTo = "";
+
+export function setBankSendTo(v: string): void {
+  if (bankSendTo === v) return;
+  bankSendTo = v;
+  emit();
+}
+
+export function useBankSendTo(): string {
+  return useSyncExternalStore(
+    subscribe,
+    () => bankSendTo,
+    () => "",
+  );
+}

@@ -1,0 +1,68 @@
+{
+  "slug": "orquestacion",
+  "title": "Orquestación de agentes",
+  "icon": "Network",
+  "summary": "Cómo razona tu agente: turnos, selección de tools, ejecución encadenada y pago automático de peajes.",
+  "updated": "2026-10-27",
+  "sections": [
+    {
+      "heading": "El turno agéntico",
+      "blocks": [
+        {
+          "type": "steps",
+          "items": [
+            "Envías texto o voz (el sandbox y el dispositivo mandan al mismo gateway).",
+            "brain autentica tu Bearer contra el api y resuelve TU contexto: proveedor, modelo, red, wallet y dapps.",
+            "El LLM recibe el mensaje + el catálogo de tools disponibles y decide qué llamar.",
+            "El api ejecuta cada tool (las de apps, con su peaje x402) y devuelve resultados al modelo.",
+            "El modelo puede encadenar más llamadas hasta responderte en lenguaje claro."
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Qué tools ve el agente",
+      "blocks": [
+        {
+          "type": "table",
+          "head": ["Grupo", "Ejemplos", "Origen"],
+          "rows": [
+            ["Núcleo", "navbar_status, device_specs, solana_status", "Siempre disponibles"],
+            ["x402", "x402_summary, create_invoice, invoice_status, pay_toll", "Siempre disponibles"],
+            ["Tus dapps", "payload_* (si agregaste Payload)", "Solo las agregadas en Servicios"]
+          ]
+        },
+        {
+          "type": "callout",
+          "tone": "info",
+          "title": "Sin proveedor no hay razonamiento",
+          "text": "Si tu cuenta no tiene proveedor activo, el gateway responde exigiéndolo: nunca usa claves globales ni de otra cuenta."
+        }
+      ]
+    },
+    {
+      "heading": "Peajes durante el turno",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "Cuando una tool toca un recurso protegido, el api emite factura 402 y la wallet dPaaS de tu cuenta la liquida (dPaaS = pago delegado automático). El turno continúa sin que firmes nada; cada factura se consume una sola vez."
+        },
+        {
+          "type": "code",
+          "lang": "bash",
+          "text": "curl -s -X POST http://localhost:3000/api/agent/gateway -H \"Content-Type: application/json\" -H \"Cookie: $SESSION\" -d '{\"text\":\"estado de salud de la API\"}' | jq '{ok, tools_used, backend}'"
+        }
+      ]
+    },
+    {
+      "heading": "Sandbox vs producción",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "El modo sandbox del panel es tu banco de pruebas efímero: mismo proveedor, modelo, dapps y wallet, pero sesionado en el navegador. Los turnos de prueba usan tus parámetros reales; el registro separado de uso sandbox/producción llega con el medidor del api."
+        }
+      ]
+    }
+  ],
+  "related": ["aplicaciones", "proveedores", "instalacion-apps"]
+}

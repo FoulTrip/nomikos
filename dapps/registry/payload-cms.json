@@ -57,6 +57,173 @@
         "path": "/api/users",
         "body": { "email": "{email}", "password": "{password}" }
       }
+    },
+    {
+      "name": "payload_update_user",
+      "description": "Actualiza un usuario de la app (PATCH /api/users/{id}). Manda al menos uno de los campos.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Id del usuario" },
+          "email": { "type": "string", "description": "Nuevo email (opcional)" },
+          "password": { "type": "string", "description": "Nuevo password (opcional)" }
+        },
+        "required": ["id"]
+      },
+      "call": {
+        "method": "PATCH",
+        "path": "/api/users/{id}",
+        "body": { "email": "{email}", "password": "{password}" }
+      }
+    },
+    {
+      "name": "payload_delete_user",
+      "description": "Borra un usuario de la app (DELETE /api/users/{id}). Irreversible.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Id del usuario a borrar" }
+        },
+        "required": ["id"]
+      },
+      "call": { "method": "DELETE", "path": "/api/users/{id}", "body": null }
+    },
+    {
+      "name": "payload_count_users",
+      "description": "Cuenta total de usuarios de la app (GET /api/users/count).",
+      "parameters": { "type": "object", "properties": {}, "required": [] },
+      "call": { "method": "GET", "path": "/api/users/count", "body": null }
+    },
+    {
+      "name": "payload_login",
+      "description": "Login en la app como un usuario (POST /api/users/login). Devuelve token JWT de la app.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Email del usuario" },
+          "password": { "type": "string", "description": "Password del usuario" }
+        },
+        "required": ["email", "password"]
+      },
+      "call": {
+        "method": "POST",
+        "path": "/api/users/login",
+        "body": { "email": "{email}", "password": "{password}" }
+      }
+    },
+    {
+      "name": "payload_logout",
+      "description": "Logout en la app (POST /api/users/logout).",
+      "parameters": { "type": "object", "properties": {}, "required": [] },
+      "call": { "method": "POST", "path": "/api/users/logout", "body": null }
+    },
+    {
+      "name": "payload_me",
+      "description": "Quién soy en la app con la sesión actual (GET /api/users/me).",
+      "parameters": { "type": "object", "properties": {}, "required": [] },
+      "call": { "method": "GET", "path": "/api/users/me", "body": null }
+    },
+    {
+      "name": "payload_refresh_token",
+      "description": "Refresca el token de sesión de la app (POST /api/users/refresh-token).",
+      "parameters": { "type": "object", "properties": {}, "required": [] },
+      "call": { "method": "POST", "path": "/api/users/refresh-token", "body": null }
+    },
+    {
+      "name": "payload_forgot_password",
+      "description": "Pide reset de password en la app (POST /api/users/forgot-password). La app envía el email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Email del usuario" }
+        },
+        "required": ["email"]
+      },
+      "call": {
+        "method": "POST",
+        "path": "/api/users/forgot-password",
+        "body": { "email": "{email}" }
+      }
+    },
+    {
+      "name": "payload_reset_password",
+      "description": "Resetea el password con el token del email (POST /api/users/reset-password).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "token": { "type": "string", "description": "Token recibido por email" },
+          "password": { "type": "string", "description": "Nuevo password" }
+        },
+        "required": ["token", "password"]
+      },
+      "call": {
+        "method": "POST",
+        "path": "/api/users/reset-password",
+        "body": { "token": "{token}", "password": "{password}" }
+      }
+    },
+    {
+      "name": "payload_unlock",
+      "description": "Desbloquea un usuario bloqueado por intentos (POST /api/users/unlock).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "description": "Email del usuario" }
+        },
+        "required": ["email"]
+      },
+      "call": {
+        "method": "POST",
+        "path": "/api/users/unlock",
+        "body": { "email": "{email}" }
+      }
+    },
+    {
+      "name": "payload_get_media",
+      "description": "Ficha completa de un medio de la app por su id (GET /api/media/{id}).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Id del medio" }
+        },
+        "required": ["id"]
+      },
+      "call": { "method": "GET", "path": "/api/media/{id}", "body": null }
+    },
+    {
+      "name": "payload_update_media",
+      "description": "Actualiza los metadatos de un medio (PATCH /api/media/{id}).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Id del medio" },
+          "alt": { "type": "string", "description": "Nuevo texto alternativo (opcional)" }
+        },
+        "required": ["id"]
+      },
+      "call": {
+        "method": "PATCH",
+        "path": "/api/media/{id}",
+        "body": { "alt": "{alt}" }
+      }
+    },
+    {
+      "name": "payload_delete_media",
+      "description": "Borra un medio de la app (DELETE /api/media/{id}). Irreversible.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Id del medio a borrar" }
+        },
+        "required": ["id"]
+      },
+      "call": { "method": "DELETE", "path": "/api/media/{id}", "body": null }
+    },
+    {
+      "name": "payload_count_media",
+      "description": "Cuenta total de medios de la app (GET /api/media/count).",
+      "parameters": { "type": "object", "properties": {}, "required": [] },
+      "call": { "method": "GET", "path": "/api/media/count", "body": null }
     }
   ]
 }

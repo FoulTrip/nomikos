@@ -484,7 +484,7 @@ fn resolve_payer(state: &SharedState, account_id: &str) -> AppResult<Payer> {
         })?;
     let (Some(enc), network) = row else {
         return Err(AppError::bad_request(
-            "la cuenta no importó el keypair del orquestador (POST /api/accounts/me/chain/keypair/import)",
+            "la cuenta no tiene keypair del orquestador (créalo en Wallet·Red del panel)",
         ));
     };
     let mk = state
@@ -1163,6 +1163,17 @@ pub async fn me_x402_summary_handler(
         None => None,
     };
 
+    // Todas las dPaaS por red (para fondear) con balance vivo best-effort.
+    let mut wallets = crate::modules::accounts::dpaas_wallets_list(&state, &auth.account_id);
+    for w in wallets.iter_mut() {
+        let net = w["network"].as_str().unwrap_or("devnet");
+        let pk = w["wallet_pubkey"].as_str().unwrap_or_default();
+        w["balance_lamports"] = match client_for_network(&state, net).await {
+            Ok(client) => json!(client.get_balance(pk).await.ok()),
+            Err(_) => Value::Null,
+        };
+    }
+
     let daily_used: i64 = state
         .db
         .with(|c| {
@@ -1181,6 +1192,7 @@ pub async fn me_x402_summary_handler(
             "wallet": wallet,
             "network": network,
             "balance_lamports": balance_lamports,
+            "wallets": wallets,
             "payee": payee,
             "tx_limit_lamports": tx_limit,
             "daily_limit_lamports": daily_limit,

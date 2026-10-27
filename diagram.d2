@@ -65,6 +65,17 @@ classes: {
       shadow: false
     }
   }
+  capa_rosa: {
+    style: {
+      fill: "#FFF1F2"
+      stroke: "#FECDD3"
+      border-radius: 12
+      font-size: 20
+      bold: true
+      font-color: "#881337"
+      shadow: false
+    }
+  }
 
   nodo: {
     shape: rectangle
@@ -136,6 +147,20 @@ classes: {
       shadow: false
     }
   }
+  nodo_rosa: {
+    shape: rectangle
+    width: 220
+    height: 90
+    style: {
+      fill: "#FFFFFF"
+      stroke: "#BE123C"
+      stroke-width: 2
+      border-radius: 8
+      font-size: 15
+      font-color: "#0F172A"
+      shadow: false
+    }
+  }
 
   f_voz: {
     style: {
@@ -183,6 +208,15 @@ classes: {
       bold: true
     }
   }
+  f_legal: {
+    style: {
+      stroke: "#BE123C"
+      stroke-width: 2
+      font-size: 13
+      font-color: "#881337"
+      bold: true
+    }
+  }
   f_base: {
     style: {
       stroke: "#94A3B8"
@@ -203,7 +237,7 @@ Personas: "👥 1 · Personas y dispositivos" {
 }
 
 # ───────── 2 · Plataforma ─────────
-Plataforma: "☁️ 2 · Plataforma TripKode" {
+Plataforma: "☁️ 2 · Plataforma Nomik" {
   class: capa_azul
 
   Cuentas: "🔑 Cuentas\nLogin e identidad" { class: nodo_azul }
@@ -217,21 +251,34 @@ IA: "🤖 3 · Asistente IA" {
 
   Asistente: "🤖 Asistente\nDecide y ejecuta" { class: nodo_teal }
   Modelo: "🧠 Modelo de lenguaje\nEntiende y razona" { class: nodo_teal }
-  Filtro: "🛡️ Filtro de seguridad\nRevisa mensajes" { class: nodo_teal }
+  Filtro: "🛡️ Filtros in/out\nBloquean lo inseguro" { class: nodo_teal }
 }
 
-# ───────── 4 · Acceso y pagos ─────────
-Pagos: "💳 4 · Acceso y pagos" {
+# ───────── 4 · Taller legal S1+S2 ─────────
+Legal: "⚖️ 4 · Taller legal S1+S2" {
+  class: capa_rosa
+
+  S1: "📝 Agente S1\nLee casos y borra" { class: nodo_rosa }
+  Casos: "📂 Casos\nDocs visibles" { class: nodo_rosa }
+  Verificador: "⚖️ Verificador\nReglas estrictas" { class: nodo_rosa }
+  Verdad: "🔒 Verdad\nSolo el verificador" { class: nodo_rosa }
+  Mundo: "🌍 Mundo\nNueva evidencia" { class: nodo_rosa }
+  Consola: "🖥️ Consola :8765\nTurnos y firma" { class: nodo_rosa }
+}
+
+# ───────── 5 · Acceso y pagos ─────────
+Pagos: "💳 5 · Acceso y pagos" {
   class: capa_ambar
 
   Acceso: "🔒 Control de acceso\nExige y verifica el pago" { class: nodo_ambar }
   Billetera: "👛 Billetera\nFirma los pagos" { class: nodo_ambar }
   Blockchain: "⛓️ Blockchain Solana\nConfirma el pago" { class: nodo_ambar }
-  Historial: "🗄️ Historial\nPagos y movimientos" { class: nodo_ambar }
+  Historial: "🗄️ Historial\nUn solo uso · replay 409" { class: nodo_ambar }
+  Grifo: "💧 Grifo Devnet\nFondea billeteras" { class: nodo_ambar }
 }
 
-# ───────── 5 · Ecosistema de dApps ─────────
-Dapps: "🧩 5 · Ecosistema de dApps" {
+# ───────── 6 · Ecosistema de dApps ─────────
+Dapps: "🧩 6 · Ecosistema de dApps" {
   class: capa_violeta
 
   Payload: "🗂️ Payload CMS\nGestión de contenido" { class: nodo_violeta }
@@ -241,8 +288,15 @@ Dapps: "🧩 5 · Ecosistema de dApps" {
 
 # ───────── Relaciones internas ─────────
 IA.Asistente <-> IA.Modelo: "razona" { class: f_base }
-IA.Asistente <-> IA.Filtro: "revisa" { class: f_base }
+IA.Asistente <-> IA.Filtro: "revisa\nentrada y salida" { class: f_base }
 Pagos.Blockchain -> Pagos.Historial: "guarda" { class: f_base }
+Pagos.Billetera -> Pagos.Blockchain: "firma y envía" { class: f_base }
+Pagos.Acceso -> Pagos.Billetera: "factura" { class: f_base }
+Pagos.Grifo -> Pagos.Billetera: "fondea" { class: f_base }
+Legal.S1 -> Legal.Casos: "lee" { class: f_base }
+Legal.Verificador -> Legal.Verdad: "contrasta" { class: f_base }
+Legal.Mundo -> Legal.Verificador: "inyecta" { class: f_base }
+Legal.Consola -> Legal.Verificador: "lee y firma" { class: f_base }
 
 # ───────── A · Voz ─────────
 Personas.Usuario -> Personas.Dispositivo: "A1 · habla" { class: f_voz }
@@ -250,21 +304,30 @@ Personas.Dispositivo <-> Plataforma.Voz: "A2 · envía\nA5 · responde" { class:
 Plataforma.Voz <-> IA.Asistente: "A3 · consulta\nA4 · respuesta" { class: f_voz }
 
 # ───────── B · Servicio con pago ─────────
-IA.Asistente <-> Pagos.Acceso: "B1 · pide servicio\nB2 · exige pago" { class: f_pago }
-IA.Asistente <-> Pagos.Billetera: "B3 · firma pago" { class: f_pago }
-Pagos.Acceso -> Dapps.Payload: "B4 · verifica y entrega" { class: f_pago }
+IA.Asistente <-> Pagos.Acceso: "B1 · pide servicio\nB2 · 402 + factura" { class: f_pago }
+IA.Asistente <-> Pagos.Billetera: "B3 · firma" { class: f_pago }
+Pagos.Acceso -> Dapps.Payload: "B4 · entrega" { class: f_pago }
 Pagos.Acceso -> Pagos.Blockchain: "B5 · registra pago" { class: f_pago }
 
 # ───────── C · Registro de dispositivo ─────────
-Personas.Dispositivo <-> Plataforma.Flota: "C1 · pide registro\nC3 · queda activo" { class: f_flota }
-Personas.Panel -> Plataforma.Flota: "C2 · confirma código" { class: f_flota }
+Personas.Dispositivo <-> Plataforma.Flota: "C1 · pide\nC3 · activo" { class: f_flota }
+Personas.Panel -> Plataforma.Flota: "C2 · código" { class: f_flota }
 
 # ───────── D · Llamadas ─────────
-Pagos.Acceso -> Dapps.Llamadas: "D1 · inicia llamada" { class: f_call }
+Pagos.Acceso -> Dapps.Llamadas: "D1 · inicia\npor minuto" { class: f_call }
 
 # ───────── Futuro ─────────
-Pagos.Acceso -> Dapps.Nuevas: "mismo acceso" { class: f_dapp }
+Pagos.Acceso -> Dapps.Nuevas { class: f_dapp }
 
 # ───────── E · Panel ─────────
 Personas.Panel -> Plataforma.Cuentas: "E1 · inicia sesión" { class: f_base }
 IA.Asistente -> Plataforma.Cuentas: "verifica identidad" { class: f_base }
+
+# ───────── F · Caso legal S1 ─────────
+Legal.S1 -> IA.Asistente: "F1 · borrador" { class: f_legal }
+IA.Asistente -> Legal.Casos: "F2 · lee docs" { class: f_legal }
+IA.Asistente <-> Legal.Verificador: "F3 · entrega\nG3 · pasa o frena" { class: f_legal }
+
+# ───────── G · Verificación S2 ─────────
+Personas.Usuario -> Legal.Consola: "G1 · revisa y firma" { class: f_legal }
+Legal.Mundo -> IA.Asistente: "G2 · evidencia" { class: f_legal }

@@ -143,6 +143,18 @@ impl Db {
                  updated_at            INTEGER NOT NULL
              );
 
+             -- Bóveda dPaaS: UNA wallet por (cuenta, red), generada sola al
+             -- registrar (devnet+mainnet) y al cambiar de red. account_chain
+             -- es el espejo de la red ACTIVA (todas las lecturas siguen ahí).
+             CREATE TABLE IF NOT EXISTS account_chain_wallets (
+                 account_id            TEXT NOT NULL REFERENCES accounts(id),
+                 network               TEXT NOT NULL,
+                 wallet_pubkey         TEXT NOT NULL,
+                 payer_keypair_enc     TEXT NOT NULL,
+                 updated_at            INTEGER NOT NULL,
+                 PRIMARY KEY (account_id, network)
+             );
+
              CREATE TABLE IF NOT EXISTS account_wallets (
                  id                   TEXT PRIMARY KEY,
                  account_id           TEXT NOT NULL REFERENCES accounts(id),
@@ -240,7 +252,53 @@ impl Db {
                  account_id      TEXT PRIMARY KEY,
                  state           TEXT NOT NULL,
                  updated_at      INTEGER NOT NULL
-             );",
+             );
+
+             -- Verificador legal S2 (workshop northbridge-v-caldera).
+             -- El agente (brain) escribe runs/turns; SOLO api evalua contra
+             -- ground_truth/ (0600, fuera de la DB). Efectos bloqueados sin pass.
+             CREATE TABLE IF NOT EXISTS legal_runs (
+                 id            TEXT PRIMARY KEY,
+                 account_id    TEXT NOT NULL REFERENCES accounts(id),
+                 case_id       TEXT NOT NULL,
+                 status        TEXT NOT NULL DEFAULT 'draft',
+                 memorandum    TEXT,
+                 signed_at     INTEGER,
+                 signed_by     TEXT,
+                 created_at    INTEGER NOT NULL,
+                 updated_at    INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_legal_runs_account ON legal_runs(account_id);
+
+             CREATE TABLE IF NOT EXISTS legal_turns (
+                 id            TEXT PRIMARY KEY,
+                 run_id        TEXT NOT NULL REFERENCES legal_runs(id),
+                 idx           INTEGER NOT NULL,
+                 role          TEXT NOT NULL,
+                 content       TEXT NOT NULL,
+                 tools_json    TEXT,
+                 created_at    INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_legal_turns_run ON legal_turns(run_id, idx);
+
+             CREATE TABLE IF NOT EXISTS legal_verdicts (
+                 id            TEXT PRIMARY KEY,
+                 run_id        TEXT NOT NULL REFERENCES legal_runs(id),
+                 verdict       TEXT NOT NULL,
+                 omissions_json TEXT NOT NULL DEFAULT '[]',
+                 score         REAL NOT NULL DEFAULT 0,
+                 created_at    INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_legal_verdicts_run ON legal_verdicts(run_id);
+
+             CREATE TABLE IF NOT EXISTS legal_events (
+                 id            TEXT PRIMARY KEY,
+                 run_id        TEXT NOT NULL REFERENCES legal_runs(id),
+                 kind          TEXT NOT NULL,
+                 payload_json  TEXT,
+                 created_at    INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_legal_events_run ON legal_events(run_id, created_at);",
         )?;
 
         // Migraciones para DBs ya existentes (idempotentes):
@@ -298,6 +356,15 @@ impl Db {
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_connected_wallets_unique \
              ON account_connected_wallets (account_id, provider, pubkey)",
+            [],
+        )?;
+        // Bóveda dPaaS por red: la wallet única histórica pasa a ser la fila
+        // de SU red (las demás redes se generan solas al usarlas).
+        conn.execute(
+            "INSERT OR IGNORE INTO account_chain_wallets \
+             (account_id, network, wallet_pubkey, payer_keypair_enc, updated_at) \
+             SELECT account_id, network, wallet_pubkey, payer_keypair_enc, updated_at \
+             FROM account_chain WHERE wallet_pubkey IS NOT NULL AND payer_keypair_enc IS NOT NULL",
             [],
         )?;
         Ok(())

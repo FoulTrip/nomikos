@@ -12,6 +12,7 @@
     "render:9x16": "remotion render HackathonShort out/demo_9x16.mp4 --props=src/config/data.json",
     "render:hero": "remotion render HeroCheck out/hero-check.mp4",
     "render:ambient": "remotion render AmbientLoop out/ambient_16x9.mp4",
+    "render:backdrop": "remotion render BackdropMotion out/backdrop_16x9.mp4 --props=src/config/data.json",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -36,6 +37,8 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
+    "geist": "^1.8.2",
+    "playwright-core": "^1.64.1",
     "typescript": "^5.6.0"
   }
 }

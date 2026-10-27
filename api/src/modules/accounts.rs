@@ -154,6 +154,106 @@ pub fn master_key_of(state: &SharedState) -> AppResult<[u8; 32]> {
         })
 }
 
+/// Acuña un par dPaaS: pubkey base58 + keypair JSON sellado (AEAD).
+fn mint_dpaas_pair(state: &SharedState) -> AppResult<(String, String)> {
+    let mut seed = [0u8; 32];
+    rand::rngs::OsRng.fill_bytes(&mut seed);
+    let signing = ed25519_dalek::SigningKey::from_bytes(&seed);
+    let mut kp = [0u8; 64];
+    kp[..32].copy_from_slice(&seed);
+    kp[32..].copy_from_slice(signing.verifying_key().as_bytes());
+    let pubkey = crate::b58::encode(&kp[32..]);
+    let raw_json = serde_json::to_string(&kp.to_vec()).unwrap_or_default();
+    let mk = master_key_of(state)?;
+    let sealed = crypto::seal(&mk, &raw_json)?;
+    Ok((pubkey, sealed))
+}
+
+/// Bóveda dPaaS: garantiza wallet para (cuenta, red), creándola sola si
+/// falta. Si es la red ACTIVA, la espeja en account_chain — invariante:
+/// TODAS las lecturas (payer, summary, faucet, sim) siguen ahí.
+/// Devuelve la pubkey de esa red.
+pub(crate) fn ensure_dpaas_wallet(
+    state: &SharedState,
+    account_id: &str,
+    network: &str,
+) -> AppResult<String> {
+    if let Some(pk) = state
+        .db
+        .with(|c| {
+            c.query_row(
+                "SELECT wallet_pubkey FROM account_chain_wallets WHERE account_id = ?1 AND network = ?2",
+                params![account_id, network],
+                |r| r.get::<_, String>(0),
+            )
+        })
+        .ok()
+    {
+        mirror_active_wallet(state, account_id)?;
+        return Ok(pk);
+    }
+    let (pubkey, sealed) = mint_dpaas_pair(state)?;
+    let now = now_ms();
+    state.db.with(|c| {
+        c.execute(
+            "INSERT OR IGNORE INTO account_chain_wallets \
+             (account_id, network, wallet_pubkey, payer_keypair_enc, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![account_id, network, pubkey, sealed, now],
+        )?;
+        Ok(())
+    })?;
+    mirror_active_wallet(state, account_id)?;
+    tracing::info!("account {account_id}: wallet dPaaS auto-generada en {network} → {pubkey}");
+    Ok(pubkey)
+}
+
+/// Espeja la wallet de la red activa (bóveda → account_chain). Crea la
+/// fila de chain si falta (cuentas legacy sin PUT /chain).
+fn mirror_active_wallet(state: &SharedState, account_id: &str) -> AppResult<()> {
+    let now = now_ms();
+    state.db.with(|c| {
+        c.execute(
+            "INSERT INTO account_chain (account_id, network, updated_at) VALUES (?1, 'devnet', ?2) \
+             ON CONFLICT(account_id) DO NOTHING",
+            params![account_id, now],
+        )?;
+        c.execute(
+            "UPDATE account_chain SET wallet_pubkey = \
+               (SELECT w.wallet_pubkey FROM account_chain_wallets w \
+                WHERE w.account_id = account_chain.account_id AND w.network = account_chain.network), \
+             payer_keypair_enc = \
+               (SELECT w.payer_keypair_enc FROM account_chain_wallets w \
+                WHERE w.account_id = account_chain.account_id AND w.network = account_chain.network), \
+             updated_at = ?2 WHERE account_id = ?1",
+            params![account_id, now],
+        )?;
+        Ok(())
+    })?;
+    Ok(())
+}
+
+/// Lista dPaaS por red para la UI (para fondear; SIN secretos).
+pub(crate) fn dpaas_wallets_list(state: &SharedState, account_id: &str) -> Vec<Value> {
+    state
+        .db
+        .with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT network, wallet_pubkey FROM account_chain_wallets \
+                 WHERE account_id = ?1 ORDER BY CASE network \
+                 WHEN 'devnet' THEN 0 WHEN 'mainnet' THEN 1 WHEN 'testnet' THEN 2 ELSE 3 END",
+            )?;
+            let rows = stmt.query_map(params![account_id], |r| {
+                Ok(json!({
+                    "network": r.get::<_, String>(0)?,
+                    "wallet_pubkey": r.get::<_, String>(1)?,
+                }))
+            })?;
+            rows.collect()
+        })
+        .unwrap_or_default()
+}
+
 // ---------------------------------------------------------------------------
 // Handlers: Auth
 // ---------------------------------------------------------------------------
@@ -195,6 +295,11 @@ pub async fn register_handler(
         }
     }
     inserted?;
+
+    // dPaaS automático: devnet + mainnet desde el nacimiento (el usuario
+    // solo fondea; nada manual). Falla el registro si no hay master key.
+    ensure_dpaas_wallet(&state, &id, "devnet")?;
+    ensure_dpaas_wallet(&state, &id, "mainnet")?;
 
     tracing::info!("cuenta registrada: {id} ({email})");
     Ok((
@@ -282,6 +387,9 @@ pub async fn login_handler(
     })?;
 
     tracing::info!("login OK: {account_id} ({email})");
+    // Backfill best-effort: cuentas legacy sin bóveda la completan solas.
+    let _ = ensure_dpaas_wallet(&state, &account_id, "devnet");
+    let _ = ensure_dpaas_wallet(&state, &account_id, "mainnet");
     Ok(Json(json!({
         "ok": true,
         "account_id": account_id,
@@ -451,8 +559,15 @@ pub async fn put_llm_handler(
         .unwrap_or_else(|| body.models[0].clone());
 
     // api_key: se cifra si viene; si no, se conserva la existente.
+    // Solo ASCII imprimible sin espacios: una key con un emoji pegado
+    // revienta el header Authorization del SDK (ascii) — 400 claro aquí.
     let api_key_enc = match body.api_key.as_deref().map(str::trim).filter(|k| !k.is_empty()) {
         Some(key) => {
+            if !key.bytes().all(|b| (0x21..=0x7E).contains(&b)) {
+                return Err(AppError::bad_request(
+                    "api_key con caracteres inválidos (¿emoji o espacios pegados?) — cópiala de nuevo, solo la key",
+                ));
+            }
             let mk = master_key_of(&state)?;
             Some(crypto::seal(&mk, key)?)
         }
@@ -919,27 +1034,41 @@ pub async fn put_chain_handler(
         Some(Some(label)) => Some(label.trim().to_string()),
     };
     let now = now_ms();
+    // wallet_pubkey manual: vestigial, se ignora — la dPaaS es automática.
+    let _ = body.wallet_pubkey.as_ref();
     state.db.with(|c| {
         c.execute(
-            "INSERT INTO account_chain (account_id, network, wallet_pubkey, payee, \
+            "INSERT INTO account_chain (account_id, network, payee, \
              daily_limit_lamports, tx_limit_lamports, active_wallet_label, updated_at) \
-             VALUES (?1, COALESCE(?2, 'devnet'), ?3, ?4, ?5, ?6, NULLIF(?7, ''), ?8) \
+             VALUES (?1, COALESCE(?2, 'devnet'), ?3, ?4, ?5, NULLIF(?6, ''), ?7) \
              ON CONFLICT(account_id) DO UPDATE SET \
                network = COALESCE(?2, account_chain.network), \
-               wallet_pubkey = COALESCE(?3, account_chain.wallet_pubkey), \
-               payee = COALESCE(?4, account_chain.payee), \
-               daily_limit_lamports = COALESCE(?5, account_chain.daily_limit_lamports), \
-               tx_limit_lamports = COALESCE(?6, account_chain.tx_limit_lamports), \
+               payee = COALESCE(?3, account_chain.payee), \
+               daily_limit_lamports = COALESCE(?4, account_chain.daily_limit_lamports), \
+               tx_limit_lamports = COALESCE(?5, account_chain.tx_limit_lamports), \
                active_wallet_label = \
-                 CASE WHEN ?7 IS NULL THEN account_chain.active_wallet_label \
-                      ELSE NULLIF(?7, '') END, \
-               updated_at = ?8",
-            params![auth.account_id, body.network, body.wallet_pubkey, body.payee,
+                 CASE WHEN ?6 IS NULL THEN account_chain.active_wallet_label \
+                      ELSE NULLIF(?6, '') END, \
+               updated_at = ?7",
+            params![auth.account_id, body.network, body.payee,
                     body.daily_limit_lamports, body.tx_limit_lamports,
                     active_wallet_param, now],
         )?;
         Ok(())
     })?;
+    // Cambiar de red auto-crea su wallet (nunca una red sin dPaaS).
+    // (wallet_pubkey manual: vestigial, se ignora — la dPaaS es automática.)
+    let network: String = state
+        .db
+        .with(|c| {
+            c.query_row(
+                "SELECT network FROM account_chain WHERE account_id = ?1",
+                params![auth.account_id],
+                |r| r.get(0),
+            )
+        })
+        .unwrap_or_else(|_| "devnet".to_string());
+    ensure_dpaas_wallet(&state, &auth.account_id, &network)?;
 
     let mut chain = state.db.with(|c| {
         c.query_row(
@@ -1027,20 +1156,39 @@ pub async fn import_keypair_handler(
     Json(body): Json<ImportKeypairBody>,
 ) -> AppResult<Response> {
     let (pubkey, sealed) = load_keypair(&state, &body)?;
+    // Importar = ROTAR la wallet de la red ACTIVA (bóveda + espejo).
+    let network: String = state
+        .db
+        .with(|c| {
+            c.query_row(
+                "SELECT network FROM account_chain WHERE account_id = ?1",
+                params![auth.account_id],
+                |r| r.get(0),
+            )
+        })
+        .unwrap_or_else(|_| "devnet".to_string());
     let now = now_ms();
     state.db.with(|c| {
         c.execute(
-            "INSERT INTO account_chain (account_id, network, wallet_pubkey, payer_keypair_enc, \
-             payee, updated_at) VALUES (?1, 'devnet', ?2, ?3, ?4, ?5) \
-             ON CONFLICT(account_id) DO UPDATE SET \
+            "INSERT INTO account_chain_wallets (account_id, network, wallet_pubkey, payer_keypair_enc, \
+             updated_at) VALUES (?1, ?2, ?3, ?4, ?5) \
+             ON CONFLICT(account_id, network) DO UPDATE SET \
                wallet_pubkey = excluded.wallet_pubkey, \
                payer_keypair_enc = excluded.payer_keypair_enc, \
+               updated_at = excluded.updated_at",
+            params![auth.account_id, network, pubkey, sealed, now],
+        )?;
+        c.execute(
+            "INSERT INTO account_chain (account_id, network, payee, updated_at) \
+             VALUES (?1, ?2, ?3, ?4) \
+             ON CONFLICT(account_id) DO UPDATE SET \
                payee = COALESCE(account_chain.payee, excluded.payee), \
                updated_at = excluded.updated_at",
-            params![auth.account_id, pubkey, sealed, pubkey, now],
+            params![auth.account_id, network, pubkey, now],
         )?;
         Ok(())
     })?;
+    mirror_active_wallet(&state, &auth.account_id)?;
 
     tracing::info!("account {}: keypair del orquestador importado → {pubkey}", auth.account_id);
     Ok(Json(json!({
@@ -1052,52 +1200,50 @@ pub async fn import_keypair_handler(
 }
 
 /// POST /api/accounts/me/chain/keypair/generate — crea la wallet dPaaS de
-/// la cuenta (botón "Crear wallet" del modal): genera ed25519 con OsRng,
-/// sella el keypair (AEAD) y fija wallet+payee. Idempotente de a una: si
-/// ya existe keypair, 409 (borrar/importar para rotar).
+/// la RED ACTIVA si falta (casi siempre existe: el registro la genera
+/// sola). 409 si ya existe (importar para rotar).
 pub async fn generate_keypair_handler(
     State(state): State<SharedState>,
     auth: AuthedAccount,
 ) -> AppResult<Response> {
-    let exists: bool = state
+    let network: String = state
         .db
         .with(|c| {
             c.query_row(
-                "SELECT payer_keypair_enc IS NOT NULL FROM account_chain WHERE account_id = ?1",
+                "SELECT network FROM account_chain WHERE account_id = ?1",
                 params![auth.account_id],
                 |r| r.get(0),
             )
         })
+        .unwrap_or_else(|_| "devnet".to_string());
+    let exists: bool = state
+        .db
+        .with(|c| {
+            c.query_row(
+                "SELECT 1 FROM account_chain_wallets WHERE account_id = ?1 AND network = ?2",
+                params![auth.account_id, network],
+                |r| r.get::<_, i64>(0),
+            )
+        })
+        .map(|_| true)
         .unwrap_or(false);
     if exists {
         return Err(AppError::conflict(
             "la cuenta ya tiene wallet dPaaS (importa otra para rotar)",
         ));
     }
-    let mut seed = [0u8; 32];
-    rand::rngs::OsRng.fill_bytes(&mut seed);
-    let signing = ed25519_dalek::SigningKey::from_bytes(&seed);
-    let mut kp = [0u8; 64];
-    kp[..32].copy_from_slice(&seed);
-    kp[32..].copy_from_slice(signing.verifying_key().as_bytes());
-    let pubkey = crate::b58::encode(&kp[32..]);
-    let raw_json = serde_json::to_string(&kp.to_vec()).unwrap_or_default();
-    let mk = master_key_of(&state)?;
-    let sealed = crypto::seal(&mk, &raw_json)?;
+    let (pubkey, sealed) = mint_dpaas_pair(&state)?;
     let now = now_ms();
     state.db.with(|c| {
         c.execute(
-            "INSERT INTO account_chain (account_id, network, wallet_pubkey, payer_keypair_enc, \
-             payee, updated_at) VALUES (?1, 'devnet', ?2, ?3, ?4, ?5) \
-             ON CONFLICT(account_id) DO UPDATE SET \
-               wallet_pubkey = excluded.wallet_pubkey, \
-               payer_keypair_enc = excluded.payer_keypair_enc, \
-               payee = COALESCE(account_chain.payee, excluded.payee), \
-               updated_at = excluded.updated_at",
-            params![auth.account_id, pubkey, sealed, pubkey, now],
+            "INSERT OR IGNORE INTO account_chain_wallets \
+             (account_id, network, wallet_pubkey, payer_keypair_enc, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![auth.account_id, network, pubkey, sealed, now],
         )?;
         Ok(())
     })?;
+    mirror_active_wallet(&state, &auth.account_id)?;
 
     tracing::info!("account {}: wallet dPaaS generada → {pubkey}", auth.account_id);
     Ok(Json(json!({
@@ -1675,6 +1821,11 @@ pub async fn context_handler(
     };
 
     // Chain (red + wallet del orquestador + dPaaS + wallet operativa).
+    // Backfill best-effort: si la cuenta aún no tiene bóveda (legacy),
+    // se la crea sola al leer el contexto.
+    let _ = ensure_dpaas_wallet(&state, &auth.account_id, "devnet");
+    let _ = ensure_dpaas_wallet(&state, &auth.account_id, "mainnet");
+    let dpaas_list = dpaas_wallets_list(&state, &auth.account_id);
     let mut chain: Option<Value> = state
         .db
         .with(|c| {
@@ -1691,6 +1842,7 @@ pub async fn context_handler(
                         "tx_limit_lamports": r.get::<_, Option<i64>>(4)?,
                         "active_wallet_label": r.get::<_, Option<String>>(5)?,
                         "payer_configured": r.get::<_, i64>(6)? != 0,
+                        "wallets": dpaas_list,
                     }))
                 },
             )

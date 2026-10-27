@@ -1,0 +1,80 @@
+{
+  "slug": "aplicaciones",
+  "title": "Aplicaciones",
+  "icon": "LayoutGrid",
+  "summary": "Qué son las dapps del ecosistema, cómo exponen tools al agente y cómo viaja su flujo con peaje x402.",
+  "updated": "2026-10-27",
+  "sections": [
+    {
+      "heading": "Qué es una aplicación",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "Una aplicación (dapp) amplía lo que tu agente sabe hacer: cada una expone un conjunto de herramientas (tools) que el agente llama mientras razona. Todo el flujo de una dapp viaja por el gateway x402: cada uso paga su micro-peaje con la wallet dPaaS de tu cuenta."
+        },
+        {
+          "type": "table",
+          "head": ["Concepto", "Dónde vive", "Quién lo usa"],
+          "rows": [
+            ["Catálogo y manifiestos", "api (dapps/registry/*.json)", "El api valida qué existe"],
+            ["Vínculo cuenta ↔ servicio", "account_services (SQLite)", "El agente filtra tus dapps"],
+            ["Tools en vivo", "GET /api/agent/tools", "brain las ofrece al LLM"],
+            ["Ejecución con peaje", "Gateway de apps del api", "Cada llamada paga x402"]
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Agregar una aplicación a tu cuenta",
+      "blocks": [
+        {
+          "type": "steps",
+          "items": [
+            "Abre Servicios en el navbar: verás el catálogo con su recurso y su estado.",
+            "Pulsa Agregar a la cuenta en la dapp que quieras: el api registra el vínculo con snapshot (red, payer, fecha).",
+            "Desde ese momento, el agente recibe sus tools automáticamente en el siguiente turno.",
+            "Verifica en el dashboard (Tools por apps) que sus tools aparecen marcadas como en tu cuenta."
+          ]
+        },
+        {
+          "type": "callout",
+          "tone": "info",
+          "title": "Sin instalación en el dispositivo",
+          "text": "Agregar una app no instala nada en el ESP32: las tools viven en el servidor y el dispositivo solo muestra resultados."
+        }
+      ]
+    },
+    {
+      "heading": "Cómo las usa el agente",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "En cada turno, brain construye la lista de tools = núcleo (estado, Solana, x402) + tools de TUS dapps agregadas. El modelo decide cuáles llamar y con qué argumentos; el api ejecuta cada llamada contra la dapp real pasando por el peaje."
+        },
+        {
+          "type": "code",
+          "lang": "bash",
+          "text": "curl -s http://localhost:8080/api/agent/tools | jq '[.[] | .app // \"núcleo\"] | group_by(.) | map({app: .[0], tools: length})'"
+        }
+      ]
+    },
+    {
+      "heading": "Peajes y costos",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "Cada recurso protegido responde 402 con una factura cuando no trae pago válido. La wallet dPaaS de tu cuenta firma el settlement (tú nunca firmas a mano) y la factura se consume una sola vez: reintentarla devuelve 409."
+        },
+        {
+          "type": "list",
+          "items": [
+            "Facturas: GET /api/accounts/me/x402/invoices (con tu Bearer).",
+            "Resumen: tarjeta Análisis x402 del dashboard (totales, estados, SOL liquidado).",
+            "Fondeo: copia tu dirección dPaaS desde Wallet y recárgala, o usa Faucet Devnet."
+          ]
+        }
+      ]
+    }
+  ],
+  "related": ["instalacion-apps", "orquestacion", "proveedores"]
+}

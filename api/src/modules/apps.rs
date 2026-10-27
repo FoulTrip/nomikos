@@ -420,7 +420,13 @@ pub async fn call_dynamic_tool(
                 let mut out = serde_json::Map::new();
                 for (k, v) in obj {
                     if let Some(s) = v.as_str() {
-                        out.insert(k.clone(), json!(render(s, args)));
+                        // placeholder intacto (arg omitido) → no enviar la
+                        // clave (igual que brain/mcp.py: updates parciales)
+                        let is_bare = s.len() > 2 && s.starts_with('{') && s.ends_with('}');
+                        let missing = is_bare && args.get(&s[1..s.len() - 1]).is_none();
+                        if !missing {
+                            out.insert(k.clone(), json!(render(s, args)));
+                        }
                     } else {
                         out.insert(k.clone(), v.clone());
                     }

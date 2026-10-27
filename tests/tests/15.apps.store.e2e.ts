@@ -50,7 +50,7 @@ test('① catálogo del worker: la dapp del registro, pública', async () => {
   const app = body.apps.find((a) => a.slug === 'payload-cms');
   expect(app, 'payload-cms debe estar en el registro del worker (dapps/registry/)').toBeTruthy();
   expect(app!.name).toBe('Payload CMS');
-  expect(app!.tools_count).toBeGreaterThanOrEqual(4); // manifiesto: 4 tools
+  expect(app!.tools_count).toBeGreaterThanOrEqual(18); // manifiesto: CRUD users+media + auth
 });
 
 test('②→⑥ instalar la dapp y operarla (script probado + MCP manager + peaje)', { timeout: 180_000 }, async ({ account }) => {
@@ -124,6 +124,60 @@ test('②→⑥ instalar la dapp y operarla (script probado + MCP manager + peaj
   // re-install idempotente → ok (el script verifica y sale rápido)
   const again = await api('/apps/payload-cms/install', { method: 'POST', headers: withH(account.token) });
   expect([200, 409]).toContain(again.status);
+});
+
+test('⑧ tools CRUD+auth: dispatch determinista + PATCH/DELETE por flujo con peaje', async ({ account }) => {
+  const acall = (tool: string, args: unknown) =>
+    api('/agent/call', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tool, args }),
+    });
+  type R = { ok: boolean; result: { app: string; status: number; result: any } };
+  const email = `store-${Date.now()}@tripkode.dev`;
+
+  // ciclo de vida por dispatch (sin LLM ni peaje): create → get → update
+  // PARCIAL (solo email: el password omitido NO se envía) → login → delete
+  const c = await acall('payload_create_user', { email, password: 'Store-1234' });
+  expect(c.status).toBe(200);
+  const id = ((await c.json()) as R).result.result.doc.id as number;
+  const g = await acall('payload_get_user', { id: String(id) });
+  expect((((await g.json()) as R).result.result as { email: string }).email).toBe(email);
+  const u = await acall('payload_update_user', { id: String(id), email: `b-${email}` });
+  const upd = (await u.json()) as R;
+  expect(upd.result.status).toBe(200);
+  expect(upd.result.result.doc.email).toBe(`b-${email}`);
+  const l = await acall('payload_login', { email: `b-${email}`, password: 'Store-1234' });
+  expect((((await l.json()) as R).result.result as { token?: string }).token).toBeTruthy();
+  const d = await acall('payload_delete_user', { id: String(id) });
+  expect(((await d.json()) as R).result.status).toBe(200);
+  const g2 = await acall('payload_get_user', { id: String(id) });
+  expect(((await g2.json()) as R).result.status).toBe(404);
+
+  // PATCH y DELETE también pasan por el flujo CON peaje (402 → settle → 200)
+  const email2 = `toll-${Date.now()}@tripkode.dev`;
+  const c2 = await acall('payload_create_user', { email: email2, password: 'Toll-1234' });
+  const id2 = ((await c2.json()) as R).result.result.doc.id as number;
+  for (const m of ['PATCH', 'DELETE'] as const) {
+    const first = await api('/app/request', {
+      method: 'POST', headers: withH(account.token),
+      body: JSON.stringify({
+        app: 'payload-cms', path: `/api/users/${id2}`, method: m,
+        ...(m === 'PATCH' ? { body: { email: `p-${email2}` } } : {}),
+      }),
+    });
+    expect(first.status).toBe(402); // método aceptado por el gateway
+    const inv = ((await first.json()) as { invoice: { id: string } }).invoice.id;
+    settleInvoiceViaLedger(inv);
+    const second = await api('/app/request', {
+      method: 'POST', headers: { ...withH(account.token), 'X-Payment': inv },
+      body: JSON.stringify({
+        app: 'payload-cms', path: `/api/users/${id2}`, method: m,
+        ...(m === 'PATCH' ? { body: { email: `p-${email2}` } } : {}),
+      }),
+    });
+    expect(second.status).toBe(200);
+    expect((((await second.json()) as { result: any }).result)).toBeTruthy();
+  }
 });
 
 test('⑦ el catálogo del ORQUESTADOR incluye las tools de la dapp', async () => {

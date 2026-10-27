@@ -23,6 +23,7 @@ from openai import AsyncOpenAI
 from .config import settings
 from .context import AccountContext
 from .tools import RunEvents, ToolResult, execute_tool, tools_openai_schemas
+from . import legal as legal_gate
 
 log = logging.getLogger("agent-brain.llm")
 
@@ -121,9 +122,37 @@ async def run_agent(
     ]
     schemas = tools_openai_schemas()
 
+    # S2: contexto legal (run_id) + polling de world/ por iteración.
+    run_id = legal_gate.extract_run_id(user_text, extra_instructions)
+    world_since = legal_gate.now_ms()
+    seen_world: set[str] = set()
+    world_injected = 0
+
     try:
         for iteration in range(1, settings.max_tool_iterations + 1):
             run.iterations = iteration
+            # World polling: nueva evidencia mid-run entra como mensaje.
+            if run_id and ctx and world_injected < 10:
+                try:
+                    events = await legal_gate.poll_world_events(ctx, run_id, world_since)
+                    world_since = legal_gate.now_ms()
+                    fresh = [e for e in events if e.get("id") not in seen_world][:3]
+                    for e in fresh:
+                        seen_world.add(str(e.get("id")))
+                        p = e.get("payload", {}) or {}
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                f"[world new_evidence] doc={p.get('doc','')} "
+                                f"excerpt={str(p.get('excerpt',''))[:800]} "
+                                f"(cítalo en el memorándum o rehúsa explícitamente)"
+                            ),
+                        })
+                        world_injected += 1
+                    if fresh:
+                        log.info("world: %d eventos nuevos en %s", len(fresh), run_id)
+                except Exception as e:  # noqa: BLE001 — best-effort, no tumba la corrida
+                    log.warning("world poll falló: %s", e)
             completion = await client.chat.completions.create(
                 model=model,
                 messages=messages,
@@ -162,6 +191,32 @@ async def run_agent(
                     args = json.loads(tc.function.arguments or "{}")
                 except json.JSONDecodeError:
                     args = {}
+
+                # S2 gate pre-ejecución: efectos bloqueados sin pass.
+                found = legal_gate.extract_run_id(json.dumps(args, ensure_ascii=False))
+                if found:
+                    run_id = found
+                if tc.function.name in legal_gate.EFFECTFUL_TOOLS and (
+                    run_id or legal_gate.is_legal_text(user_text)
+                    or any(t in ("list_case_docs", "read_case_doc", "legal_turn", "submit_memorandum")
+                           for t in run.tools_used)
+                ):
+                    ok, detail, om = await legal_gate.ensure_verified_for_effect(ctx, run_id)
+                    if not ok:
+                        log.warning("⛔ gate S2 bloqueó %s: %s", tc.function.name, detail)
+                        result = ToolResult(
+                            False, None,
+                            f"VERIFICATION_REQUIRED: {detail}",
+                            verification={"run_id": run_id, "omissions": om},
+                        )
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc.id,
+                                "content": result.as_tool_message(),
+                            }
+                        )
+                        continue
 
                 log.info("tool-call #%d: %s(%s)", iteration, tc.function.name, args)
                 try:
