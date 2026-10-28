@@ -2,9 +2,9 @@
 //! para que placa y navegador dibujen idéntico).
 
 use embedded_graphics::{
-    geometry::{AngleUnit, Point, Size},
+    geometry::{AngleUnit, Point},
     pixelcolor::Rgb888,
-    primitives::{Arc, Circle, Ellipse, Line, Polyline, Primitive, PrimitiveStyle, Rectangle, Triangle},
+    primitives::{Arc, Circle, Line, Polyline, Primitive, PrimitiveStyle, Rectangle, Triangle},
     Drawable,
 };
 
@@ -154,53 +154,3 @@ pub fn tri_down(frame: &mut Frame, color: Rgb888, cx: i32, cy: i32, s: i32) {
     .ok();
 }
 
-const MASCOT_EYE: Rgb888 = Rgb888::new(0x3a, 0x27, 0x08);
-const MASCOT_BLUSH: Rgb888 = Rgb888::new(0xf4, 0x72, 0x8c);
-const MASCOT_SHINE: Rgb888 = Rgb888::new(0xff, 0xf2, 0xc4);
-
-/// Mascota NomikOS (huevo dorado de ojos cerrados), centrada en
-/// (cx, cy), ancho ≈ 2s. Siempre visible en home, con mic o sin él.
-pub fn mascot(frame: &mut Frame, p: &Palette, cx: i32, cy: i32, s: i32) {
-    // cuerpo: elipse dorada (huevo: algo más alta que ancha)
-    Ellipse::new(
-        Point::new(cx - s, cy - s * 6 / 5),
-        Size::new((2 * s) as u32, (2 * s * 6 / 5) as u32),
-    )
-    .into_styled(fill(p.gold))
-    .draw(frame)
-    .ok();
-    // brillo superior
-    Ellipse::new(
-        Point::new(cx + s / 6, cy - s * 19 / 20),
-        Size::new((s * 3 / 5) as u32, (s * 2 / 5) as u32),
-    )
-    .into_styled(fill(MASCOT_SHINE))
-    .draw(frame)
-    .ok();
-    // ojos cerrados felices (∩): arcos de media vuelta superior
-    let er = (s * 2 / 9).max(3) as u32;
-    for dx in [-s * 2 / 5, s * 2 / 5] {
-        Arc::with_center(Point::new(cx + dx, cy - s / 10), er * 2, 180.0.deg(), 180.0.deg())
-            .into_styled(edge(MASCOT_EYE, 2))
-            .draw(frame)
-            .ok();
-    }
-    // sonrisa (∪ pequeña)
-    Arc::with_center(
-        Point::new(cx, cy + s * 2 / 5),
-        (s * 2 / 5).max(4) as u32 * 2,
-        0.0.deg(),
-        180.0.deg(),
-    )
-    .into_styled(edge(MASCOT_EYE, 2))
-    .draw(frame)
-    .ok();
-    // rubor
-    let br = (s / 6).max(2) as u32;
-    for dx in [-s * 3 / 5, s * 3 / 5] {
-        Circle::with_center(Point::new(cx + dx, cy + s / 10), br * 2)
-            .into_styled(fill(MASCOT_BLUSH))
-            .draw(frame)
-            .ok();
-    }
-}

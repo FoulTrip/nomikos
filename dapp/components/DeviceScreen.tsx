@@ -1,8 +1,10 @@
 "use client";
+import { useLocale, useTranslations } from "next-intl";
 
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { useNomikOS, simTap, simPress, type NomikOSState } from "@/lib/os/nomikos";
+import { useAgentFeed, type AgentFeed } from "@/lib/viewer/agent";
 import {
   clampScroll,
   hitOsUi,
@@ -12,6 +14,7 @@ import {
   scrollTotal,
   type BancoView,
   type ListScroll,
+  type OsChatView,
   type OsTheme,
   type OsUiState,
   type OsUiView,
@@ -67,13 +70,19 @@ function leanState(os: NomikOSState | null): OsUiState | null {
   };
 }
 
-function clockParts(): { hour: number; minute: number; date: string } {
+const DAYS: Record<string, string[]> = {
+  es: ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"],
+  en: ["sun", "mon", "tue", "wed", "thu", "fri", "sat"],
+};
+const MONTHS: Record<string, string[]> = {
+  es: ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"],
+  en: ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"],
+};
+
+function clockParts(locale: string): { hour: number; minute: number; date: string } {
   const now = new Date();
-  const days = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
-  const months = [
-    "ene", "feb", "mar", "abr", "may", "jun",
-    "jul", "ago", "sep", "oct", "nov", "dic",
-  ];
+  const days = DAYS[locale] ?? DAYS.es;
+  const months = MONTHS[locale] ?? MONTHS.es;
   return {
     hour: now.getHours(),
     minute: now.getMinutes(),
@@ -82,8 +91,14 @@ function clockParts(): { hour: number; minute: number; date: string } {
 }
 
 export default function DeviceScreen() {
+  const t = useTranslations("screen");
+  const locale = useLocale();
   // NomikOSState | null — poll del estado del OS (progreso por cuenta)
   const os = useNomikOS();
+  // Turno agéntico en curso: alimenta el chat de burbujas del AMOLED.
+  const feed = useAgentFeed();
+  const feedRef = useRef(feed);
+  feedRef.current = feed;
 
   // canvas off-screen + textura, creados una sola vez al montar.
   // Esto corre solo en el cliente porque el componente vive dentro del
@@ -168,14 +183,14 @@ export default function DeviceScreen() {
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    const img = renderOsUi(leanState(osState), view, elapsedMs, clockParts());
+    const img = renderOsUi(leanState(osState), view, elapsedMs, clockParts(locale));
     if (!img) {
       ctx.fillStyle = "#000";
       ctx.fillRect(0, 0, TEX_SIZE, TEX_SIZE);
       ctx.fillStyle = "#ffc000";
       ctx.font = "16px monospace";
       ctx.textAlign = "center";
-      ctx.fillText("cargando UI…", TEX_SIZE / 2, TEX_SIZE / 2);
+      ctx.fillText(t("loading"), TEX_SIZE / 2, TEX_SIZE / 2);
       return;
     }
     ctx.putImageData(img, 0, 0);
@@ -188,6 +203,7 @@ export default function DeviceScreen() {
     micMuted: boolean,
     banco: BancoView,
     sendTo: string,
+    chat: OsChatView,
   ): OsUiView => ({
     scroll: {
       apps: scroll["apps"] ?? 0,
@@ -199,6 +215,14 @@ export default function DeviceScreen() {
     micMuted,
     banco,
     sendTo,
+    chat,
+  });
+
+  /** Vista del turno: estado + lo oído + ms transcurridos (pasos). */
+  const chatOf = (f: AgentFeed): OsChatView => ({
+    status: f.status,
+    heard: f.heard,
+    elapsed_ms: f.turnTs > 0 ? Math.max(0, Date.now() - f.turnTs) : 0,
   });
 
   useEffect(() => {
@@ -214,10 +238,10 @@ export default function DeviceScreen() {
   // Dibujo estático: claim/online se repintan solo cuando cambia el OS.
   useEffect(() => {
     if (!texture || !wasm || animating) return;
-    paint(os, viewOf(scroll, theme, shadeP, micMuted, banco, sendTo), Number.POSITIVE_INFINITY);
+    paint(os, viewOf(scroll, theme, shadeP, micMuted, banco, sendTo, chatOf(feed)), Number.POSITIVE_INFINITY);
     texture.needsUpdate = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [os, texture, wasm, animating, scroll, theme, shadeP, micMuted, banco, sendTo]);
+  }, [os, texture, wasm, animating, scroll, theme, shadeP, micMuted, banco, sendTo, feed]);
 
   // Al cambiar de pantalla, scroll arriba, shade cerrado y banco al inicio.
   useEffect(() => {
@@ -244,6 +268,7 @@ export default function DeviceScreen() {
           micRef.current,
           bancoRef.current,
           sendToRef.current,
+          chatOf(feedRef.current),
         ),
         performance.now() - t0,
       );
@@ -325,6 +350,7 @@ export default function DeviceScreen() {
           micRef.current,
           bancoRef.current,
           sendToRef.current,
+          chatOf(feedRef.current),
         );
         const target = hitOsUi(leanState(cur), view, px, py);
         if (!target) return; // fuera de zona: sin acción (como la placa real)

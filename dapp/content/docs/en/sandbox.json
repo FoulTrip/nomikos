@@ -1,0 +1,60 @@
+{
+  "slug": "sandbox",
+  "title": "Sandbox mode",
+  "icon": "FlaskConical",
+  "summary": "Try the whole OS in your browser with play money: break things, reset and start over without spending.",
+  "updated": "2026-10-27",
+  "sections": [
+    {
+      "heading": "What it is",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "The sandbox is an ephemeral test session living in your browser. It uses your account's REAL parameters —provider, model, dapps and wallet— but the simulated device and its progress live in your account's DB, never touching production."
+        },
+        {
+          "type": "list",
+          "items": [
+            "Turn it on with the «sandbox mode» switch in the navbar.",
+            "The 3D viewer, the simulated AMOLED screen and the microphone come alive.",
+            "Nothing is stored in your browser beyond the switch state."
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Testing without spending",
+      "blocks": [
+        {
+          "type": "steps",
+          "items": [
+            "Turn the sandbox on: the simulator starts at the boot stage.",
+            "Tap the AMOLED screen to unlock the device.",
+            "Use apps, the bank and tolls: every action shows its cost.",
+            "«Rebuild» resets device+OS keeping the accumulated progress."
+          ]
+        },
+        {
+          "type": "callout",
+          "tone": "info",
+          "title": "Real tolls, test account",
+          "text": "Sandbox tolls land in production today (its own metering arrives with the api's per-account counter). If you prefer zero movement, fund with the Devnet faucet and test with minimal amounts."
+        }
+      ]
+    },
+    {
+      "heading": "Voice and agent",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "With the sandbox on, the AMOLED's microphone opens your browser's speech recognition (on the real board it's local whisper.cpp). What you say reaches the agent as just another turn: it listens, reasons with YOUR model and answers by voice (TTS) or text."
+        }
+      ]
+    }
+  ],
+  "related": [
+    "instalacion-os",
+    "orquestacion",
+    "instalacion-apps"
+  ]
+}

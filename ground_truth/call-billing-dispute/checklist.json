@@ -1,0 +1,1 @@
+[{"description":"Cites the call record","id":"C1","must_cite":["call-record.md:call-2026-0007"],"weight":1},{"description":"Cites the per-minute cadence rule","id":"C2","must_cite":["toll-cadence.md:§1"],"weight":1},{"description":"Cites the per-minute price","id":"C3","must_cite":["toll-cadence.md:§2"],"weight":1}]

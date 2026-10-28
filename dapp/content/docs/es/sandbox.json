@@ -1,0 +1,60 @@
+{
+  "slug": "sandbox",
+  "title": "Modo sandbox",
+  "icon": "FlaskConical",
+  "summary": "Prueba el OS completo en tu navegador con dinero de mentira: rompe, reinicia y vuelve a empezar sin gastar.",
+  "updated": "2026-10-27",
+  "sections": [
+    {
+      "heading": "Qué es",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "El sandbox es una sesión de prueba efímera que vive en tu navegador. Usa los parámetros REALES de tu cuenta —proveedor, modelo, dapps y wallet— pero el dispositivo simulado y su progreso viven en la DB de tu cuenta, sin tocar producción."
+        },
+        {
+          "type": "list",
+          "items": [
+            "Se activa con el interruptor «modo sandbox» del navbar.",
+            "El visor 3D, la pantalla AMOLED simulada y el micrófono se encienden.",
+            "Nada se guarda en tu navegador salvo el estado del interruptor."
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Probar sin gastar",
+      "blocks": [
+        {
+          "type": "steps",
+          "items": [
+            "Enciende el sandbox: el simulador arranca en stage boot.",
+            "Toca la pantalla del AMOLED para desbloquear el dispositivo.",
+            "Usa las apps, el banco y los peajes: cada acción muestra su coste.",
+            "«Reconstruir» reinicia el dispositivo+OS conservando el progreso acumulado."
+          ]
+        },
+        {
+          "type": "callout",
+          "tone": "info",
+          "title": "Peajes reales, cuenta de prueba",
+          "text": "Los peajes del sandbox caen en producción hoy (el medidor propio llega con el contador por cuenta del api). Si prefieres cero movimiento, usa Faucet Devnet para fondear y prueba con montos mínimos."
+        }
+      ]
+    },
+    {
+      "heading": "Voz y agente",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "Con el sandbox activo, el micrófono del AMOLED abre el reconocimiento de voz del navegador (en la placa real es whisper.cpp local). Lo que dices llega al agente como un turno más: escucha, razona con TU modelo y responde por voz (TTS) o texto."
+        }
+      ]
+    }
+  ],
+  "related": [
+    "instalacion-os",
+    "orquestacion",
+    "instalacion-apps"
+  ]
+}

@@ -4,28 +4,41 @@
  * Contrato del ciclo completo contra el Next.js dev server (DAPP_URL,
  * default http://localhost:3000 — `cd dapp && npm run dev`):
  *
- *   ① "/" renderiza el login        ⑤ cookie → /panel renderiza la cuenta
- *   ② /panel sin sesión → /         ⑥ "/" con sesión → /panel
+ *   ① "/" pública (landing) · /signin|/signup renderizan sus forms
+ *   ② /panel sin sesión → /signin (proxy.ts)
  *   ③ providers expone credentials  ⑦ gateway agéntico: 401 sin sesión,
  *   ④ login vía callback/credentials    200 + tools con Bearer de la cuenta
- *   ⑧ logout destruye la cookie → /panel vuelve a redirigir a /
+ *   ⑤ cookie → /panel renderiza la cuenta
+ *   ⑥ "/signin|/signup" con sesión → /panel
+ *   ⑧ logout destruye la cookie → /panel vuelve a redirigir a /signin
  *
  * El IdP real es `api` (suite 02); Auth.js solo envuelve su Bearer.
  */
 import { test, expect, api, json, randomEmail, randomPassword, dapp, dappCsrf, locationPath, DAPP_URL, LoginSchema, setupAccountLLM } from './_helpers';
 
-test('① "/" renderiza la página de login sin sesión', async () => {
-  const res = await dapp('/');
-  expect(res.status).toBe(200);
-  const html = await res.text();
-  expect(html).toContain('Iniciar sesión');
-  expect(html).not.toContain('Ficha técnica'); // el shell vive en /panel
+test('① "/" pública renderiza la landing · /signin|/signup sus forms', async () => {
+  const root = await dapp('/');
+  expect(root.status).toBe(200);
+  const landing = await root.text();
+  expect(landing).toContain('Tu hogar, por fin con voz propia');
+  // Nota: no hay marcador negativo confiable — los catálogos i18n (con
+  // "Ficha técnica" del panel) van embebidos en el payload RSC de la
+  // landing. El h1 positivo ya acredita que es la landing.
+  const en = await dapp('/en');
+  expect(en.status).toBe(200);
+  expect(await en.text()).toContain('Your home, finally with a voice of its own');
+  const signin = await dapp('/signin');
+  expect(signin.status).toBe(200);
+  expect(await signin.text()).toContain('Iniciar sesión');
+  const signup = await dapp('/signup');
+  expect(signup.status).toBe(200);
+  expect(await signup.text()).toContain('Crear cuenta');
 });
 
-test('② /panel sin sesión redirige a "/" (proxy.ts)', async () => {
+test('② /panel sin sesión redirige a "/signin" (proxy.ts)', async () => {
   const res = await dapp('/panel');
   expect(res.status).toBe(307);
-  expect(locationPath(res)).toBe('/');
+  expect(locationPath(res)).toBe('/signin');
 });
 
 test('③ Auth.js expone el provider credentials (IdP de api)', async () => {
@@ -35,7 +48,7 @@ test('③ Auth.js expone el provider credentials (IdP de api)', async () => {
   expect(providers.credentials?.type).toBe('credentials');
 });
 
-test('④⑤⑥ login vía Auth.js → cookie → /panel autenticado y "/" redirige a /panel', { timeout: 300_000, retries: 2 }, async () => {
+test('④⑤⑥ login vía Auth.js → cookie → /panel autenticado, auth-redirecciones y gateway', { timeout: 300_000, retries: 2 }, async () => {
   // cuenta fresca en el IdP real (api)
   const email = randomEmail();
   const password = randomPassword();
@@ -59,10 +72,14 @@ test('④⑤⑥ login vía Auth.js → cookie → /panel autenticado y "/" redir
   expect(panel.status).toBe(200);
   expect(await panel.text()).toContain(email);
 
-  // ⑥ "/" con sesión redirige a /panel (proxy.ts)
+  // ⑥ "/signin|/signup" con sesión redirigen a /panel; "/" sigue pública
   const root = await dapp('/', { jar });
-  expect(root.status).toBe(307);
-  expect(locationPath(root)).toBe('/panel');
+  expect(root.status).toBe(200);
+  for (const p of ['/signin', '/signup']) {
+    const r = await dapp(p, { jar });
+    expect(r.status).toBe(307);
+    expect(locationPath(r)).toBe('/panel');
+  }
 
   // ⑦ el gateway agéntico funciona con el Bearer de la sesión:
   //    brain autentica el token de api y ejecuta tools reales (retries:
@@ -84,18 +101,18 @@ test('④⑤⑥ login vía Auth.js → cookie → /panel autenticado y "/" redir
   expect(body.tools_used).toContain('get_health');
   expect(body.reply.length).toBeGreaterThan(10);
 
-  // ⑧ logout destruye la cookie → /panel vuelve a redirigir a /
+  // ⑧ logout destruye la cookie → /panel vuelve a redirigir a /signin
   const csrfOut = await dappCsrf(jar);
   const out = await dapp('/api/auth/signout', {
     method: 'POST',
     jar,
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ csrfToken: csrfOut, callbackUrl: `${DAPP_URL}/` }),
+    body: new URLSearchParams({ csrfToken: csrfOut, callbackUrl: `${DAPP_URL}/signin` }),
   });
   expect(out.status).toBe(302);
   const afterLogout = await dapp('/panel', { jar });
   expect(afterLogout.status).toBe(307);
-  expect(locationPath(afterLogout)).toBe('/');
+  expect(locationPath(afterLogout)).toBe('/signin');
 });
 // NOTA: el paso ⑦ usa LLM real — retries ante flakiness agéntico (como 05/06).
 

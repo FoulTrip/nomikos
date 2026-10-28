@@ -14,12 +14,32 @@
         },
         {
           "type": "table",
-          "head": ["Proveedor", "Etiqueta en Modelos", "Formato de key"],
+          "head": [
+            "Proveedor",
+            "Etiqueta en Modelos",
+            "Formato de key"
+          ],
           "rows": [
-            ["NVIDIA NIM", "NVIDIA NIM", "nvapi-…"],
-            ["OpenAI", "OpenAI", "sk-…"],
-            ["Meta Llama API", "Meta Llama API", "llama-…"],
-            ["Otro compatible", "Personalizado (OpenAI-compat)", "Según proveedor + Base URL"]
+            [
+              "NVIDIA NIM",
+              "NVIDIA NIM",
+              "nvapi-…"
+            ],
+            [
+              "OpenAI",
+              "OpenAI",
+              "sk-…"
+            ],
+            [
+              "Meta Llama API",
+              "Meta Llama API",
+              "llama-…"
+            ],
+            [
+              "Otro compatible",
+              "Personalizado (OpenAI-compat)",
+              "Según proveedor + Base URL"
+            ]
           ]
         }
       ]
@@ -68,5 +88,9 @@
       ]
     }
   ],
-  "related": ["orquestacion", "aplicaciones", "instalacion-apps"]
+  "related": [
+    "orquestacion",
+    "aplicaciones",
+    "instalacion-apps"
+  ]
 }

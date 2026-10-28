@@ -1,9 +1,9 @@
 """agent/run.py — runner S1 del workshop (ingenuo, sin verificar).
 
 Uso:
-  cd agent && BEARER=$TOK python3 run.py --case northbridge-v-caldera
-  cd agent && BEARER=$TOK python3 run.py --case northbridge-v-caldera --memo-file memo.md
-  cd agent && BEARER=$TOK python3 run.py --case northbridge-v-caldera --api http://localhost:18080/api
+  cd agent && BEARER=$TOK python3 run.py --case dpaas-toll-dispute
+  cd agent && BEARER=$TOK python3 run.py --case dpaas-toll-dispute --memo-file memo.md
+  cd agent && BEARER=$TOK python3 run.py --case dpaas-toll-dispute --api http://localhost:18080/api
 
 Flujo S1:
   1. create_run + list_case_docs + read_case_doc (Files API visible)
@@ -61,7 +61,7 @@ def gateway_draft(brain_url: str, bearer: str, case_id: str, run_id: str, docs_p
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="S1 legal agent (workshop)")
-    ap.add_argument("--case", default="northbridge-v-caldera")
+    ap.add_argument("--case", default="dpaas-toll-dispute")
     ap.add_argument("--api", default=os.getenv("AGENT_OS_API_URL", "http://localhost:8080/api"))
     ap.add_argument("--brain", default=os.getenv("BRAIN_URL", "http://localhost:8322"))
     ap.add_argument("--bearer", default=os.getenv("BEARER", ""))

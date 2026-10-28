@@ -431,10 +431,10 @@ TOOLS: dict[str, Tool] = {
         name="list_case_docs",
         description=(
             "Lista los documentos VISIBLES de un caso legal (workshop S1). "
-            "Usa case_id 'northbridge-v-caldera'. Nunca inventes docs."
+            "Usa case_id 'dpaas-toll-dispute'. Nunca inventes docs."
         ),
         parameters=_p(
-            {"case_id": {"type": "string", "description": "ID del caso (ej: northbridge-v-caldera)"}},
+            {"case_id": {"type": "string", "description": "ID del caso (ej: dpaas-toll-dispute)"}},
             ["case_id"],
         ),
         handler=_list_case_docs,

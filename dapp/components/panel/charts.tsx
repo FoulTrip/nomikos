@@ -1,4 +1,5 @@
 "use client";
+import { useTranslations } from "next-intl";
 /**
  * charts — gráficas del dashboard (recharts con estilo shadcn).
  * Datos 100% reales del api; sin datos se muestra estado vacío.
@@ -15,10 +16,10 @@ import {
   YAxis,
 } from "recharts";
 
-const GRID = "rgba(255,255,255,0.08)";
-const TICK = "#a1a1aa";
+const GRID = "rgba(52,52,51,0.08)";
+const TICK = "#848281";
 
-function DarkTooltip({
+function ChartTooltip({
   active,
   payload,
   label,
@@ -37,17 +38,18 @@ function DarkTooltip({
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  settled: "#34d399",
-  pending: "#fbbf24",
-  verifying: "#38bdf8",
-  failed: "#f87171",
-  consumed: "#a78bfa",
+  settled: "#44C67F",
+  pending: "#F5B442",
+  verifying: "#4DAFFF",
+  failed: "#EF4444",
+  consumed: "#5F5DE7",
 };
 
 /** Barras verticales: facturas x402 por estado. */
 export function InvoicesByStatusChart({ data }: { data: { status: string; count: number }[] }) {
+  const t = useTranslations("panel.charts");
   if (data.length === 0) {
-    return <p className="text-xs text-muted-foreground">Sin facturas todavía.</p>;
+    return <p className="text-xs text-muted-foreground">{t("noInvoices")}</p>;
   }
   return (
     <div className="h-44 w-full">
@@ -56,10 +58,10 @@ export function InvoicesByStatusChart({ data }: { data: { status: string; count:
           <CartesianGrid stroke={GRID} vertical={false} />
           <XAxis dataKey="status" tick={{ fill: TICK, fontSize: 11 }} tickLine={false} axisLine={false} />
           <YAxis tick={{ fill: TICK, fontSize: 11 }} tickLine={false} axisLine={false} allowDecimals={false} />
-          <Tooltip content={<DarkTooltip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+          <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(52,52,51,0.05)" }} />
           <Bar dataKey="count" radius={[4, 4, 0, 0]}>
             {data.map((d) => (
-              <Cell key={d.status} fill={STATUS_COLORS[d.status] ?? "#71717a"} />
+              <Cell key={d.status} fill={STATUS_COLORS[d.status] ?? "#848281"} />
             ))}
           </Bar>
         </BarChart>
@@ -70,8 +72,9 @@ export function InvoicesByStatusChart({ data }: { data: { status: string; count:
 
 /** Barras horizontales: tools por app. */
 export function ToolsByAppChart({ data }: { data: { app: string; tools: number }[] }) {
+  const t = useTranslations("panel.charts");
   if (data.length === 0) {
-    return <p className="text-xs text-muted-foreground">Sin tools todavía.</p>;
+    return <p className="text-xs text-muted-foreground">{t("noTools")}</p>;
   }
   return (
     <div className="h-40 w-full">
@@ -87,8 +90,8 @@ export function ToolsByAppChart({ data }: { data: { app: string; tools: number }
             tickLine={false}
             axisLine={false}
           />
-          <Tooltip content={<DarkTooltip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
-          <Bar dataKey="tools" radius={[0, 4, 4, 0]} fill="#eab308" />
+          <Tooltip content={<ChartTooltip />} cursor={{ fill: "rgba(52,52,51,0.05)" }} />
+          <Bar dataKey="tools" radius={[0, 4, 4, 0]} fill="#F5B442" />
         </BarChart>
       </ResponsiveContainer>
     </div>

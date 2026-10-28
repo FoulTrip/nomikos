@@ -107,6 +107,8 @@ impl Db {
                  email         TEXT UNIQUE NOT NULL,
                  password_hash TEXT NOT NULL,
                  display_name  TEXT,
+                 locale        TEXT NOT NULL DEFAULT 'es',
+                 country       TEXT,
                  is_active     INTEGER NOT NULL DEFAULT 1,
                  created_at    INTEGER NOT NULL,
                  updated_at    INTEGER NOT NULL
@@ -254,7 +256,7 @@ impl Db {
                  updated_at      INTEGER NOT NULL
              );
 
-             -- Verificador legal S2 (workshop northbridge-v-caldera).
+             -- Verificador legal S2 (workshop (casos nativos dpaas/call)).
              -- El agente (brain) escribe runs/turns; SOLO api evalua contra
              -- ground_truth/ (0600, fuera de la DB). Efectos bloqueados sin pass.
              CREATE TABLE IF NOT EXISTS legal_runs (
@@ -314,6 +316,11 @@ impl Db {
         // provocó, y tokens de dispositivo (= sesiones con device_id).
         Self::add_column_if_missing(conn, "x402_invoices", "device_id", "TEXT")?;
         Self::add_column_if_missing(conn, "sessions", "device_id", "TEXT")?;
+        // Preferencias de cuenta: idioma de la interfaz (es|en) + país
+        // ISO-3166 (NULL = sin definir). Las lee el dapp (cookie de idioma
+        // + página /preferences); la landing usa su propio prefijo.
+        Self::add_column_if_missing(conn, "accounts", "locale", "TEXT DEFAULT 'es'")?;
+        Self::add_column_if_missing(conn, "accounts", "country", "TEXT")?;
         // Multi-proveedor LLM por cuenta (un solo activo): la tabla vieja
         // account_llm (una fila por cuenta) migra a account_llm_providers.
         conn.execute(

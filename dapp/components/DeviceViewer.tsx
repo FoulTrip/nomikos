@@ -70,7 +70,7 @@ function ModelLoader() {
   const { active, progress, errors } = useProgress();
   if (!active || errors.length > 0) return null;
   return (
-    <div className="pointer-events-none absolute inset-0 z-5 flex items-center justify-center gap-2 bg-[radial-gradient(600px_300px_at_50%_45%,rgba(20,17,11,0.85),rgba(20,17,11,0.55))] text-sm tracking-wide text-muted-foreground">
+    <div className="pointer-events-none absolute inset-0 z-5 flex items-center justify-center gap-2 bg-[radial-gradient(600px_300px_at_50%_45%,rgba(255,255,255,0.92),rgba(251,250,249,0.65))] text-sm tracking-wide text-muted-foreground">
       <LoaderCircle className="size-4 animate-spin text-primary" />
       Cargando modelo 3D… {Math.round(progress)}%
     </div>
@@ -123,7 +123,7 @@ export default function DeviceViewer() {
           removido en three 0.186 (warning); PCFShadowMap es el fallback
           que three usa de todos modos. */}
       <Canvas shadows="percentage" dpr={[1, 2]} camera={{ position: [30, 22, 80], fov: 40 }}>
-        <color attach="background" args={["#14110b"]} />
+        <color attach="background" args={["#F2EBE0"]} />
 
         {/* Iluminación local (sin descargas externas) */}
         <ambientLight intensity={0.35} />

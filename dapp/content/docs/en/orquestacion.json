@@ -1,0 +1,88 @@
+{
+  "slug": "orquestacion",
+  "title": "Agent orchestration",
+  "icon": "Network",
+  "summary": "How your agent reasons: turns, tool selection, chained execution and automatic toll payment.",
+  "updated": "2026-10-27",
+  "sections": [
+    {
+      "heading": "The agentic turn",
+      "blocks": [
+        {
+          "type": "steps",
+          "items": [
+            "You send text or voice (the sandbox and the device hit the same gateway).",
+            "brain authenticates your Bearer against the api and resolves YOUR context: provider, model, network, wallet and dapps.",
+            "The LLM receives the message + the catalog of available tools and decides what to call.",
+            "The api executes each tool (app ones pay their x402 toll) and returns results to the model.",
+            "The model may chain more calls until it answers in plain language."
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Which tools the agent sees",
+      "blocks": [
+        {
+          "type": "table",
+          "head": [
+            "Group",
+            "Examples",
+            "Origin"
+          ],
+          "rows": [
+            [
+              "Core",
+              "navbar_status, device_specs, solana_status",
+              "Always available"
+            ],
+            [
+              "x402",
+              "x402_summary, create_invoice, invoice_status, pay_toll",
+              "Always available"
+            ],
+            [
+              "Your dapps",
+              "payload_* (if you added Payload)",
+              "Only the ones added in Services"
+            ]
+          ]
+        },
+        {
+          "type": "callout",
+          "tone": "info",
+          "title": "No provider, no reasoning",
+          "text": "If your account has no active provider, the gateway demands one: it never uses global keys or another account's."
+        }
+      ]
+    },
+    {
+      "heading": "Tolls during the turn",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "When a tool touches a protected resource, the api issues a 402 invoice and your account's dPaaS wallet settles it (dPaaS = automatic delegated payment). The turn continues without you signing anything; each invoice is consumed exactly once."
+        },
+        {
+          "type": "code",
+          "lang": "bash",
+          "text": "curl -s -X POST http://localhost:3000/api/agent/gateway -H \"Content-Type: application/json\" -H \"Cookie: $SESSION\" -d '{\"text\":\"API health status\"}' | jq '{ok, tools_used, backend}'"
+        }
+      ]
+    },
+    {
+      "heading": "Sandbox vs production",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "The panel's sandbox mode is your ephemeral test bench: same provider, model, dapps and wallet, but sessioned in the browser. Test turns use your real parameters; the separate sandbox/production usage metering arrives with the api's per-account counter."
+        }
+      ]
+    }
+  ],
+  "related": [
+    "aplicaciones",
+    "proveedores",
+    "sandbox"
+  ]
+}

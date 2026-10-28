@@ -1,4 +1,5 @@
 "use client";
+import { useTranslations } from "next-intl";
 /**
  * SimulatorBar — la barra del simulador NomikOS: detecta ejecución
  * LOCAL (host/dirección del navegador + despliegue docker del compose)
@@ -56,6 +57,7 @@ function speechRecognition(): (new () => SpeechRecognitionLike) | null {
 }
 
 export default function SimulatorBar() {
+  const t = useTranslations("sim");
   const os = useNomikOS();
   const [busy, setBusy] = useState<string | null>(null);
   const [listening, setListening] = useState(false);
@@ -102,7 +104,7 @@ export default function SimulatorBar() {
     } catch (e) {
       // los errores del api se MUESTRAN (antes morían en la consola:
       // un 409 de claim expirado parecía un botón roto)
-      setActionError(e instanceof Error ? e.message : "error inesperado");
+      setActionError(e instanceof Error ? e.message : t("unexpected"));
     } finally {
       setBusy(null);
     }
@@ -137,11 +139,11 @@ export default function SimulatorBar() {
   const toggleMic = () => {
     const Ctor = speechRecognition();
     if (!Ctor) {
-      setMicError("este navegador no tiene reconocimiento de voz — escríbele abajo");
+      setMicError(t("noSTT"));
       return;
     }
     if (micMuted && !listening) {
-      setMicError("mic silenciado desde la pantalla — tócalo para activar");
+      setMicError(t("micMuted"));
       return;
     }
     if (listening) {
@@ -168,7 +170,7 @@ export default function SimulatorBar() {
     rec.onerror = (e) => {
       setMicError(
         e.error === "not-allowed"
-          ? "permiso de micrófono denegado — permite el mic o escríbele abajo"
+          ? t("micDenied")
           : `mic: ${e.error ?? "error"}`,
       );
       setListening(false);
@@ -178,7 +180,7 @@ export default function SimulatorBar() {
       rec.start();
       setListening(true);
     } catch {
-      setMicError("no pude abrir el micrófono");
+      setMicError(t("micFail"));
     }
   };
 
@@ -191,12 +193,10 @@ export default function SimulatorBar() {
   };
 
   return (
-    <Card aria-label="Simulador NomikOS" className="gap-3 py-4">
+    <Card aria-label={t("title")} className="gap-3 py-4">
       <CardHeader className="px-4">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Monitor className="size-4 text-primary" />
-          Simulador · NomikOS
-        </CardTitle>
+          <Monitor className="size-4 text-primary" />{t("title")}</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-2 px-4">
         {/* Detección de ejecución local (host + compose) */}
@@ -206,14 +206,14 @@ export default function SimulatorBar() {
             title="El ecosistema corre en esta máquina"
           >
             <span className="size-1.5 rounded-full bg-emerald-400" />
-            Ejecución local{deployment === "docker" ? " · docker" : ""} detectada
+            {t("ecoLocal")}{deployment === "docker" ? t("ecoDocker") : ""} {t("ecoDetected")}
           </p>
         )}
 
         <p className="font-mono text-xs text-muted-foreground">
           {os === null
             ? "sincronizando…"
-            : `stage: ${os.stage}${os.stage === "online" && os.locked ? " 🔒" : ""} · boots: ${os.boot_count} · toques: ${os.taps}`}
+            : t("stageLine", { stage: os.stage, boots: os.boot_count, taps: os.taps }) + (os.stage === "online" && os.locked ? " 🔒" : "")}
         </p>
 
         {os?.stage === "online" && (
@@ -222,7 +222,7 @@ export default function SimulatorBar() {
               const act = os.llm?.providers?.find((p) => p.is_active);
               return act
                 ? `🧠 ${act.provider} · ${(act.default_model ?? "—").split("/").pop()}`
-                : "🧠 sin proveedor — configúralo en Modelos";
+                : t("noProvider");
             })()}
           </p>
         )}
@@ -236,7 +236,7 @@ export default function SimulatorBar() {
         {os?.stage === "claim" && (
           <>
             <p className="text-[13px]">
-              claim code en pantalla:{" "}
+              {t("claimOnScreen")}{" "}
               <b className="font-mono tracking-widest text-primary">{os.claim_code}</b>
             </p>
             <Button
@@ -250,45 +250,37 @@ export default function SimulatorBar() {
               ) : (
                 <Plus />
               )}
-              {busy === "claim" ? "emparejando…" : "AGREGAR al agente"}
+              {busy === "claim" ? t("claiming") : t("addAgent")}
             </Button>
-            <p className="text-xs text-muted-foreground">
-              El OS queda ONLINE: el dispositivo simulado entra a tu flota real.
-            </p>
+            <p className="text-xs text-muted-foreground">{t("onlineNote")}</p>
           </>
         )}
 
         {os?.stage === "online" && os.locked !== false && (
           <>
-            <p className="text-xs text-muted-foreground">
-              🔒 bloqueado — toca la pantalla del AMOLED para desbloquear.
-            </p>
+            <p className="text-xs text-muted-foreground">{t("lockedNote")}</p>
             <Button
               type="button"
               size="sm"
               variant="secondary"
               disabled={busy !== null}
               onClick={() => void run("unlock", () => simPress("unlock"))}
-            >
-              Desbloquear
-            </Button>
+            >{t("unlock")}</Button>
           </>
         )}
 
         {os?.stage === "online" && os.locked === false && (
           <>
-            <p className="text-xs text-muted-foreground">
-              pantalla táctil: toca los iconos del AMOLED (aplicaciones · banco).
-            </p>
+            <p className="text-xs text-muted-foreground">{t("touchHint")}</p>
             <Button
               type="button"
               size="sm"
               variant={viewLocked ? "default" : "secondary"}
               onClick={() => setViewLocked(!viewLocked)}
-              title="Fija la cámara de frente y desactiva la rotación"
+              title={t("camTitle")}
             >
               {viewLocked ? <Unlock /> : <Crosshair />}
-              {viewLocked ? "liberar vista 3D" : "fijar vista de frente"}
+              {viewLocked ? t("camRelease") : t("camFront")}
             </Button>
             {/* micrófono: hablar con el agente (voz → turno real del device) */}
             <div className="flex gap-1.5">
@@ -298,18 +290,18 @@ export default function SimulatorBar() {
                 variant={listening ? "destructive" : "secondary"}
                 disabled={busy !== null || !SR}
                 onClick={toggleMic}
-                title={SR ? "Hablar con el agente" : "Sin Web Speech API en este navegador"}
+                title={SR ? t("micTalk") : t("micNoSR")}
                 className={cn("flex-1", listening && "listening-pulse")}
               >
                 {listening ? <Square /> : <Mic />}
-                {listening ? "escuchando… (toca para parar)" : "hablar con el agente"}
+                {listening ? t("micListening") : t("micTalkLower")}
               </Button>
               <Button
                 type="button"
                 size="icon"
                 variant="ghost"
                 onClick={() => setTts((v) => !v)}
-                title="Leer las respuestas en voz alta (TTS)"
+                title={t("ttsTitle")}
                 className="size-8 shrink-0"
               >
                 {tts ? <Volume2 /> : <VolumeX />}
@@ -317,8 +309,8 @@ export default function SimulatorBar() {
             </div>
             {(heard || busy === "say") && (
               <p className="text-xs text-muted-foreground">
-                {busy === "say" ? "el agente está pensando… " : ""}
-                {heard ? `oí: «${heard}»` : ""}
+                {busy === "say" ? t("thinking") : ""}
+                {heard ? t("heard", { text: heard }) : ""}
               </p>
             )}
             {micError && <p className="text-xs text-destructive">{micError}</p>}
@@ -327,13 +319,11 @@ export default function SimulatorBar() {
                 <label
                   htmlFor="bank-send-to"
                   className="text-[11px] tracking-wider text-muted-foreground uppercase"
-                >
-                  Banco › Enviar › Manual
-                </label>
+                >{t("bankLabel")}</label>
                 <Input
                   id="bank-send-to"
                   type="text"
-                  placeholder="Dirección destino (base58)"
+                  placeholder={t("toPh")}
                   value={bankSendTo}
                   spellCheck={false}
                   autoComplete="off"
@@ -345,7 +335,7 @@ export default function SimulatorBar() {
             <div className="flex gap-1.5">
               <Input
                 type="text"
-                placeholder="…o escríbele al agente"
+                placeholder={t("typePh")}
                 value={typed}
                 disabled={busy !== null}
                 onChange={(e) => setTyped(e.target.value)}
@@ -387,7 +377,7 @@ export default function SimulatorBar() {
               ) : (
                 <Zap />
               )}
-              {busy === "x402" ? "pagando peaje…" : "peaje x402 del dispositivo"}
+              {busy === "x402" ? t("paying") : t("payToll")}
             </Button>
             <Button
               type="button"
@@ -395,7 +385,7 @@ export default function SimulatorBar() {
               variant="ghost"
               disabled={busy !== null}
               onClick={() => {
-                if (window.confirm("¿Reconstruir el dispositivo+OS conservando el progreso?")) {
+                if (window.confirm(t("rebuildQ"))) {
                   void run("rebuild", simRebuild);
                 }
               }}
@@ -406,11 +396,11 @@ export default function SimulatorBar() {
               ) : (
                 <RefreshCw />
               )}
-              {busy === "rebuild" ? "reconstruyendo…" : "reconstruir (con progreso)"}
+              {busy === "rebuild" ? t("rebuilding") : t("rebuild")}
             </Button>
             {os.last_x402 && (
               <p className="text-xs text-muted-foreground">
-                último peaje: {os.last_x402.access ?? os.last_x402.status}
+                {t("lastToll")} {os.last_x402.access ?? os.last_x402.status}
                 {os.last_x402.hint ? ` — ${os.last_x402.hint}` : ""}
               </p>
             )}
@@ -418,9 +408,7 @@ export default function SimulatorBar() {
         )}
 
         {os?.stage === "boot" && (
-          <p className="text-xs text-muted-foreground">
-            el agentd simulado se está presentando al worker…
-          </p>
+          <p className="text-xs text-muted-foreground">{t("booting")}</p>
         )}
       </CardContent>
     </Card>

@@ -1,4 +1,5 @@
 "use client";
+import { useLocale, useTranslations } from "next-intl";
 /**
  * Dashboard — lo que /panel muestra con el sandbox APAGADO: modelo y
  * proveedor, tokens, tools por apps y análisis x402, distinguido entre
@@ -55,6 +56,8 @@ interface ToolRow {
 }
 
 export default function Dashboard() {
+  const t = useTranslations("dashboard");
+  const locale = useLocale();
   const [scope, setScope] = useState<Scope>("prod");
   const [x402, setX402] = useState<X402Summary | null>(null);
   const [services, setServices] = useState<ServiceRow[] | null>(null);
@@ -88,14 +91,15 @@ export default function Dashboard() {
   }, []);
 
   const byApp = new Map<string, ToolRow[]>();
-  for (const t of tools ?? []) {
-    const app = t.app ?? "núcleo";
+  const core = t("core");
+  for (const tool of tools ?? []) {
+    const app = tool.app ?? core;
     const list = byApp.get(app) ?? [];
-    list.push(t);
+    list.push(tool);
     byApp.set(app, list);
   }
   const appGroups = [...byApp.entries()].sort(([a], [b]) =>
-    a === "núcleo" ? -1 : b === "núcleo" ? 1 : a.localeCompare(b),
+    a === core ? -1 : b === core ? 1 : a.localeCompare(b),
   );
   const addedApps = new Set((services ?? []).filter((s) => s.added).map((s) => s.service));
 
@@ -114,11 +118,11 @@ export default function Dashboard() {
     <div className="absolute inset-0 overflow-y-auto bg-background">
       <div className="mx-auto grid w-full max-w-5xl gap-4 p-4 pb-10 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-lg font-semibold">Resumen de la cuenta</h2>
+          <h2 className="text-lg font-semibold">{t("summary")}</h2>
           <Tabs value={scope} onValueChange={(v) => setScope(v as Scope)}>
-            <TabsList aria-label="Ámbito">
-              <TabsTrigger value="prod">Producción</TabsTrigger>
-              <TabsTrigger value="sandbox">Sandbox</TabsTrigger>
+            <TabsList aria-label={t("scope")}>
+              <TabsTrigger value="prod">{t("prod")}</TabsTrigger>
+              <TabsTrigger value="sandbox">{t("sandbox")}</TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
@@ -127,19 +131,17 @@ export default function Dashboard() {
           {/* Tokens */}
           <Card className="md:col-span-2">
             <CardHeader>
-              <CardTitle className="text-sm">
-                Uso de tokens
-              </CardTitle>
+              <CardTitle className="text-sm">{t("tokens")}</CardTitle>
               <CardDescription>
-                {scope === "prod" ? "Consumo del modelo activo" : "Consumo del sandbox"}
+                {scope === "prod" ? t("tokensProd") : t("tokensSandbox")}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <p className="text-3xl font-bold text-muted-foreground">—</p>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                 {scope === "prod"
-                  ? "Sin medidor — el gateway aún no reporta tokens. Próximo paso: contador por cuenta en el api."
-                  : "Sin actividad registrada — el sandbox es efímero y aún no registra su propio uso."}
+                  ? t("noMeter")
+                  : t("noActivity")}
               </p>
             </CardContent>
           </Card>
@@ -147,12 +149,10 @@ export default function Dashboard() {
           {/* Tools por apps */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm">
-                Tools por apps
-              </CardTitle>
+              <CardTitle className="text-sm">{t("toolsByApps")}</CardTitle>
               <CardDescription>
-                Inventario disponible para el agente
-                {scope === "sandbox" ? " (igual en sandbox)" : ""}
+                {t("toolsInventory")}
+                {scope === "sandbox" ? t("sameInSandbox") : ""}
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3">
@@ -162,15 +162,15 @@ export default function Dashboard() {
                   <Skeleton className="h-8 w-full" />
                 </div>
               ) : appGroups.length === 0 ? (
-                <p className="text-xs text-muted-foreground">Sin tools.</p>
+                <p className="text-xs text-muted-foreground">{t("noTools")}</p>
               ) : (
                 <>
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>App</TableHead>
-                        <TableHead className="text-right">Tools</TableHead>
-                        <TableHead className="text-right">Usos</TableHead>
+                        <TableHead>{t("app")}</TableHead>
+                        <TableHead className="text-right">{t("tools")}</TableHead>
+                        <TableHead className="text-right">{t("uses")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -180,9 +180,7 @@ export default function Dashboard() {
                             <span className="flex items-center gap-2 font-medium">
                               {app}
                               {addedApps.has(app) && (
-                                <Badge variant="secondary" className="text-[10px]">
-                                  en tu cuenta
-                                </Badge>
+                                <Badge variant="secondary" className="text-[10px]">{t("inAccount")}</Badge>
                               )}
                             </span>
                           </TableCell>
@@ -202,11 +200,9 @@ export default function Dashboard() {
           {/* x402 */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm">
-                Análisis x402
-              </CardTitle>
+              <CardTitle className="text-sm">{t("x402")}</CardTitle>
               <CardDescription>
-                {scope === "prod" ? "Peajes de la cuenta" : "Peajes del sandbox"}
+                {scope === "prod" ? t("tolls") : t("tollsSandbox")}
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3">
@@ -225,11 +221,11 @@ export default function Dashboard() {
                   <div className="grid grid-cols-3 gap-2 text-center">
                     <div className="rounded-lg border p-2">
                       <p className="text-xl font-bold">{x402.invoices_total ?? 0}</p>
-                      <p className="text-[11px] text-muted-foreground">facturas</p>
+                      <p className="text-[11px] text-muted-foreground">{t("invoices")}</p>
                     </div>
                     <div className="rounded-lg border p-2">
                       <p className="text-xl font-bold">{settled}</p>
-                      <p className="text-[11px] text-muted-foreground">liquidadas</p>
+                      <p className="text-[11px] text-muted-foreground">{t("settled")}</p>
                     </div>
                     <div className="rounded-lg border p-2">
                       <p className="text-xl font-bold">
@@ -237,7 +233,7 @@ export default function Dashboard() {
                           ? "≈0"
                           : ((x402.settled_lamports ?? 0) / 1_000_000_000).toFixed(4)}
                       </p>
-                      <p className="text-[11px] text-muted-foreground">SOL</p>
+                      <p className="text-[11px] text-muted-foreground">{t("sol")}</p>
                     </div>
                   </div>
                   <Separator />
@@ -245,7 +241,7 @@ export default function Dashboard() {
                   {dailyPct !== null && (
                     <Progress
                       value={dailyPct}
-                      title={`Uso del límite diario: ${dailyPct.toFixed(0)}%`}
+                      title={t("dailyUse", { pct: dailyPct.toFixed(0) })}
                     />
                   )}
                 </>
@@ -257,13 +253,11 @@ export default function Dashboard() {
         {/* Docs */}
         <div className="grid gap-2">
           <h3 className="flex items-center justify-between">
-            <span className="text-lg font-semibold">Documentación</span>
-            <Link href="/panel/docs" className="text-xs text-muted-foreground hover:text-foreground">
-              Ver todas →
-            </Link>
+            <span className="text-lg font-semibold">{t("docs")}</span>
+            <Link href="/panel/docs" className="text-xs text-muted-foreground hover:text-foreground">{t("seeAll")}</Link>
           </h3>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {listDocs().map((d) => (
+            {listDocs(locale).map((d) => (
               <Link
                 key={d.slug}
                 href={`/panel/docs/${d.slug}`}

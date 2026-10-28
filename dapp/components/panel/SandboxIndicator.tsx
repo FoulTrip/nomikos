@@ -1,4 +1,5 @@
 "use client";
+import { useTranslations } from "next-intl";
 /**
  * SandboxIndicator — píldora junto a "Flota", visible solo con el
  * sandbox activo: "Ejecución local" o "Ejecución remota".
@@ -9,6 +10,7 @@ import { useSandbox } from "@/lib/viewer/sandbox";
 import { cn } from "@/lib/utils";
 
 export default function SandboxIndicator() {
+  const t = useTranslations("panel.sandbox");
   const on = useSandbox();
   const [env, setEnv] = useState<"local" | "remote" | null>(null);
 
@@ -32,14 +34,14 @@ export default function SandboxIndicator() {
     <span
       title={
         local
-          ? "El ecosistema corre en esta máquina"
-          : "El ecosistema responde desde el worker remoto"
+          ? t("localTitle")
+          : t("remoteTitle")
       }
       className="flex h-8 items-center gap-1.5 rounded-full border px-2 text-xs whitespace-nowrap sm:h-9 sm:px-2.5"
     >
       <span className={cn("size-1.5 rounded-full", local ? "bg-emerald-400" : "bg-sky-400")} />
       <span className={cn("hidden min-[480px]:inline", local ? "text-emerald-400" : "text-sky-400")}>
-        {local ? "Ejecución local" : "Ejecución remota"}
+        {local ? t("local") : t("remote")}
       </span>
     </span>
   );

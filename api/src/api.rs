@@ -79,6 +79,10 @@ pub fn router(state: SharedState) -> Router {
             get(accounts::context_handler),
         )
         .route(
+            "/api/accounts/me/preferences",
+            get(accounts::get_preferences_handler).put(accounts::put_preferences_handler),
+        )
+        .route(
             "/api/accounts/me/wallets",
             get(accounts::list_wallets_handler).post(accounts::create_wallet_handler),
         )
@@ -153,7 +157,7 @@ pub fn router(state: SharedState) -> Router {
             "/api/accounts/me/x402/pay-invoice",
             post(x402::me_x402_pay_invoice_handler),
         )
-        // [ Verificador legal S2 — workshop northbridge-v-caldera ]
+        // [ Verificador legal S2 — workshop (casos nativos dpaas/call) ]
         .route("/api/legal/runs", post(verify::create_run_handler))
         .route("/api/legal/runs/{id}", get(verify::get_run_handler))
         .route("/api/legal/runs/{id}/turns", post(verify::append_turn_handler))

@@ -8,6 +8,7 @@
  * (flota REAL + apps del agente + peajes x402).
  */
 import { useSyncExternalStore } from "react";
+import { setAgentFeed } from "@/lib/viewer/agent";
 
 export interface SimApp {
   slug: string;
@@ -50,6 +51,13 @@ export interface SimReply {
   ts: number;
 }
 
+/** Un turno del chat con el agente (historial del panel). */
+export interface SimChatTurn {
+  text: string;
+  reply: string;
+  ts: number;
+}
+
 export interface SimEvent {
   ts: number;
   ev: string;
@@ -70,6 +78,8 @@ export interface NomikOSState {
   apps: SimApp[];
   last_x402: SimX402 | null;
   last_reply: SimReply | null;
+  /** Historial del chat (últimos 12 turnos, lo mantiene el api). */
+  chat?: SimChatTurn[];
   llm?: SimLlm | null;
   agent_wallet?: SimWallet | null;
   events: SimEvent[];
@@ -199,7 +209,19 @@ export async function simApps() {
   await step("apps");
 }
 export async function simSay(text: string) {
-  await stepStrict("say", { text }); // propaga el error: el panel lo muestra
+  // El turno se refleja en la PANTALLA del dispositivo (burbujas de
+  // proceso) y en el dock: pensando → listo/error.
+  setAgentFeed({ status: "thinking", heard: text, error: null, turnTs: Date.now() });
+  try {
+    await stepStrict("say", { text }); // propaga el error: el panel lo muestra
+    setAgentFeed({ status: "done" });
+  } catch (e) {
+    setAgentFeed({
+      status: "error",
+      error: e instanceof Error ? e.message : "error inesperado",
+    });
+    throw e;
+  }
 }
 
 /** Toque posicionado resuelto por hit-testing (navegación directa). */

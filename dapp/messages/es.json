@@ -1,0 +1,570 @@
+{
+  "landing": {
+    "meta": {
+      "title": "Nomik — Tu hogar, con voz propia",
+      "description": "Habla con tu hogar: aparatos, llamadas y pagos que se encargan solos. Tú solo hablas."
+    },
+    "nav": {
+      "features": "Funciones",
+      "how": "Cómo funciona",
+      "signin": "Entrar",
+      "signup": "Empezar",
+      "menu": "Abrir menú",
+      "web3": "Web3",
+      "business": "Empresas",
+      "start": "Empezar sin riesgo"
+    },
+    "locale": {
+      "label": "Idioma"
+    },
+    "hero": {
+      "title": "Tu hogar, por fin con voz propia.",
+      "sub": "Nomik escucha lo que necesitas, mueve tus aparatos, hace tus llamadas y se encarga de los pagos. Tú solo hablas.",
+      "start": "Empezar gratis",
+      "how": "Ver cómo funciona",
+      "note": "Estarás hablando en menos de un minuto."
+    },
+    "marquee": [
+      "Buenos días",
+      "Llama a mamá",
+      "Enciende la sala",
+      "¿Cuánto llevo gastado?",
+      "Pon mi lista",
+      "Apaga todo",
+      "¿Quién llamó ayer?",
+      "Sube el volumen"
+    ],
+    "features": {
+      "eyebrow": "Todo en un lugar",
+      "title": "Habla, llama y controla. Todo junto.",
+      "items": [
+        {
+          "title": "Habla natural",
+          "text": "Pide las cosas como se las pedirías a una persona."
+        },
+        {
+          "title": "Paga solo lo que usas",
+          "text": "Solo pagas cuando algo trabaja para ti."
+        },
+        {
+          "title": "Llama a quien quieras",
+          "text": "Di el nombre y llama. Hablas, cuelgas y listo."
+        },
+        {
+          "title": "Siempre con tu permiso",
+          "text": "Nada importante se mueve sin que lo apruebes."
+        }
+      ]
+    },
+    "showcase": [
+      {
+        "eyebrow": "Te conoce",
+        "title": "Recuerda tu casa.",
+        "text": "Sabe qué hay en cada habitación, tus rutinas y tus horarios. Cada conversación continúa donde quedó la anterior.",
+        "checks": [
+          "Habitaciones y rutinas",
+          "Tus gustos y horarios",
+          "Conversaciones que continúan"
+        ]
+      },
+      {
+        "eyebrow": "Control",
+        "title": "Tú pones las reglas.",
+        "text": "Marca cuánto se puede gastar, qué necesita tu toque y cuándo parar del todo. Nomik obedece siempre.",
+        "checks": [
+          "Tope de gasto diario",
+          "Aprobación con un toque",
+          "Pausa total cuando quieras"
+        ]
+      },
+      {
+        "eyebrow": "Aparatos",
+        "title": "Tu casa entera en una cuenta.",
+        "text": "Una cajita con micrófono y una pantallita táctil. Se emparejan con un código corto y obedecen tu voz.",
+        "checks": [
+          "Empareja con un código corto",
+          "Se instala en minutos",
+          "Voz y pantalla, como prefieras"
+        ]
+      }
+    ],
+    "details": {
+      "title": "Los detalles importan.",
+      "sub": "Cuidamos lo pequeño.",
+      "items": [
+        {
+          "title": "Tu cuenta viaja contigo",
+          "text": "Entra desde cualquier aparato y todo sigue igual: tu casa, tu historial, tus ajustes."
+        },
+        {
+          "title": "Tu voz se queda en casa",
+          "text": "Lo que dices se entiende en el propio aparato siempre que se puede."
+        },
+        {
+          "title": "Privacidad de verdad",
+          "text": "Tus datos viajan cifrados y tus claves nunca salen de tu cuenta."
+        }
+      ]
+    },
+    "cta": {
+      "title": "Empieza a hablar con tu hogar.",
+      "text": "Crea tu cuenta y empareja tu primer aparato.",
+      "button": "Crear cuenta gratis"
+    },
+    "footer": {
+      "tagline": "Tu hogar, con voz propia.",
+      "product": "Producto",
+      "account": "Cuenta",
+      "signin": "Entrar",
+      "signup": "Crear cuenta",
+      "panel": "Abrir panel",
+      "rights": "© 2026 Nomik"
+    },
+    "web3": {
+      "eyebrow": "Pagos",
+      "title": "Céntimos en lugar de suscripciones.",
+      "intro": "Cada servicio tiene un precio diminuto y visible. Tu cuenta trae su propia billetera en la red Solana: cada pago queda registrado y puedes comprobarlo cuando quieras. Tú nunca firmas nada raro.",
+      "pay": [
+        {
+          "title": "Billetera incluida, sin llaves raras",
+          "text": "Nomik se encarga de firmar por ti. Tú nunca tocas una clave."
+        },
+        {
+          "title": "Todo queda registrado",
+          "text": "Cada pago se anota en una red pública. Qué, cuándo y cuánto, siempre a la vista."
+        },
+        {
+          "title": "Precio por uso, siempre antes",
+          "text": "Ves el precio antes de cada servicio: una llamada, una consulta, un minuto. Sin sorpresas."
+        }
+      ],
+      "appsTitle": "Tus aplicaciones, conectadas.",
+      "appsText": "Nomik habla con tus herramientas por MCP, un estándar abierto: la tienda, el inventario, las reservas o tus contenidos. Cada app instalada añade sus funciones al asistente y cada consulta paga céntimos.",
+      "flowTitle": "Del «hola» al hecho, paso a paso.",
+      "flow": [
+        {
+          "title": "Hablas",
+          "text": "Dices lo que necesitas, con tus palabras."
+        },
+        {
+          "title": "Entiende",
+          "text": "Interpreta la petición y planea los pasos."
+        },
+        {
+          "title": "Verifica",
+          "text": "Comprueba cada paso y pide tu permiso."
+        },
+        {
+          "title": "Paga",
+          "text": "Liquida céntimos por cada servicio."
+        },
+        {
+          "title": "Entrega",
+          "text": "Ejecuta y te muestra el resultado."
+        }
+      ],
+      "contracts": {
+        "title": "Contratos que se cumplen solos.",
+        "text": "Los acuerdos importantes viven como contratos inteligentes en Solana: programas que ejecutan el trato al pie de la letra, sin intermediarios. El dinero solo se mueve cuando el trabajo está hecho, y cualquiera puede comprobarlo.",
+        "points": [
+          "Se ejecutan solos, sin papeleo",
+          "El pago se libera al entregar",
+          "Registro público y comprobable"
+        ]
+      },
+      "appsYours": "Tus apps"
+    },
+    "business": {
+      "eyebrow": "Hogar y empresa",
+      "title": "Un sistema para cualquier máquina.",
+      "intro": "NomikOS le da a cada aparato lo que necesita para trabajar: oídos para escucharte, manos para actuar y una billetera para pagar sus servicios. En casa es tu asistente; en tu empresa, tu plantilla. Una sola cuenta que crece contigo, de persona a organización.",
+      "cases": [
+        {
+          "title": "Tu hogar, vivo",
+          "text": "El asistente, la aspiradora robot y cada rincón obedecen tu voz y se coordinan solos."
+        },
+        {
+          "title": "Edificios inteligentes",
+          "text": "Instálalo en un edificio y cada apartamento se vuelve inteligente para quien lo alquile: acceso, clima y servicios cobrados por uso."
+        },
+        {
+          "title": "Trabajadores incansables",
+          "text": "Flotas de agentes que atienden, venden y resuelven 24/7, con límite de gasto y supervisión total."
+        }
+      ],
+      "economy": {
+        "title": "Una economía que se mueve sola.",
+        "text": "Tú pones el presupuesto una vez. Los agentes pagan céntimos por cada servicio que usan —una llamada, una consulta, una entrega— y cada movimiento queda registrado de punta a punta, hasta el cliente final."
+      },
+      "cta": "Empezar gratis"
+    },
+    "start": {
+      "eyebrow": "Sin riesgo",
+      "title": "Probarlo es así de fácil.",
+      "steps": [
+        {
+          "title": "Regístrate en 1 clic",
+          "text": "Entra con tu correo o tu cuenta de siempre. Tu billetera se crea sola entre bambalinas: nada de frases secretas ni claves raras."
+        },
+        {
+          "title": "Pon saldo y límites",
+          "text": "Recarga una vez y marca un tope diario. Como los créditos de tus apps favoritas, con recarga automática si quieres."
+        },
+        {
+          "title": "Mira cómo trabaja",
+          "text": "Cada tarea aparece en tu historial al momento, con su coste en céntimos. Si algo supera tu límite, se bloquea al instante."
+        }
+      ],
+      "sandbox": {
+        "title": "Modo sandbox: juega sin miedo.",
+        "text": "Prueba el sistema completo en tus aparatos con dinero de mentira. Rompe cosas, reinicia y vuelve a empezar, sin gastar un céntimo de verdad.",
+        "button": "Crear cuenta y probar"
+      }
+    }
+  },
+  "common": {
+    "networkError": "Error de red"
+  },
+  "panel": {
+    "nav": {
+      "wallet": "Wallet",
+      "models": "Modelos",
+      "services": "Servicios",
+      "fleet": "Flota",
+      "walletTitle": "Wallet operativa y red blockchain del agente",
+      "modelsTitle": "Proveedor, API key y modelo del agente",
+      "servicesTitle": "Dapps que el agente usará con x402",
+      "fleetTitle": "Flota de dispositivos: emparejar, instalar y monitorear"
+    },
+    "account": {
+      "prefs": "Preferencias",
+      "signout": "Cerrar sesión",
+      "language": "Idioma"
+    },
+    "device": {
+      "label": "Dispositivo"
+    },
+    "viewlock": {
+      "title": "Fija la cámara de frente y desactiva la rotación",
+      "release": "liberar vista 3D",
+      "engage": "fijar vista de frente"
+    },
+    "sandbox": {
+      "switchTitle": "Sesión de prueba efímera en el navegador, conectada a tu proveedor, modelo, dapps y wallet",
+      "switchLabel": "modo sandbox",
+      "local": "Ejecución local",
+      "remote": "Ejecución remota",
+      "localTitle": "El ecosistema corre en esta máquina",
+      "remoteTitle": "El ecosistema responde desde el worker remoto"
+    },
+    "specs": {
+      "title": "Ficha técnica",
+      "collapse": "Colapsar",
+      "expand": "Expandir",
+      "items": [
+        {
+          "label": "Controlador",
+          "value": "ESP32-S3R8 · dual-core 240 MHz"
+        },
+        {
+          "label": "Pantalla",
+          "value": "AMOLED redonda 1.43\" · 466 × 466 px"
+        },
+        {
+          "label": "Táctil",
+          "value": "Capacitivo de 5 puntos"
+        },
+        {
+          "label": "Memoria",
+          "value": "16 MB Flash · 8 MB PSRAM"
+        },
+        {
+          "label": "Inalámbrico",
+          "value": "Wi‑Fi 2.4 GHz · BLE 5"
+        },
+        {
+          "label": "Extras",
+          "value": "microSD · SPI · I2C · RGB LED"
+        }
+      ]
+    },
+    "charts": {
+      "noInvoices": "Sin facturas todavía.",
+      "noTools": "Sin tools todavía."
+    },
+    "modal": {
+      "close": "Cerrar"
+    },
+    "diagnosis": {
+      "title": "Peajes x402",
+      "invoices": "Facturas",
+      "pending": "Pendientes",
+      "verifying": "En verificación",
+      "settled": "Liquidadas",
+      "failed": "Fallidas",
+      "total": "Total",
+      "note": "Mientras un peaje está en verificación on-chain, el recurso asociado no responde hasta que se liquide.",
+      "logs": "Logs del sistema",
+      "payerOk": "Payer configurado",
+      "payerOkDetail": "Los pagos salientes se firman automáticamente (dPaaS).",
+      "payerWarn": "Payer no configurado",
+      "payerWarnDetail": "payer_configured: false en el módulo x402 — los pagos salientes no se están firmando automáticamente, lo que estanca las liquidaciones ({failed} payouts failed, {confirmed} confirmed).",
+      "erpOk": "ERP en línea",
+      "erpOkDetail": "El módulo Payload CMS responde (health OK).",
+      "erpDown": "ERP caído",
+      "erpDownDetail": "El módulo Payload CMS está Detenido ({detail}). Cualquier consulta al ERP no puede responder ahora mismo.",
+      "erpUnknown": "ERP sin datos",
+      "erpUnknownDetail": "El módulo aún no sincroniza su salud — llega en unos segundos.",
+      "noData": "Sin datos todavía — el diagnóstico llega en unos segundos.",
+      "collapse": "Colapsar",
+      "expand": "Expandir"
+    }
+  },
+  "wallet": {
+    "title": "Wallet y red del agente",
+    "loading": "Cargando contexto de la cuenta…",
+    "signer": "Wallet firmante · Solana (dPaaS)",
+    "dpaasWallet": "Wallet dPaaS",
+    "signsTolls": "firma los peajes x402",
+    "unset": "sin configurar",
+    "copyAddr": "Copiar dirección {network} para fondear",
+    "principal": "Wallet principal (dPaaS)",
+    "noSubwallets": "Sin sub-wallets dPaaS: la cuenta firma con la wallet principal.",
+    "create": "Crear wallet dPaaS",
+    "creating": "Creando…",
+    "devnet": "Devnet",
+    "faucet": "Faucet Devnet",
+    "dripping": "Goteando…",
+    "faucetInfo": "Transfiere SOL del treasury del ecosistema a TU wallet dPaaS: los peajes x402 quedan con settlement on-chain real (solo devnet).",
+    "browser": "Wallets del navegador",
+    "connecting": "Conectando…",
+    "inUse": "En uso",
+    "use": "Usar",
+    "browserHint": "Conecta Phantom, Solflare, Backpack o MetaMask: la clave privada nunca sale de tu wallet — la cuenta guarda solo la pubkey en su DB (puedes agregar varias; solo una en uso).",
+    "chain": "Red blockchain · Solana",
+    "saved": "Guardado — el agente operará con esta wallet y red.",
+    "cancel": "Cancelar",
+    "save": "Guardar",
+    "saving": "Guardando…",
+    "errConnect": "Error al conectar la wallet",
+    "mmMissing": "MetaMask no detectado — instala la extensión",
+    "mmNoAccount": "MetaMask no devolvió cuenta",
+    "wMissing": "Wallet no detectada — instala la extensión",
+    "wNoPubkey": "La wallet no devolvió su pubkey"
+  },
+  "models": {
+    "title": "Modelos del agente",
+    "loading": "Cargando proveedores…",
+    "active": "Proveedor activo (el que usa tu agente)",
+    "none": "Sin proveedores — el agente no puede razonar hasta que agregues una key abajo.",
+    "modelsCount": "{count, plural, one {# modelo} other {# modelos}}",
+    "hasKey": "· key ●",
+    "noKey": "· sin key",
+    "disconnect": "Desconectar {provider}",
+    "modelOf": "Modelo de {provider}",
+    "freeCount": "({count} gratis)",
+    "refresh": "Actualizar lista de modelos",
+    "free": "Gratis",
+    "others": "Otros",
+    "addKey": "Agregar / actualizar key",
+    "customProvider": "Personalizado (OpenAI-compat)",
+    "baseUrlPh": "Base URL OpenAI-compat (https://…/v1)",
+    "keyPh": "Pega tu API key y pulsa Enter",
+    "connecting": "Conectando…",
+    "connect": "Conectar",
+    "done": "Listo",
+    "saved": "Guardado en la cuenta",
+    "errNoModels": "el proveedor no devolvió modelos",
+    "errConn": "Error de conexión",
+    "errKeyFirst": "Pega tu API key primero",
+    "errKeyShort": "Esa key parece incompleta — cópiala entera (se muestra una sola vez al crearla)",
+    "errKeyChars": "Esa key trae caracteres inválidos (¿emoji o espacios pegados?) — cópiala de nuevo, solo la key",
+    "warnRefresh": "Aviso: no se pudo actualizar la lista ({text}) — mostrando la guardada",
+    "warn": "Aviso: {warning}"
+  },
+  "services": {
+    "title": "Servicios del agente",
+    "loading": "Cargando catálogo…",
+    "flow": "Todo el flujo de esta dapp viaja por el gateway x402 (peaje 402 firmado por la wallet dPaaS de la cuenta).",
+    "added": "Agregada a la cuenta",
+    "addedNet": "· red {network}",
+    "adding": "Agregando…",
+    "add": "Agregar a la cuenta"
+  },
+  "fleet": {
+    "title": "Flota de dispositivos",
+    "tabFleet": "Mi flota",
+    "tabPair": "Emparejar",
+    "tabInstall": "Instalador",
+    "loading": "Cargando flota…",
+    "empty": "Sin dispositivos todavía — empareja una placa en la pestaña “Emparejar” con el código que muestra en su pantalla.",
+    "refresh": "Refrescar",
+    "pairLabel": "Código de emparejado",
+    "pairPh": "El código de 8 caracteres de la pantalla del dispositivo",
+    "pairHint": "El dispositivo lo enseña al arrancar (o en la consola serial del instalador). Caduca a los 15 minutos.",
+    "claimed": "{name} emparejado — la placa recibirá su token al sondear (POST /api/devices/token).",
+    "claiming": "Emparejando…",
+    "pair": "Emparejar dispositivo",
+    "stepBoard": "1 · Placa",
+    "sbcNote": "SBC: no requiere flasheo por USB — la imagen Buildroot de NomikOS (Fase 4) se escribirá en la microSD y la placa se empareja por red al primer arranque.",
+    "stepFlash": "2 · Flashear desde el navegador",
+    "checking": "Consultando manifiesto de firmware…",
+    "pendingA": "Firmware en camino (Fase 3: agentd-mini para esta placa). El botón de instalación se activará solo cuando el manifiesto se publique en",
+    "pendingB": ". Mientras tanto puedes probar la conexión por la consola de abajo con cualquier firmware que ya tenga la placa.",
+    "stepConsole": "3 · Consola serial (115200)",
+    "connectUsb": "Conectar placa por USB",
+    "disconnect": "Desconectar",
+    "serialRequired": "Requiere Chrome/Edge en escritorio (Web Serial).",
+    "consoleWaiting": "— consola en espera —",
+    "sendPh": "Enviar línea al dispositivo…",
+    "send": "Enviar",
+    "useAsCode": "usar «{code}» como código",
+    "never": "nunca visto",
+    "agoS": "hace {s}s",
+    "agoM": "hace {m} min",
+    "agoH": "hace {h} h",
+    "onlineAt": "online · {ago}",
+    "seenAt": "visto {ago}",
+    "limits": "dPaaS: {daily} lamports/día · {tx}/tx",
+    "vidNative": "Espressif nativo (ESP32-S2/S3/C3)",
+    "vidCp210x": "Puente SiLabs CP210x (placas ESP32 clásicas)",
+    "vidCh340": "Puente WCH CH340/CH341",
+    "vidFtdi": "Puente FTDI",
+    "serialPort": "puerto serial",
+    "connectedTo": "— conectado a {label} @115200 —",
+    "errSerial": "Web Serial no disponible en este navegador — usa Chrome o Edge en escritorio.",
+    "errOpenPort": "No se pudo abrir el puerto"
+  },
+  "dashboard": {
+    "summary": "Resumen de la cuenta",
+    "scope": "Ámbito",
+    "prod": "Producción",
+    "sandbox": "Sandbox",
+    "tokens": "Uso de tokens",
+    "tokensProd": "Consumo del modelo activo",
+    "tokensSandbox": "Consumo del sandbox",
+    "noMeter": "Sin medidor — el gateway aún no reporta tokens. Próximo paso: contador por cuenta en el api.",
+    "noActivity": "Sin actividad registrada — el sandbox es efímero y aún no registra su propio uso.",
+    "toolsByApps": "Tools por apps",
+    "toolsInventory": "Inventario disponible para el agente",
+    "sameInSandbox": " (igual en sandbox)",
+    "noTools": "Sin tools.",
+    "app": "App",
+    "tools": "Tools",
+    "uses": "Usos",
+    "inAccount": "en tu cuenta",
+    "x402": "Análisis x402",
+    "tolls": "Peajes de la cuenta",
+    "tollsSandbox": "Peajes del sandbox",
+    "noSandboxTolls": "0 peajes — el sandbox aún no registra peajes propios. Los peajes de prueba caen hoy en producción.",
+    "invoices": "facturas",
+    "settled": "liquidadas",
+    "sol": "SOL",
+    "dailyUse": "Uso del límite diario: {pct}%",
+    "docs": "Documentación",
+    "seeAll": "Ver todas →",
+    "core": "núcleo"
+  },
+  "dock": {
+    "ev": {
+      "boot": "arranque",
+      "enroll": "registro",
+      "claim": "emparejado",
+      "online": "en línea",
+      "coder": "código renovado",
+      "tap": "toque",
+      "unlock": "desbloqueo",
+      "lock": "bloqueo",
+      "provider": "proveedor",
+      "model": "modelo",
+      "apps": "apps",
+      "toll": "peaje x402",
+      "voice": "turno de voz",
+      "rebuilt": "reconstruido"
+    },
+    "status": {
+      "idle": "Último turno",
+      "listening": "Escuchando…",
+      "thinking": "Pensando…",
+      "done": "Listo",
+      "error": "Ups"
+    },
+    "now": "ahora",
+    "agoS": "hace {s}s",
+    "agoM": "hace {m}m",
+    "see": "Ver actividad del agente",
+    "minimize": "Minimizar",
+    "hide": "Ocultar",
+    "chatPh": "Escríbele al agente…",
+    "send": "Enviar",
+    "empty": "Aún no hay conversación. Háblame por el micrófono del OS o escríbeme aquí."
+  },
+  "sim": {
+    "unexpected": "error inesperado",
+    "noSTT": "este navegador no tiene reconocimiento de voz — escríbele abajo",
+    "micMuted": "mic silenciado desde la pantalla — tócalo para activar",
+    "micDenied": "permiso de micrófono denegado — permite el mic o escríbele abajo",
+    "micFail": "no pude abrir el micrófono",
+    "title": "Simulador NomikOS",
+    "ecoLocal": "Ejecución local",
+    "ecoDocker": " · docker",
+    "ecoDetected": "detectada",
+    "syncing": "sincronizando…",
+    "noProvider": "🧠 sin proveedor — configúralo en Modelos",
+    "claimOnScreen": "claim code en pantalla:",
+    "claiming": "emparejando…",
+    "addAgent": "AGREGAR al agente",
+    "onlineNote": "El OS queda ONLINE: el dispositivo simulado entra a tu flota real.",
+    "lockedNote": "🔒 bloqueado — toca la pantalla del AMOLED para desbloquear.",
+    "unlock": "Desbloquear",
+    "touchHint": "pantalla táctil: toca los iconos del AMOLED (aplicaciones · banco).",
+    "camTitle": "Fija la cámara de frente y desactiva la rotación",
+    "camRelease": "liberar vista 3D",
+    "camFront": "fijar vista de frente",
+    "micTalk": "Hablar con el agente",
+    "micNoSR": "Sin Web Speech API en este navegador",
+    "micListening": "escuchando… (toca para parar)",
+    "micTalkLower": "hablar con el agente",
+    "ttsTitle": "Leer las respuestas en voz alta (TTS)",
+    "thinking": "el agente está pensando… ",
+    "heard": "oí: «{text}»",
+    "bankLabel": "Banco › Enviar › Manual",
+    "toPh": "Dirección destino (base58)",
+    "typePh": "…o escríbele al agente",
+    "paying": "pagando peaje…",
+    "payToll": "peaje x402 del dispositivo",
+    "rebuildQ": "¿Reconstruir el dispositivo+OS conservando el progreso?",
+    "rebuilding": "reconstruyendo…",
+    "rebuild": "reconstruir (con progreso)",
+    "lastToll": "último peaje:",
+    "booting": "el agentd simulado se está presentando al worker…",
+    "stageLine": "stage: {stage} · boots: {boots} · toques: {taps}"
+  },
+  "screen": {
+    "loading": "cargando UI…"
+  },
+  "prefs": {
+    "title": "Preferencias",
+    "sub": "Tu cuenta, tus reglas: datos generales e idioma en un solo lugar.",
+    "account": "Cuenta",
+    "email": "Correo",
+    "displayName": "Nombre visible",
+    "displayNamePh": "Cómo te llamas",
+    "language": "Idioma",
+    "country": "País",
+    "countryNone": "Sin definir",
+    "save": "Guardar cambios",
+    "saving": "Guardando…",
+    "saved": "Guardado en tu cuenta.",
+    "back": "Volver al panel",
+    "error": "No se pudo guardar. Inténtalo de nuevo."
+  },
+  "docs": {
+    "indexTitle": "Documentación",
+    "indexSub": "Guías del ecosistema: apps, OS, agentes y proveedores.",
+    "back": "Volver al panel",
+    "guide": "Guía",
+    "updated": "act.",
+    "follow": "Sigue con"
+  }
+}

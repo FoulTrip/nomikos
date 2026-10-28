@@ -14,12 +14,32 @@
         },
         {
           "type": "table",
-          "head": ["Concepto", "Dónde vive", "Quién lo usa"],
+          "head": [
+            "Concepto",
+            "Dónde vive",
+            "Quién lo usa"
+          ],
           "rows": [
-            ["Catálogo y manifiestos", "api (dapps/registry/*.json)", "El api valida qué existe"],
-            ["Vínculo cuenta ↔ servicio", "account_services (SQLite)", "El agente filtra tus dapps"],
-            ["Tools en vivo", "GET /api/agent/tools", "brain las ofrece al LLM"],
-            ["Ejecución con peaje", "Gateway de apps del api", "Cada llamada paga x402"]
+            [
+              "Catálogo y manifiestos",
+              "api (dapps/registry/*.json)",
+              "El api valida qué existe"
+            ],
+            [
+              "Vínculo cuenta ↔ servicio",
+              "account_services (SQLite)",
+              "El agente filtra tus dapps"
+            ],
+            [
+              "Tools en vivo",
+              "GET /api/agent/tools",
+              "brain las ofrece al LLM"
+            ],
+            [
+              "Ejecución con peaje",
+              "Gateway de apps del api",
+              "Cada llamada paga x402"
+            ]
           ]
         }
       ]
@@ -76,5 +96,9 @@
       ]
     }
   ],
-  "related": ["instalacion-apps", "orquestacion", "proveedores"]
+  "related": [
+    "instalacion-apps",
+    "orquestacion",
+    "sandbox"
+  ]
 }

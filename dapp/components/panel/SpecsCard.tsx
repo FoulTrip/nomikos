@@ -1,4 +1,5 @@
 "use client";
+import { useTranslations } from "next-intl";
 
 import { useState } from "react";
 import { Minus, Plus } from "lucide-react";
@@ -7,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSandbox } from "@/lib/viewer/sandbox";
 
 export default function SpecsCard({ specs }: { specs: [string, string][] }) {
+  const t = useTranslations("panel.specs");
   const [open, setOpen] = useState(true);
   const sandbox = useSandbox();
   if (!sandbox) return null;
@@ -14,13 +16,13 @@ export default function SpecsCard({ specs }: { specs: [string, string][] }) {
     <Card className="gap-3 py-4 max-md:hidden">
       <CardHeader className="px-4">
         <CardTitle className="flex items-center justify-between text-xs font-semibold tracking-widest text-primary uppercase">
-          Ficha técnica
+          {t("title")}
           <Button
             type="button"
             variant="ghost"
             size="icon"
             onClick={() => setOpen((v) => !v)}
-            title={open ? "Colapsar" : "Expandir"}
+            title={open ? t("collapse") : t("expand")}
             aria-expanded={open}
             className="size-6"
           >

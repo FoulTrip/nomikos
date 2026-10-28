@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { useLocale, useTranslations } from "next-intl";
 import {
   ArrowLeft,
   CircleAlert,
@@ -109,8 +110,10 @@ function Block({ block }: { block: DocBlock }) {
 }
 
 export default function DocViewer({ doc }: { doc: Doc }) {
+  const t = useTranslations("docs");
+  const locale = useLocale();
   const related = doc.related
-    .map((s) => getDoc(s))
+    .map((s) => getDoc(s, locale))
     .filter((d): d is Doc => d !== null);
   return (
     <div className="mx-auto grid w-full max-w-3xl gap-6 p-4 pb-12 sm:p-6">
@@ -119,13 +122,13 @@ export default function DocViewer({ doc }: { doc: Doc }) {
         className="flex w-fit items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="size-3.5" />
-        Volver al panel
+        {t("back")}
       </Link>
       <header className="grid gap-2">
         <p className="flex items-center gap-2">
           <DocIcon name={doc.icon} className="size-5 text-primary" />
-          <Badge variant="secondary">Guía</Badge>
-          <span className="text-xs text-muted-foreground">act. {doc.updated}</span>
+          <Badge variant="secondary">{t("guide")}</Badge>
+          <span className="text-xs text-muted-foreground">{t("updated")} {doc.updated}</span>
         </p>
         <h1 className="text-2xl font-bold">{doc.title}</h1>
         <p className="text-sm leading-relaxed text-muted-foreground">{doc.summary}</p>
@@ -144,7 +147,7 @@ export default function DocViewer({ doc }: { doc: Doc }) {
           <Separator />
           <section className="grid gap-2">
             <h2 className="text-sm font-semibold text-muted-foreground">
-              Sigue con
+              {t("follow")}
             </h2>
             <div className="grid gap-2 sm:grid-cols-3">
               {related.map((r) => (
@@ -166,6 +169,8 @@ export default function DocViewer({ doc }: { doc: Doc }) {
 }
 
 export function DocsIndex() {
+  const t = useTranslations("docs");
+  const locale = useLocale();
   return (
     <div className="mx-auto grid w-full max-w-5xl gap-4 p-4 pb-12 sm:p-6">
       <Link
@@ -173,16 +178,16 @@ export function DocsIndex() {
         className="flex w-fit items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="size-3.5" />
-        Volver al panel
+        {t("back")}
       </Link>
       <header className="grid gap-1">
-        <h1 className="text-2xl font-bold">Documentación</h1>
+        <h1 className="text-2xl font-bold">{t("indexTitle")}</h1>
         <p className="text-sm text-muted-foreground">
-          Guías del ecosistema: apps, OS, agentes y proveedores.
+          {t("indexSub")}
         </p>
       </header>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {listDocs().map((d) => (
+        {listDocs(locale).map((d) => (
           <Link
             key={d.slug}
             href={`/panel/docs/${d.slug}`}

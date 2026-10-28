@@ -132,7 +132,7 @@ the systemd units that start the voice loop once the board is paired. The
 `dapps` directory hosts the application registry and the local content-manager
 checkout that serves as the ecosystem's reference application. The workshop
 material sits in `agent` with the session-one runner and its prompts, in
-`cases` with the visible fictional dispute, in `ground_truth` with the
+`cases` with the solution-native disputes, in `ground_truth` with the
 verifier-only checklists and rules, in `world` with the external event
 injector, and in `ui` with the static review console served on its own port.
 End-to-end coverage lives in `tests`, and the root Makefile is the front door
@@ -250,7 +250,7 @@ curl -s -X POST http://localhost:8080/api/calls \
 
 ### The legal workshop end to end
 
-Open a run for the fictional dispute, draft with the session-one runner, and
+Open a run for the delegated-toll dispute, draft with the session-one runner, and
 optionally inject new evidence mid-run. The deterministic path submits a
 memorandum from a file; without that flag the runner drives the live gateway
 instead. Watch turns, checklist, and events in the review console, correct
@@ -261,7 +261,7 @@ behavior.
 ```bash
 RID=$(curl -s -X POST http://localhost:8080/api/legal/runs \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
-  -d '{"case_id":"northbridge-v-caldera"}' \
+  -d '{"case_id":"dpaas-toll-dispute"}' \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['run']['id'])")
 cd agent && BEARER=$TOK python3 run.py --memo-file memorandum.md && cd ..
 cd world && BEARER=$TOK python3 inject.py --run $RID \
@@ -371,10 +371,6 @@ separation: only the API process ever opens those files.
 
 <p align="center">
   <img src="diagram.svg" alt="NomikOS system flow">
-</p>
-
-<p align="center">
-  <em>Authoritative flow. Source: <code>diagram.d2</code>.</em>
 </p>
 
 ## Security model

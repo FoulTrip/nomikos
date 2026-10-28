@@ -359,7 +359,7 @@ fn notif_get<'x>(os: &OsState, idx: usize, num: &'x mut [u8; 96]) -> Option<(&'x
     }
     if let Some(r) = os.last_reply {
         if idx == i {
-            return Some(("Muse", snip60(r.reply, num)));
+            return Some(("Agente", snip60(r.reply, num)));
         }
     }
     None
@@ -567,11 +567,181 @@ fn draw_mic(f: &mut Frame, p: &Palette, muted: bool, elapsed_ms: u64) {
     }
 }
 
+// ── chat de burbujas (pantalla principal) ──────────────────────────────
+// La pantalla del dispositivo ES la conversación: lo que dijiste, el
+// proceso del agente (pasos con check/activo/pendiente) y su respuesta.
+// Sin mascota: el foco es legible y simple para usuarios finales.
+
+const CHAT_LEFT: i32 = 34;
+const CHAT_RIGHT: i32 = 432;
+const CHAT_TOP: i32 = 112;
+const CHAT_BOTTOM: i32 = 376;
+const CHAT_STEP_H: i32 = 15;
+const CHAT_LINE_H: i32 = 17;
+
+const CHAT_STEPS: [&str; 3] = [
+    "Entendiendo tu mensaje",
+    "Revisando lo necesario",
+    "Preparando tu respuesta",
+];
+
+/// Burbuja del usuario (derecha, oro). Devuelve su alto.
+fn draw_user_bubble(f: &mut Frame, p: &Palette, text: &str, y: i32) -> i32 {
+    let max_w = 286;
+    let lines = text::wrap_count(Face::Mid, text, max_w - 24, 2).max(1);
+    let tw = text::text_width(Face::Mid, text) + 24;
+    let w = tw.clamp(150, max_w);
+    let h = 16 + lines as i32 * CHAT_LINE_H;
+    let x = CHAT_RIGHT - w;
+    rrect(f, x, y, w as u32, h as u32, 16, p.gold, None);
+    text::wrap_lines_at(
+        f,
+        Face::Mid,
+        p.on_gold,
+        text,
+        x + w - 12,
+        y + 20,
+        CHAT_LINE_H,
+        2,
+        w - 24,
+        Align::Right,
+    );
+    h
+}
+
+/// Un paso del proceso: ✓ hecho · ● activo (pulso) · ○ pendiente.
+fn draw_chat_step(
+    f: &mut Frame,
+    p: &Palette,
+    x: i32,
+    bl: i32,
+    active: i32,
+    idx: usize,
+    label: &str,
+    elapsed_ms: u64,
+) {
+    let cy = bl - 4;
+    let is_active = active == idx as i32;
+    let done = active < 0 || active > idx as i32;
+    if done {
+        Line::new(Point::new(x - 3, cy + 1), Point::new(x + 1, cy + 5))
+            .into_styled(PrimitiveStyle::with_stroke(p.green, 2))
+            .draw(f)
+            .ok();
+        Line::new(Point::new(x + 1, cy + 5), Point::new(x + 8, cy - 4))
+            .into_styled(PrimitiveStyle::with_stroke(p.green, 2))
+            .draw(f)
+            .ok();
+    } else if is_active {
+        let pulse = 3 + ((elapsed_ms / 350) % 2) as u32;
+        circle_fill(f, x + 1, cy + 1, pulse, p.gold);
+    } else {
+        circle_edge(f, x + 1, cy + 1, 3, p.faint, 1);
+    }
+    let mut buf = [0u8; 64];
+    let shown = if is_active {
+        let dots = match (elapsed_ms / 400) % 3 {
+            0 => "",
+            1 => ".",
+            _ => "..",
+        };
+        snip_append(label, dots, &mut buf)
+    } else {
+        label
+    };
+    txt(
+        f,
+        Face::Small,
+        is_active,
+        Align::Left,
+        x + 20,
+        bl,
+        if is_active { p.text } else { p.muted },
+        shown,
+    );
+}
+
+/// Burbuja del agente: rótulo + proceso del turno (+ respuesta al final).
+/// `active`: -1 = todo hecho (respuesta lista) · 0..2 = paso en curso.
+fn draw_agent_bubble(
+    f: &mut Frame,
+    p: &Palette,
+    y: i32,
+    active: i32,
+    reply: Option<&str>,
+    elapsed_ms: u64,
+) -> i32 {
+    let x = CHAT_LEFT;
+    let mut w = 220;
+    for s in CHAT_STEPS.iter() {
+        w = w.max(text::text_width(Face::Small, s) + 44);
+    }
+    if let Some(r) = reply {
+        w = w.max((text::text_width(Face::Mid, r) + 24).min(330));
+    }
+    let w = w.clamp(220, 330);
+    let inner = w - 24;
+    // alto: rótulo(20) + pasos(3×15) + [divisor + respuesta] + colchón
+    let (lines, h) = match reply {
+        None => (0usize, 38 + 2 * CHAT_STEP_H + 3 + 10),
+        Some(r) => {
+            let first_bl = y + 97;
+            let max_lines = ((((CHAT_BOTTOM - first_bl) / CHAT_LINE_H) + 1).clamp(1, 4)) as usize;
+            let n = text::wrap_count(Face::Mid, r, inner, max_lines).max(1);
+            (n, 97 + (n as i32 - 1) * CHAT_LINE_H + 3 + 10)
+        }
+    };
+    rrect(f, x, y, w as u32, h as u32, 16, p.tile, Some((p.tile_edge, 1)));
+    txt(f, Face::Tiny, true, Align::Left, x + 12, y + 18, p.gold, "AGENTE");
+    for (i, label) in CHAT_STEPS.iter().enumerate() {
+        let bl = y + 38 + i as i32 * CHAT_STEP_H;
+        draw_chat_step(f, p, x + 12, bl, active, i, label, elapsed_ms);
+    }
+    if let Some(r) = reply {
+        let dy = y + 78;
+        Line::new(Point::new(x + 12, dy), Point::new(x + w - 12, dy))
+            .into_styled(PrimitiveStyle::with_stroke(p.hairline, 1))
+            .draw(f)
+            .ok();
+        text::wrap_lines_at(
+            f,
+            Face::Mid,
+            p.text,
+            r,
+            x + 12,
+            y + 97,
+            CHAT_LINE_H,
+            lines,
+            inner,
+            Align::Left,
+        );
+    }
+    h
+}
+
+/// Burbuja de mensaje simple del agente (rótulo + cuerpo + nota).
+fn draw_agent_message(f: &mut Frame, p: &Palette, y: i32, body: &str, hint: &str) -> i32 {
+    let x = CHAT_LEFT;
+    let bw = text::text_width(Face::Mid, body) + 24;
+    let hw = text::text_width(Face::Small, hint) + 24;
+    let w = bw.max(hw).clamp(200, 330);
+    let inner = w - 24;
+    let blines = text::wrap_count(Face::Mid, body, inner, 2).max(1);
+    let hlines = text::wrap_count(Face::Small, hint, inner, 2).max(1);
+    let h = 16 + blines as i32 * CHAT_LINE_H + 6 + hlines as i32 * 15 + 8;
+    rrect(f, x, y, w as u32, h as u32, 16, p.tile, Some((p.tile_edge, 1)));
+    txt(f, Face::Tiny, true, Align::Left, x + 12, y + 16, p.gold, "AGENTE");
+    text::wrap_lines_at(f, Face::Mid, p.text, body, x + 12, y + 36, CHAT_LINE_H, 2, inner, Align::Left);
+    let hbl = y + 36 + blines as i32 * CHAT_LINE_H + 8;
+    text::wrap_lines_at(f, Face::Small, p.muted, hint, x + 12, hbl, 15, 2, inner, Align::Left);
+    h
+}
+
 // ── pantallas online ───────────────────────────────────────────────────
 
 fn draw_home(f: &mut Frame, p: &Palette, os: &OsState, v: &ViewState, hour: u8, minute: u8) {
     draw_status_bar(f, p);
-    // reloj 44px
+    // reloj compacto + fecha: la pantalla principal es el chat del agente
     let mut hb = [0u8; 2];
     let mut mb = [0u8; 2];
     let hs = fmt_2(hour, &mut hb);
@@ -581,21 +751,43 @@ fn draw_home(f: &mut Frame, p: &Palette, os: &OsState, v: &ViewState, hour: u8, 
     cbuf[2] = b':';
     cbuf[3..5].copy_from_slice(ms.as_bytes());
     let clock = core::str::from_utf8(&cbuf[..5]).unwrap_or("--:--");
-    txt(f, Face::Clock, true, Align::Center, CENTER, 104, p.text, clock);
-    // conversación (si la hay)
-    if let Some(r) = os.last_reply {
-        let mut tb = [0u8; 64];
-        let tue = snip_append("tú: ", r.text, &mut tb);
-        let mut lb = [0u8; 96];
-        let line = snip(tue, &mut lb, 38);
-        txt(f, Face::Small, false, Align::Center, CENTER, 200, p.muted, line);
-        text::wrap_lines(f, Face::Mid, p.text, r.reply, CENTER, 222, 19, 2, 300);
+    txt(f, Face::Xl, true, Align::Center, CENTER, 78, p.text, clock);
+    txt(f, Face::Small, false, Align::Center, CENTER, 96, p.muted, os.clock.date_line);
+    // chat: solo mensajes REALES del usuario y del agente (sin saludos:
+    // la conversación arranca con tu primer mensaje)
+    let y = CHAT_TOP;
+    match v.chat_status {
+        2 => {
+            let user = if v.chat_heard.is_empty() { "(voz)" } else { v.chat_heard };
+            let uy = draw_user_bubble(f, p, user, y);
+            let active = if v.chat_elapsed_ms < 3000 {
+                0
+            } else if v.chat_elapsed_ms < 9000 {
+                1
+            } else {
+                2
+            };
+            draw_agent_bubble(f, p, y + uy + 8, active, None, v.elapsed_ms);
+        }
+        4 if !v.chat_heard.is_empty() => {
+            // solo si hubo turno: sin turno no tiene sentido un error
+            // permanente en la pantalla principal
+            let y2 = y + draw_user_bubble(f, p, v.chat_heard, y) + 8;
+            let _ = draw_agent_message(
+                f,
+                p,
+                y2,
+                "No pude completar la respuesta.",
+                "Inténtalo de nuevo en unos segundos.",
+            );
+        }
+        _ => {
+            if let Some(r) = os.last_reply {
+                let uy = draw_user_bubble(f, p, r.text, y);
+                draw_agent_bubble(f, p, y + uy + 8, -1, Some(r.reply), v.elapsed_ms);
+            }
+        }
     }
-    // mascota bajo el reloj (siempre, con mic o sin él): centrada, con
-    // flotación suave; más abajo si hay conversación para no taparla.
-    let my = if os.last_reply.is_some() { 318 } else { 268 };
-    let bob = (2.0 * (v.elapsed_ms as f32 / 900.0).sin()) as i32;
-    icons::mascot(f, p, CENTER, my + bob, 30);
     // dock curvo con blur: píldora esmerilada + 3 iconos pequeños
     draw_dock(f, p);
     // apps izq (rejilla 2x2 sobre la curva)
@@ -1290,14 +1482,46 @@ mod tests {
         // centro opaco
         let c = (233 * 466 + 233) * 4;
         assert_eq!(buf[c + 3], 255);
-        // tema claro: fondo claro en el centro-arriba libre
-        // (entre reloj y mascota: y=160 está despejado)
+        // tema claro: fondo claro en un punto despejado
+        // (encima del reloj: y=40 está libre de puntos y chat)
         let mut vl = ViewState::default();
         vl.light = true;
         let bufl = render(Some(&os), &vl, 1200);
-        let o = (160 * 466 + 233) * 4;
+        let o = (40 * 466 + 233) * 4;
         assert!(bufl[o] > 200, "fondo claro esperado");
         assert!(buf[o] < 60, "fondo oscuro esperado");
+    }
+
+    #[test]
+    fn chat_states_render() {
+        // todos los estados del turno dibujan sin pánico y llenan pantalla
+        let os = os_home();
+        for status in 0u8..=4 {
+            let v = ViewState {
+                chat_status: status,
+                chat_heard: "dame el estado de salud de la api",
+                chat_elapsed_ms: 5_000,
+                ..Default::default()
+            };
+            let buf = render(Some(&os), &v, 1_200);
+            assert!(
+                count_opaque(&buf) > 100_000,
+                "pocos píxeles con chat_status={status}"
+            );
+        }
+        // respuestas largas: se recortan sin pánico (wrap con tope)
+        let mut os_long = os_home();
+        os_long.last_reply = Some(LastReply {
+            text: "una pregunta bastante larga del usuario para envolver dos lineas",
+            reply: "una respuesta muy larga que se recorta a lo que cabe en la burbuja del agente sin desbordar la pantalla del dispositivo",
+        });
+        let v = ViewState::default();
+        let buf = render(Some(&os_long), &v, 1_200);
+        assert!(count_opaque(&buf) > 100_000);
+        // welcome (sin reply) también dibuja
+        let mut os_w = os_home();
+        os_w.last_reply = None;
+        let _ = render(Some(&os_w), &v, 1_200);
     }
 
     #[test]

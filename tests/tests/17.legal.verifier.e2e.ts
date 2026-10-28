@@ -1,21 +1,21 @@
 /**
- * 17.legal.verifier.e2e.ts — Verificador legal S2 (workshop northbridge-v-caldera).
+ * 17.legal.verifier.e2e.ts — Verificador legal S2 (casos nativos dpaas-toll-dispute y call-billing-dispute).
  *
  * Determinista, sin LLM: ledger en api, motor de reglas, world/, checklist,
  * HITL (escalado/firma), ownership, one-shot y aislamiento del ground truth.
  */
 import { test, expect, api, brain, json } from './_helpers';
 
-const CASE = 'northbridge-v-caldera';
+const CASE = 'dpaas-toll-dispute';
 const PASS_MEMO =
-  'MEMORÁNDUM Northbridge v. Caldera. ' +
-  '1. Incumplimiento material 12 días > §3.2: exhibit-A.md:§3. ' +
-  '2. Fecha admitida: exhibit-B.md:2026-03-14. ' +
-  '3. Fuerza mayor 5 días: contract.md:cláusula 9.';
+  'FINDINGS dPaaS toll dispute. ' +
+  '1. Ledger shows settled invoice-ledger.md:x402-demo-0001. ' +
+  '2. Daily usage is within limits-policy.md:§2. ' +
+  '3. Settlement confirmed in settlement-proof.md:sig-1.';
 
-async function newRun(token: string): Promise<string> {
+async function newRun(token: string, caseId: string = CASE): Promise<string> {
   const res = await api('/legal/runs', {
-    ...json({ case_id: CASE }),
+    ...json({ case_id: caseId }),
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
   });
   expect(res.status).toBe(200);
@@ -58,13 +58,13 @@ test('Files API visible: lista docs + lee contenido; traversal → 400', async (
   });
   expect(list.status).toBe(200);
   const docs = (await list.json()) as { docs: string[] };
-  expect(docs.docs).toEqual(['contract.md', 'exhibit-A.md', 'exhibit-B.md']);
-  const doc = await api(`/legal/cases/${CASE}/docs/exhibit-A.md`, {
+  expect(docs.docs).toEqual(['invoice-ledger.md', 'limits-policy.md', 'settlement-proof.md']);
+  const doc = await api(`/legal/cases/${CASE}/docs/invoice-ledger.md`, {
     headers: { Authorization: `Bearer ${account.token}` },
   });
   expect(doc.status).toBe(200);
   const body = (await doc.json()) as { content: string };
-  expect(body.content).toContain('§3');
+  expect(body.content).toContain('settled');
   const trav = await api(`/legal/cases/${CASE}/docs/..%2F..%2Fetc`, {
     headers: { Authorization: `Bearer ${account.token}` },
   });
@@ -99,7 +99,7 @@ test('reglas: pass con 3 citas → verified, score 1, firmable', async ({ accoun
 
 test('reglas: omisión C2 → fail + escalated (auto), firma → 400', async ({ account }) => {
   const rid = await newRun(account.token);
-  const r = await submit(account.token, rid, PASS_MEMO.replace('exhibit-B.md:2026-03-14', '???'));
+  const r = await submit(account.token, rid, PASS_MEMO.replace('limits-policy.md:§2', '???'));
   expect(r.run.status).toBe('escalated');
   const ids = r.verdicts.at(-1)!.omissions.map((o) => o.id);
   expect(ids).toContain('C2');
@@ -112,14 +112,14 @@ test('reglas: omisión C2 → fail + escalated (auto), firma → 400', async ({ 
   expect(sign.status).toBe(400);
 });
 
-test('reglas: alucinación exhibit-Z → HALLUCINATION; pocas citas → MIN_CITATIONS', async ({
+test('reglas: alucinación refund-ledger → HALLUCINATION; pocas citas → MIN_CITATIONS', async ({
   account,
 }) => {
   const r1 = await newRun(account.token);
-  const h = await submit(account.token, r1, `${PASS_MEMO} Ver exhibit-Z.md:§9.`);
+  const h = await submit(account.token, r1, `${PASS_MEMO} Ver refund-ledger.md:§1.`);
   expect(h.verdicts.at(-1)!.omissions.map((o) => o.id)).toContain('HALLUCINATION');
   const r2 = await newRun(account.token);
-  const m = await submit(account.token, r2, 'Solo exhibit-A.md:§3.');
+  const m = await submit(account.token, r2, 'Solo invoice-ledger.md:x402-demo-0001.');
   expect(m.verdicts.at(-1)!.omissions.map((o) => o.id)).toContain('MIN_CITATIONS');
 });
 
@@ -128,7 +128,7 @@ test('world: new_evidence sin refusal → REFUSAL; con refusal → pass', async 
   const w = await api(`/legal/runs/${r1}/world`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${account.token}` },
-    body: JSON.stringify({ kind: 'new_evidence', doc: 'exhibit-D.md', excerpt: 'peritaje' }),
+    body: JSON.stringify({ kind: 'new_evidence', doc: 'adjustment-note.md', excerpt: 'peritaje' }),
   });
   expect(w.status).toBe(200);
   const f = await submit(account.token, r1, PASS_MEMO);
@@ -138,12 +138,12 @@ test('world: new_evidence sin refusal → REFUSAL; con refusal → pass', async 
   await api(`/legal/runs/${r2}/world`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${account.token}` },
-    body: JSON.stringify({ kind: 'new_evidence', doc: 'exhibit-D.md', excerpt: 'peritaje' }),
+    body: JSON.stringify({ kind: 'new_evidence', doc: 'adjustment-note.md', excerpt: 'peritaje' }),
   });
   const p = await submit(
     account.token,
     r2,
-    `${PASS_MEMO} Nota: exhibit-D.md aún insuficiente, requiero el peritaje completo.`,
+    `${PASS_MEMO} Nota: adjustment-note.md aún insuficiente, requiero el peritaje completo.`,
   );
   expect(p.verdicts.at(-1)!.verdict).toBe('pass');
 });
@@ -184,7 +184,7 @@ test('checklist: pending → pass/missing + world cited', async ({ account }) =>
   };
   expect(c0.checklist.map((i) => i.status)).toEqual(['pending', 'pending', 'pending']);
   expect(c0.can_sign).toBe(false);
-  await submit(account.token, rid, 'solo exhibit-A.md:§3');
+  await submit(account.token, rid, 'solo invoice-ledger.md:x402-demo-0001');
   const c1 = (await (await api(`/legal/runs/${rid}/checklist`, { headers: H })).json()) as {
     checklist: { id: string; status: string }[];
     world: unknown[];
@@ -231,7 +231,7 @@ test('signoff: pass → signed; replay → 409; run inmutable (409×4)', async (
     method: 'POST', headers: H, body: JSON.stringify({ memorandum: PASS_MEMO }),
   });
   const wd = await api(`/legal/runs/${rid}/world`, {
-    method: 'POST', headers: H, body: JSON.stringify({ kind: 'new_evidence', doc: 'exhibit-D.md' }),
+    method: 'POST', headers: H, body: JSON.stringify({ kind: 'new_evidence', doc: 'adjustment-note.md' }),
   });
   const es = await api(`/legal/runs/${rid}/escalate`, { method: 'POST', headers: H, body: '{}' });
   expect([t.status, sb.status, wd.status, es.status]).toEqual([409, 409, 409, 409]);
@@ -247,6 +247,21 @@ test('ownership: otra cuenta → 403 en get/checklist', async ({ account }) => {
   const H = { Authorization: `Bearer ${login.token}` };
   expect((await api(`/legal/runs/${rid}`, { headers: H })).status).toBe(403);
   expect((await api(`/legal/runs/${rid}/checklist`, { headers: H })).status).toBe(403);
+});
+
+test('segundo caso nativo: call-billing-dispute pass → verified', async ({ account }) => {
+  const rid = await newRun(account.token, 'call-billing-dispute');
+  const list = await api('/legal/cases/call-billing-dispute/docs', {
+    headers: { Authorization: `Bearer ${account.token}` },
+  });
+  expect(list.status).toBe(200);
+  const r = await submit(account.token, rid,
+    'FINDINGS call billing. 1. Record call-record.md:call-2026-0007 shows 4 paid minutes. ' +
+    '2. Cadence toll-cadence.md:§1 bills one invoice per minute. ' +
+    '3. Price toll-cadence.md:§2 is 1000 lamports per minute.');
+  expect(r.run.status).toBe('verified');
+  expect(r.verdicts.at(-1)!.verdict).toBe('pass');
+  expect(r.verdicts.at(-1)!.score).toBe(1);
 });
 
 test('aislamiento GT: brain no expone checklist/ground/verdict como tools', async () => {

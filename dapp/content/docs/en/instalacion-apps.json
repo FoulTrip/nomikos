@@ -1,0 +1,65 @@
+{
+  "slug": "instalacion-apps",
+  "title": "Installing apps on the OS",
+  "icon": "PackagePlus",
+  "summary": "How apps reach the device: adding them to your account, tools for the agent, and access from the AMOLED.",
+  "updated": "2026-10-27",
+  "sections": [
+    {
+      "heading": "The model: the account rules",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "In NomikOS apps don't install on the board: they're added to your ACCOUNT. The device is a touch display + microphone; intelligence and integrations live on the server. Switching devices doesn't lose your apps: pair another and they're still there."
+        }
+      ]
+    },
+    {
+      "heading": "Step by step",
+      "blocks": [
+        {
+          "type": "steps",
+          "items": [
+            "Open Services and press Add to account on the app you want.",
+            "The api stores the link (service, x402 resource, network and payer at that moment).",
+            "The agent picks up its tools on the next turn, no restarts needed.",
+            "On the AMOLED, the app appears on the applications screen."
+          ]
+        },
+        {
+          "type": "code",
+          "lang": "bash",
+          "text": "curl -s http://localhost:8080/api/accounts/me/services -H \"Authorization: Bearer $TOKEN\" | jq '.services[] | {service, added}'"
+        }
+      ]
+    },
+    {
+      "heading": "Using it from the device",
+      "blocks": [
+        {
+          "type": "list",
+          "items": [
+            "Tap Applications on the AMOLED dock and pick the app.",
+            "Long lists scroll with the wheel or by swiping.",
+            "Every real action pays its x402 toll with your dPaaS wallet (status shows in the dashboard).",
+            "By voice you can ask the agent to use the app for you."
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Removing an app",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "Removing the link from Services revokes access instantly: its tools stop being offered to the agent and vanish from the device. The history of already-settled tolls stays in x402 analysis."
+        }
+      ]
+    }
+  ],
+  "related": [
+    "aplicaciones",
+    "instalacion-os",
+    "sandbox"
+  ]
+}

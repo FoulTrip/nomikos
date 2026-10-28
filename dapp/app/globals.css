@@ -87,3 +87,141 @@
   background: var(--border);
   border-radius: 999px;
 }
+
+/* Todos los campos de formulario a 16px (incluye nativos sin clases). */
+input, select, textarea {
+  font-size: 16px;
+}
+
+/* ── Landing pública (lenguaje visual cálido, estilo Family) ───────────────
+   Alcance ESTRICTO a .landing: la app autenticada (oscura) no cambia.
+   Paleta clara, Geist global de Vercel (heredado del body) y micro-animaciones. */
+
+.theme-light,
+.landing {
+  --radius: 1rem;
+  --background: #ffffff;
+  --foreground: #343433;
+  --card: #ffffff;
+  --card-foreground: #343433;
+  --popover: #ffffff;
+  --popover-foreground: #343433;
+  --primary: #171717;
+  --primary-foreground: #ffffff;
+  --secondary: #f6f4ef;
+  --secondary-foreground: #121212;
+  --muted: #f2f0ed;
+  --muted-foreground: #848281;
+  --accent: #fbfaf9;
+  --accent-foreground: #343433;
+  --destructive: #ef4444;
+  --border: #e8e8e8;
+  --input: #e8e8e8;
+  --ring: #848281;
+  --body: #494440;
+  --beige: #fbfaf9;
+  --beige-deep: #f6f4ef;
+  --stone: #f2ebe0;
+  --sand-line: #e2d6c5;
+  --g-blue: #7dc4ff;
+  --g-blue-deep: #4dafff;
+  --g-green: #44c67f;
+  --g-gold: #f5b442;
+  --g-gold-deep: #ffa620;
+  --g-orange: #ff5310;
+  --g-purple: #5f5de7;
+  --g-pink: #f966ac;
+
+  background: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+}
+.theme-light ::selection,
+.landing ::selection {
+  background: #d8ecfc;
+  color: #008cff;
+}
+.landing h1,
+.landing h2 {
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+.landing section[id] {
+  scroll-margin-top: 96px;
+}
+
+/* aparición al hacer scroll */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition:
+    opacity 0.7s ease,
+    transform 0.7s cubic-bezier(0.19, 1, 0.22, 1);
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+/* flotación de ilustraciones */
+@keyframes drift {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-12px) rotate(1.5deg); }
+}
+@keyframes drift-soft {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-7px); }
+}
+@keyframes pop {
+  0% { transform: scale(0.6); opacity: 0; }
+  60% { transform: scale(1.04); }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.drift { animation: drift 6s ease-in-out infinite; }
+.drift-soft { animation: drift-soft 5s ease-in-out infinite; }
+.pop-in { animation: pop 0.7s cubic-bezier(0.19, 1, 0.22, 1) both; }
+
+/* hover con vida: escala 1.02 */
+.lift {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+.lift:hover {
+  transform: scale(1.02);
+}
+.lift:active {
+  transform: none;
+}
+
+/* marquesina infinita */
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marquee 30s linear infinite;
+}
+.marquee-mask {
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+
+/* ondas expansivas (motion gráfico tarjetas) */
+@keyframes ripple {
+  0% { transform: scale(0.65); opacity: 0.8; }
+  100% { transform: scale(1.3); opacity: 0; }
+}
+.ripple {
+  animation: ripple 2.8s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drift, .drift-soft, .marquee-track, .pop-in, .reveal, .ripple {
+    animation: none;
+    transition: none;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+}

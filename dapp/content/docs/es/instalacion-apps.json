@@ -57,5 +57,9 @@
       ]
     }
   ],
-  "related": ["aplicaciones", "instalacion-os", "orquestacion"]
+  "related": [
+    "aplicaciones",
+    "instalacion-os",
+    "orquestacion"
+  ]
 }

@@ -104,7 +104,7 @@ para cifrar; sin ella las ops de cifrado fallan con 503 claro) · R2 (`R2_ACCOUN
 - Límites: tx_limit y daily (24 h, excluye `failed`).
 - `cargo test`: 12 tests (fmt_sol, base58, tx shape, crypto round-trip).
 
-## Verificador legal S2 (workshop northbridge-v-caldera)
+## Verificador legal S2 (casos nativos dpaas-toll-dispute y call-billing-dispute)
 
 Capa externa que el agente NO puede manipular: vive en este proceso,
 lee `ground_truth/` (0600) y evalúa con reglas deterministas (sin LLM).

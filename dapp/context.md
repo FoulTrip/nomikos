@@ -10,10 +10,18 @@ a través de `API_GATEWAY_URL`.
 
 ## Gestión de sesión (Auth.js v5 + proxy.ts)
 
-- **`/`** = login + registro (sin sesión). **`/panel`** = shell del simulador
-  (autenticado). El enrutamiento vive en `proxy.ts` (Next.js 16 renombró
-  `middleware.ts` → `proxy.ts`): `/` autenticado → `/panel`; `/panel/*` sin
-  sesión → `/`.
+- **`/`** es la landing pública (estilo cálido claro, ver
+  `components/landing/` + sección `.landing` en `globals.css`): igual para
+  todos, con CTAs a **`/signin`** (login) y **`/signup`** (registro, ambos
+  bajo `app/(auth)/` con logo y marco compartidos; con sesión redirigen a
+  `/panel`). **`/panel`** = shell del simulador (autenticado). El
+  enrutamiento vive en `proxy.ts` (Next.js 16 renombró `middleware.ts` →
+  `proxy.ts`, matcher `/`, `/en`, `/es`, `/signin`, `/signup`,
+  `/panel/*`: primero reglas de auth, luego negociación next-intl).
+- Tema: landing, auth y `/panel` usan el sistema cálido claro
+  (`.theme-light` en `globals.css`; `:root` oscuro queda solo como base).
+  Excepciones oscuras intencionales: pantalla AMOLED, consola serial y
+  loader 3D usa fondo piedra `#F2EBE0` con dispositivo grafito.
 - El IdP real es `api` (`/api/auth/register|login|logout|me`, tokens opacos
   con TTL 7 días, anti-bruteforce 5 fallos/min). **Auth.js no crea sesiones
   paralelas**: el Credentials provider (`auth.ts`) hace login contra
@@ -27,8 +35,13 @@ a través de `API_GATEWAY_URL`.
 - Errores del IdP mapeados con `CredentialsSignin.code`: `credentials`
   (401) y `rate_limited` (429 tras 5 fallos). `logoutAction` revoca el token
   en api ANTES de destruir la cookie (semántica one-shot del test E2E 02).
-- Contrato validado por `tests/tests/08.dapp.session.e2e.ts` (login →
-  cookie → /panel → gateway con Bearer → logout → redirect).
+- Contrato validado por `tests/tests/08.dapp.session.e2e.ts` (landing →
+  login → cookie → /panel → gateway con Bearer → logout → redirect).
+- i18n solo en la landing (next-intl, `es` sin prefijo + `/en`):
+  `i18n/routing.ts` + `i18n/request.ts` + `messages/{es,en}.json` +
+  `app/[locale]/`. El resto de la app queda en español y usa `next/link`
+  plano (el `Link` de `@/i18n/navigation` es SOLO para el conmutador
+  English | Español: prefijaría `/signin` y rompería la ruta).
 
 ## Mapa del código
 

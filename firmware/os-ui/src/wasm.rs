@@ -168,9 +168,33 @@ fn parse_stage(v: &Value) -> Stage {
     }
 }
 
-fn parse_view(v: &Value) -> (u32, u32, u32, bool, u8, bool, u8, bool, bool, String) {
+fn parse_view(
+    v: &Value,
+) -> (
+    u32,
+    u32,
+    u32,
+    bool,
+    u8,
+    bool,
+    u8,
+    bool,
+    bool,
+    String,
+    u8,
+    u64,
+    String,
+) {
     let sc = get(v, "scroll");
     let b = get(v, "banco");
+    let chat = get(v, "chat");
+    let chat_status = match sn(chat, "status") {
+        "listening" => 1,
+        "thinking" => 2,
+        "done" => 3,
+        "error" => 4,
+        _ => 0,
+    };
     (
         un(sc, "apps"),
         un(sc, "providers"),
@@ -186,6 +210,9 @@ fn parse_view(v: &Value) -> (u32, u32, u32, bool, u8, bool, u8, bool, bool, Stri
         sn(b, "recv") == "nfc",
         sn(b, "send") == "manual",
         sn(v, "sendTo").to_string(),
+        chat_status,
+        chat.get("elapsed_ms").and_then(|x| x.as_u64()).unwrap_or(0),
+        sn(chat, "heard").to_string(),
     )
 }
 
@@ -216,7 +243,8 @@ pub fn osui_render(
     let mut fb = Frame { buf: &mut buf };
     let sv: Value = serde_json::from_str(state_json).unwrap_or(Value::Null);
     let vv: Value = serde_json::from_str(view_json).unwrap_or(Value::Null);
-    let (sa, sp, sm, light, shade_p, mic_muted, btab, brecv, bsend, send_to) = parse_view(&vv);
+    let (sa, sp, sm, light, shade_p, mic_muted, btab, brecv, bsend, send_to, chat_status, chat_elapsed_ms, chat_heard) =
+        parse_view(&vv);
 
     // Owners (viven hasta el fin del render).
     let oapps = parse_apps(&sv);
@@ -314,6 +342,9 @@ pub fn osui_render(
         banco_recv_nfc: brecv,
         banco_send_manual: bsend,
         send_to: &send_to,
+        chat_status,
+        chat_heard: &chat_heard,
+        chat_elapsed_ms,
         elapsed_ms,
     };
     let some_os = if sv.is_null() { None } else { Some(&os) };
@@ -398,8 +429,9 @@ pub fn osui_hit(state_json: &str, view_json: &str, px: f32, py: f32) -> String {
             is_active: p.is_active,
         })
         .collect();
-    let (sa, sp, sm, light, shade_p, mic_muted, btab, brecv, bsend, send_to) = parse_view(&vv);
-    let _ = (light, mic_muted, send_to);
+    let (sa, sp, sm, light, shade_p, mic_muted, btab, brecv, bsend, send_to, chat_status, chat_elapsed_ms, chat_heard) =
+        parse_view(&vv);
+    let _ = (light, mic_muted, send_to, chat_status, chat_heard, chat_elapsed_ms);
     if shade_p > 50 {
         return hit_to_string(hit::shade_hit(px, py), &sv);
     }
@@ -432,6 +464,9 @@ pub fn osui_hit(state_json: &str, view_json: &str, px: f32, py: f32) -> String {
         banco_recv_nfc: brecv,
         banco_send_manual: bsend,
         send_to: "",
+        chat_status: 0,
+        chat_heard: "",
+        chat_elapsed_ms: 0,
         elapsed_ms: 0,
     };
     hit_to_string(hit::hit_test(&os, &view, px, py), &sv)

@@ -19,7 +19,10 @@ export interface AgentFeed {
   turnTs: number;
 }
 
-const feed: AgentFeed = { status: "idle", heard: null, error: null, turnTs: 0 };
+// Snapshot INMUTABLE: useSyncExternalStore compara por identidad; si se
+// mutara el mismo objeto, los suscriptores (dock, pantalla del OS) no
+// re-renderizarían. Cada patch produce un objeto nuevo.
+let feed: AgentFeed = { status: "idle", heard: null, error: null, turnTs: 0 };
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -34,7 +37,7 @@ function subscribe(cb: () => void): () => void {
 }
 
 export function setAgentFeed(patch: Partial<AgentFeed>): void {
-  Object.assign(feed, patch);
+  feed = { ...feed, ...patch };
   emit();
 }
 

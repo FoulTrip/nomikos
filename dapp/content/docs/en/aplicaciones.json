@@ -1,0 +1,104 @@
+{
+  "slug": "aplicaciones",
+  "title": "Applications",
+  "icon": "LayoutGrid",
+  "summary": "What ecosystem dapps are, how they expose tools to your agent, and how their flow travels with an x402 toll.",
+  "updated": "2026-10-27",
+  "sections": [
+    {
+      "heading": "What an application is",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "An application (dapp) extends what your agent can do: each one exposes a set of tools the agent calls while reasoning. A dapp's entire flow travels the x402 gateway: every use pays its micro-toll with your account's dPaaS wallet."
+        },
+        {
+          "type": "table",
+          "head": [
+            "Concept",
+            "Where it lives",
+            "Who uses it"
+          ],
+          "rows": [
+            [
+              "Catalog and manifests",
+              "api (dapps/registry/*.json)",
+              "The api validates what exists"
+            ],
+            [
+              "Account ↔ service link",
+              "account_services (SQLite)",
+              "The agent filters your dapps"
+            ],
+            [
+              "Live tools",
+              "GET /api/agent/tools",
+              "brain offers them to the LLM"
+            ],
+            [
+              "Toll-gated execution",
+              "The api's app gateway",
+              "Every call pays x402"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Adding an application to your account",
+      "blocks": [
+        {
+          "type": "steps",
+          "items": [
+            "Open Services in the navbar: you'll see the catalog with its resource and status.",
+            "Press Add to account on the dapp you want: the api records the link with a snapshot (network, payer, date).",
+            "From that moment, the agent receives its tools automatically on the next turn.",
+            "Verify in the dashboard (Tools by apps) that its tools show up marked as on your account."
+          ]
+        },
+        {
+          "type": "callout",
+          "tone": "info",
+          "title": "Nothing installs on the device",
+          "text": "Adding an app installs nothing on the ESP32: tools live on the server and the device only renders results."
+        }
+      ]
+    },
+    {
+      "heading": "How the agent uses them",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "On every turn, brain builds the tool list = core (status, Solana, x402) + tools from YOUR added dapps. The model decides which to call and with what arguments; the api executes each call against the real dapp, passing through the toll."
+        },
+        {
+          "type": "code",
+          "lang": "bash",
+          "text": "curl -s http://localhost:8080/api/agent/tools | jq '[.[] | .app // \"core\"] | group_by(.) | map({app: .[0], tools: length})'"
+        }
+      ]
+    },
+    {
+      "heading": "Tolls and costs",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "Every protected resource answers 402 with an invoice when it carries no valid payment. Your account's dPaaS wallet signs the settlement (you never sign by hand) and the invoice is consumed once: replaying it returns 409."
+        },
+        {
+          "type": "list",
+          "items": [
+            "Invoices: GET /api/accounts/me/x402/invoices (with your Bearer).",
+            "Summary: the x402 analysis card in the dashboard (totals, statuses, settled SOL).",
+            "Funding: copy your dPaaS address from Wallet and top it up, or use the Devnet faucet."
+          ]
+        }
+      ]
+    }
+  ],
+  "related": [
+    "instalacion-apps",
+    "orquestacion",
+    "proveedores"
+  ]
+}

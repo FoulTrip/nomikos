@@ -57,6 +57,7 @@ fn default_state() -> Value {
         "apps": [],                    // [{slug, name, status, tools_count}] instaladas
         "last_x402": null,
         "last_reply": null,            // {text, reply, ts} — última conversación con el agente
+        "chat": [],                    // historial del chat: [{text, reply, ts}] (últimos 12)
         "events": [],                  // progreso: [{ts, ev}]
     })
 }
@@ -626,7 +627,19 @@ pub async fn step_handler(
                 }
                 Err(e) => format!("orquestador no disponible ({e})"),
             };
-            sim["last_reply"] = json!({ "text": text, "reply": reply, "ts": now_ms() });
+            let turn = json!({ "text": text, "reply": reply, "ts": now_ms() });
+            sim["last_reply"] = turn.clone();
+            // historial del chat (para leer la conversación completa en el
+            // panel): se conserva en rebuild y viaja con el progreso.
+            if !sim["chat"].is_array() {
+                sim["chat"] = json!([]);
+            }
+            if let Some(chat) = sim["chat"].as_array_mut() {
+                chat.push(turn);
+                while chat.len() > 50 {
+                    chat.remove(0);
+                }
+            }
             sim["screen"] = json!("home"); // la respuesta se lee en la principal
             event(&mut sim, "say");
         }

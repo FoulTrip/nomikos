@@ -124,6 +124,12 @@ pub struct ViewState<'a> {
     /// Send: false NFC · true manual.
     pub banco_send_manual: bool,
     pub send_to: &'a str,
+    /// Turno del agente: 0 idle · 1 escuchando · 2 pensando · 3 listo · 4 error.
+    pub chat_status: u8,
+    /// Lo que dijo el usuario en el turno en curso (micrófono).
+    pub chat_heard: &'a str,
+    /// ms desde que arrancó el turno (progreso de los pasos).
+    pub chat_elapsed_ms: u64,
     /// ms para animaciones (ondas, pulso, boot).
     pub elapsed_ms: u64,
 }

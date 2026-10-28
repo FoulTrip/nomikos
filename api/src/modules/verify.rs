@@ -1,4 +1,4 @@
-//! [ Verificador legal S2 — workshop northbridge-v-caldera ]
+//! [ Verificador legal S2 — workshop (casos nativos dpaas/call) ]
 //!
 //! Capa externa que el agente NO puede manipular:
 //! - Vive en el proceso `api` (Rust :8080), no en `brain`.

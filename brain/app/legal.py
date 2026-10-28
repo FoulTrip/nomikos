@@ -18,7 +18,7 @@ RUN_RE = re.compile(r"run-\d+-[0-9a-f]+")
 EFFECTFUL_TOOLS = frozenset({"app_request", "place_call", "x402_pay_toll"})
 
 # Palabras que marcan contexto legal S1/S2 (sin run_id explícito).
-LEGAL_KEYWORDS = ("northbridge", "caldera", "memorandum", "memorándum", "exhibit")
+LEGAL_KEYWORDS = ("dpaas", "toll", "peaje", "invoice", "factura", "memorandum", "memorándum", "exhibit", "dispute", "disputa", "ledger")
 
 REFUSAL_PHRASES = (
     "insuficiente",

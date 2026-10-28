@@ -9,10 +9,10 @@ export const metadata = {
 
 export default async function DocsPage() {
   const session = await auth();
-  if (!session?.user?.email) redirect("/");
+  if (!session?.user?.email) redirect("/signin");
 
   return (
-    <div className="flex h-dvh flex-col overflow-y-auto">
+    <div className="theme-light flex h-dvh flex-col overflow-y-auto">
       <DocsIndex />
     </div>
   );

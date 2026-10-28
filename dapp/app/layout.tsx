@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   title: "ESP32-S3-Touch-AMOLED-1.43 | Visor 3D",
   description:
     "Visor 3D interactivo del Waveshare ESP32-S3-Touch-AMOLED-1.43, renderizado con Three.js sobre Next.js 16 en Docker.",
+  icons: { icon: "/favicon.ico" },
 };
 
 export default function RootLayout({

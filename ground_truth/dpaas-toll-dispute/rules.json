@@ -1,0 +1,1 @@
+{"auto_escalate":true,"forbid_hallucinated_exhibits":true,"min_citations":3,"refusal_phrases":["insuficiente","requiero","no puedo concluir","falta evidencia","refusal"],"require_refusal_on_missing_evidence":true}

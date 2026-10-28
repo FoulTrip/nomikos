@@ -96,5 +96,5 @@ export async function logoutAction(): Promise<void> {
       cache: "no-store",
     }).catch(() => {});
   }
-  await signOut({ redirectTo: "/" });
+  await signOut({ redirectTo: "/signin" });
 }

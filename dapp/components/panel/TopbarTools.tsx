@@ -12,6 +12,7 @@
  *   "Servicios"    — dapps que el agente usará con x402 (account_services).
  */
 import { useEffect, useRef, useState } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import {
   Backpack,
   Blocks,
@@ -108,6 +109,7 @@ interface LlmProviderRow {
  */
 interface ProviderOption {
   label: string;
+  labelKey?: string;
   apiProvider: string;
   modelsProvider: "nvidia" | "meta" | "custom";
   baseUrl?: string;
@@ -119,11 +121,11 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
   { label: "NVIDIA NIM", apiProvider: "nvidia-nim", modelsProvider: "nvidia", keyHint: "nvapi-…" },
   { label: "OpenAI", apiProvider: "openai", modelsProvider: "custom", baseUrl: "https://api.openai.com/v1", keyHint: "sk-…" },
   { label: "Meta Llama API", apiProvider: "custom", modelsProvider: "meta", baseUrl: "https://api.llama.com/compat/v1", keyHint: "llama-…" },
-  { label: "Personalizado (OpenAI-compat)", apiProvider: "custom", modelsProvider: "custom", keyHint: "según proveedor" },
+  { label: "Personalizado (OpenAI-compat)", labelKey: "customProvider", apiProvider: "custom", modelsProvider: "custom", keyHint: "según proveedor" },
 ];
 
-function shortKey(pubkey?: string | null): string {
-  if (!pubkey) return "sin configurar";
+function shortKey(pubkey: string | null | undefined, unset: string): string {
+  if (!pubkey) return unset;
   return `${pubkey.slice(0, 6)}…${pubkey.slice(-5)}`;
 }
 
@@ -180,14 +182,14 @@ const BROWSER_WALLETS = [
 
 /** Conecta una wallet del navegador y devuelve SOLO su pubkey (base58 o 0x…).
  *  La clave privada nunca sale de la wallet — no se solicita ni se guarda. */
-async function connectBrowserWallet(id: string): Promise<string> {
+async function connectBrowserWallet(id: string, t: (key: string) => string): Promise<string> {
   const w = window as unknown as Record<string, any>;
 
   if (id === "metamask") {
     const eth = w.ethereum;
-    if (!eth?.request) throw new Error("MetaMask no detectado — instala la extensión");
+    if (!eth?.request) throw new Error(t("mmMissing"));
     const accounts: string[] = await eth.request({ method: "eth_requestAccounts" });
-    if (!accounts?.[0]) throw new Error("MetaMask no devolvió cuenta");
+    if (!accounts?.[0]) throw new Error(t("mmNoAccount"));
     return accounts[0];
   }
 
@@ -197,16 +199,18 @@ async function connectBrowserWallet(id: string): Promise<string> {
       : id === "solflare"
         ? w.solflare
         : w.backpack;
-  if (!inj?.connect) throw new Error("Wallet no detectada — instala la extensión");
+  if (!inj?.connect) throw new Error(t("wMissing"));
   const res = (await inj.connect()) ?? {};
   const pk = res?.publicKey?.toString?.() ?? inj.publicKey?.toString?.();
-  if (!pk) throw new Error("La wallet no devolvió su pubkey");
+  if (!pk) throw new Error(t("wNoPubkey"));
   return pk;
 }
 
 /** Modal Wallet · Red — wallet firmante (dPaaS), wallets del navegador
  *  (Phantom/MetaMask — varias, una en uso) y red blockchain del agente. */
 function WalletModal({ onClose }: { onClose: () => void }) {
+  const t = useTranslations("wallet");
+  const tc = useTranslations("common");
   const [ctx, setCtx] = useState<AccountContext | null>(null);
   const [walletLabel, setWalletLabel] = useState(""); // "" = wallet principal (dPaaS)
   const [network, setNetwork] = useState<Network>("devnet");
@@ -266,7 +270,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
         setWalletLabel(data.chain?.active_wallet_label ?? "");
         setNetwork((data.chain?.network as Network) ?? "devnet");
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Error de red");
+        setError(e instanceof Error ? e.message : tc("networkError"));
       }
     })();
     loadConnected();
@@ -305,7 +309,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
     setConnectingWallet(id);
     setError(null);
     try {
-      const pubkey = await connectBrowserWallet(id);
+      const pubkey = await connectBrowserWallet(id, t);
       const res = await fetch("/api/account/connected-wallets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -322,7 +326,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
       }
       await loadConnected(); // nueva wallet → queda EN USO (solo una activa)
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Error al conectar la wallet");
+      setError(e instanceof Error ? e.message : t("errConnect"));
     } finally {
       setConnectingWallet(null);
     }
@@ -344,7 +348,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
       }
       await loadConnected();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Error de red");
+      setError(e instanceof Error ? e.message : tc("networkError"));
     }
   };
 
@@ -364,7 +368,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
       if (ctxRes.ok && ctxData.ok) setCtx(ctxData);
       await loadSummary();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Error de red");
+      setError(e instanceof Error ? e.message : tc("networkError"));
     } finally {
       setGenerating(false);
     }
@@ -384,7 +388,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
       }
       setFaucetMsg(
         `tx ${String(data.tx_signature).slice(0, 18)}… · ` +
-          `${data.lamports} lamports → ${shortKey(data.wallet_pubkey)}`,
+          `${data.lamports} lamports → ${shortKey(data.wallet_pubkey, t("unset"))}`,
       );
       // refrescar contexto de la cuenta + balance
       const ctxRes = await fetch("/api/account/context", { cache: "no-store" });
@@ -392,7 +396,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
       if (ctxRes.ok && ctxData.ok) setCtx(ctxData);
       await loadSummary();
     } catch (e) {
-      setFaucetMsg(e instanceof Error ? e.message : "Error de red");
+      setFaucetMsg(e instanceof Error ? e.message : tc("networkError"));
     } finally {
       setFaucetBusy(false);
     }
@@ -415,7 +419,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
       setSaved(true);
       setTimeout(onClose, 1100);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Error de red");
+      setError(e instanceof Error ? e.message : tc("networkError"));
     } finally {
       setSaving(false);
     }
@@ -427,25 +431,19 @@ function WalletModal({ onClose }: { onClose: () => void }) {
     <Modal
       title={
         <>
-          <Wallet className="size-5 text-primary" />
-          Wallet y red del agente
-        </>
+          <Wallet className="size-5 text-primary" />{t("title")}</>
       }
       onClose={onClose}
     >
       {!ctx && !error && (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <LoaderCircle className="size-4 animate-spin" />
-          Cargando contexto de la cuenta…
-        </p>
+          <LoaderCircle className="size-4 animate-spin" />{t("loading")}</p>
       )}
 
       {ctx && (
         <>
           <section className="grid gap-2">
-            <h4 className="text-xs font-medium text-muted-foreground">
-              Wallet firmante · Solana (dPaaS)
-            </h4>
+            <h4 className="text-xs font-medium text-muted-foreground">{t("signer")}</h4>
             {/* dPaaS por red (auto-generadas; solo se muestran para fondear).
                 La fila de la red ACTIVA además elige la wallet principal. */}
             {(dpaas?.wallets ?? []).map((dw) => {
@@ -453,21 +451,19 @@ function WalletModal({ onClose }: { onClose: () => void }) {
               const inner = (
                 <>
                   <span className="flex flex-1 flex-col gap-0.5">
-                    <b className="flex items-center gap-2 text-[13px] font-semibold">
-                      Wallet dPaaS
-                      <Badge variant="secondary" className="font-mono text-[10px]">
+                    <b className="flex items-center gap-2 text-[13px] font-semibold">{t("dpaasWallet")}<Badge variant="secondary" className="font-mono text-[10px]">
                         {dw.network}
                       </Badge>
                     </b>
                     <small className="text-xs text-muted-foreground">
-                      {shortKey(dw.wallet_pubkey)} · {fmtSol(dw.balance_lamports)} · firma los peajes x402
+                      {shortKey(dw.wallet_pubkey, t("unset"))} · {fmtSol(dw.balance_lamports)} · {t("signsTolls")}
                     </small>
                   </span>
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
-                    title={`Copiar dirección ${dw.network} para fondear`}
+                    title={t("copyAddr", { network: dw.network })}
                     onClick={(e) => {
                       e.stopPropagation();
                       void copyAddr(dw.wallet_pubkey);
@@ -514,11 +510,11 @@ function WalletModal({ onClose }: { onClose: () => void }) {
                 )}
               >
                 <span className="flex flex-1 flex-col gap-0.5">
-                  <b className="text-[13px] font-semibold">Wallet principal (dPaaS)</b>
+                  <b className="text-[13px] font-semibold">{t("principal")}</b>
                   <small className="text-xs text-muted-foreground">
                     {dpaas?.wallet
-                      ? `${shortKey(dpaas.wallet)} · ${fmtSol(dpaas.balance_lamports)} · firma los peajes x402`
-                      : "sin configurar · firma los peajes x402"}
+                      ? `${shortKey(dpaas.wallet, t("unset"))} · ${fmtSol(dpaas.balance_lamports)} · ${t("signsTolls")}`
+                      : `${t("unset")} · ${t("signsTolls")}`}
                   </small>
                 </span>
                 {walletLabel === "" && dpaas?.wallet && <Check className="size-4 shrink-0 text-primary" />}
@@ -538,7 +534,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
                 ) : (
                   <Plus />
                 )}
-                {generating ? "Creando…" : "Crear wallet dPaaS"}
+                {generating ? t("creating") : t("create")}
               </Button>
             )}
             {wallets.map((w) => (
@@ -556,7 +552,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
                 <span className="flex flex-1 flex-col gap-0.5">
                   <b className="text-[13px] font-semibold">{w.label}</b>
                   <small className="text-xs text-muted-foreground">
-                    {shortKey(w.pubkey)} · {w.network}
+                    {shortKey(w.pubkey, t("unset"))} · {w.network}
                   </small>
                 </span>
                 {walletLabel === w.label && (
@@ -566,13 +562,13 @@ function WalletModal({ onClose }: { onClose: () => void }) {
             ))}
             {wallets.length === 0 && (
               <p className="text-xs text-muted-foreground">
-                Sin sub-wallets dPaaS: la cuenta firma con la wallet principal.
+                {t("noSubwallets")}
               </p>
             )}
           </section>
 
           <section className="grid gap-2">
-            <h4 className="text-xs font-medium text-muted-foreground">Devnet</h4>
+            <h4 className="text-xs font-medium text-muted-foreground">{t("devnet")}</h4>
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -586,19 +582,16 @@ function WalletModal({ onClose }: { onClose: () => void }) {
                 ) : (
                   <Droplets />
                 )}
-                {faucetBusy ? "Goteando…" : "Faucet Devnet"}
+                {faucetBusy ? t("dripping") : t("faucet")}
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              {faucetMsg ??
-                "Transfiere SOL del treasury del ecosistema a TU wallet dPaaS: los peajes x402 quedan con settlement on-chain real (solo devnet)."}
+              {faucetMsg ?? t("faucetInfo")}
             </p>
           </section>
 
           <section className="grid gap-2">
-            <h4 className="text-xs font-medium text-muted-foreground">
-              Wallets del navegador
-            </h4>
+            <h4 className="text-xs font-medium text-muted-foreground">{t("browser")}</h4>
             <div className="flex flex-wrap gap-2">
               {BROWSER_WALLETS.map((bw) => {
                 // el botón queda seleccionado si ESE proveedor es el de la
@@ -619,7 +612,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
                     ) : (
                       <bw.icon />
                     )}
-                    {connectingWallet === bw.id ? "Conectando…" : bw.label}
+                    {connectingWallet === bw.id ? t("connecting") : bw.label}
                   </Button>
                 );
               })}
@@ -642,7 +635,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
                         </Badge>
                       </b>
                       <small className="text-xs text-muted-foreground">
-                        {shortKey(cw.pubkey)}
+                        {shortKey(cw.pubkey, t("unset"))}
                         {cw.chain === "solana" &&
                           ` · ${fmtSol(cw.balance_lamports)}`}
                         {cw.chain === "evm" &&
@@ -652,33 +645,27 @@ function WalletModal({ onClose }: { onClose: () => void }) {
                       </small>
                     </span>
                     {cw.is_active ? (
-                      <Badge>En uso</Badge>
+                      <Badge>{t("inUse")}</Badge>
                     ) : (
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
                         onClick={() => useWallet(cw.label)}
-                      >
-                        Usar
-                      </Button>
+                      >{t("use")}</Button>
                     )}
                   </div>
                 ))}
               </div>
             ) : (
               <p className="text-xs text-muted-foreground">
-                Conecta Phantom, Solflare, Backpack o MetaMask: la clave
-                privada nunca sale de tu wallet — la cuenta guarda solo la
-                pubkey en su DB (puedes agregar varias; solo una en uso).
+                {t("browserHint")}
               </p>
             )}
           </section>
 
           <section className="grid gap-2">
-            <h4 className="text-xs font-medium text-muted-foreground">
-              Red blockchain · Solana
-            </h4>
+            <h4 className="text-xs font-medium text-muted-foreground">{t("chain")}</h4>
             <div className="flex flex-wrap gap-2">
               {NETWORKS.map((n) => (
                 <button
@@ -707,17 +694,15 @@ function WalletModal({ onClose }: { onClose: () => void }) {
           {saved && (
             <p className="flex items-center gap-2 text-[13px] text-emerald-400">
               <CircleCheck className="size-4" />
-              Guardado — el agente operará con esta wallet y red.
+              {t("saved")}
             </p>
           )}
 
           <footer className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={onClose} disabled={saving}>
-              Cancelar
-            </Button>
+            <Button type="button" variant="ghost" onClick={onClose} disabled={saving}>{t("cancel")}</Button>
             <Button type="button" onClick={save} disabled={saving}>
               {saving && <LoaderCircle className="animate-spin" />}
-              {saving ? "Guardando…" : "Guardar"}
+              {saving ? t("saving") : t("save")}
             </Button>
           </footer>
         </>
@@ -739,6 +724,8 @@ function WalletModal({ onClose }: { onClose: () => void }) {
  *    valida en vivo, lista modelos (Gratis/Otros) y guarda.
  */
 function ModelsModal({ onClose }: { onClose: () => void }) {
+  const t = useTranslations("models");
+  const tc = useTranslations("common");
   const [rows, setRows] = useState<LlmProviderRow[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -782,7 +769,7 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
       setLoaded(true);
       return list;
     } catch (e) {
-      if (mounted.current) setStatus({ ok: false, text: e instanceof Error ? e.message : "Error de red" });
+      if (mounted.current) setStatus({ ok: false, text: e instanceof Error ? e.message : tc("networkError") });
       return null;
     }
   };
@@ -807,7 +794,7 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
           setStatus(
             manual
               ? { ok: false, text }
-              : { ok: true, text: `Aviso: no se pudo actualizar la lista (${text}) — mostrando la guardada` },
+              : { ok: true, text: t("warnRefresh", { text }) },
           );
         }
         return;
@@ -817,11 +804,11 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
       await refresh();
     } catch (e) {
       if (mounted.current) {
-        const text = e instanceof Error ? e.message : "Error de red";
+        const text = e instanceof Error ? e.message : tc("networkError");
         setStatus(
           manual
             ? { ok: false, text }
-            : { ok: true, text: `Aviso: no se pudo actualizar la lista (${text}) — mostrando la guardada` },
+            : { ok: true, text: t("warnRefresh", { text }) },
         );
       }
     } finally {
@@ -893,10 +880,10 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
       const list: { id: string; free: boolean }[] = data.models ?? [];
       const pick = (list.find((m) => m.free) ?? list[0])?.id;
       if (!pick) {
-        setStatus({ ok: false, text: "el proveedor no devolvió modelos" });
+        setStatus({ ok: false, text: t("errNoModels") });
         return;
       }
-      if (data.warning) setStatus({ ok: true, text: `Aviso: ${data.warning}` });
+      if (data.warning) setStatus({ ok: true, text: t("warn", { warning: String(data.warning) }) });
 
       // conectar = guardar lista COMPLETA (para cambiar de modelo sin
       // revalidar) + default; la key solo si el usuario la escribió ahora
@@ -914,7 +901,7 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
       flashSaved();
       await refresh();
     } catch (e) {
-      setStatus({ ok: false, text: e instanceof Error ? e.message : "Error de conexión" });
+      setStatus({ ok: false, text: e instanceof Error ? e.message : t("errConn") });
     } finally {
       if (mounted.current) setConnecting(false);
     }
@@ -922,20 +909,20 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
 
   const conectar = () => {
     if (!apiKey.trim()) {
-      setStatus({ ok: false, text: "Pega tu API key primero" });
+      setStatus({ ok: false, text: t("errKeyFirst") });
       return;
     }
     if (apiKey.trim().length < 20) {
       setStatus({
         ok: false,
-        text: "Esa key parece incompleta — cópiala entera (se muestra una sola vez al crearla)",
+        text: t("errKeyShort"),
       });
       return;
     }
     if (/[^\x21-\x7E]/.test(apiKey.trim())) {
       setStatus({
         ok: false,
-        text: "Esa key trae caracteres inválidos (¿emoji o espacios pegados?) — cópiala de nuevo, solo la key",
+        text: t("errKeyChars"),
       });
       return;
     }
@@ -961,7 +948,7 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
       flashSaved();
       await refresh();
     } catch (e) {
-      setStatus({ ok: false, text: e instanceof Error ? e.message : "Error de red" });
+      setStatus({ ok: false, text: e instanceof Error ? e.message : tc("networkError") });
     } finally {
       if (mounted.current) setBusy(null);
     }
@@ -986,7 +973,7 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
       flashSaved();
       await refresh();
     } catch (e) {
-      setStatus({ ok: false, text: e instanceof Error ? e.message : "Error de red" });
+      setStatus({ ok: false, text: e instanceof Error ? e.message : tc("networkError") });
     } finally {
       if (mounted.current) setBusy(null);
     }
@@ -1008,37 +995,33 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
       setLive((l) => (l?.provider === provider ? null : l));
       await refresh();
     } catch (e) {
-      setStatus({ ok: false, text: e instanceof Error ? e.message : "Error de red" });
+      setStatus({ ok: false, text: e instanceof Error ? e.message : tc("networkError") });
     } finally {
       if (mounted.current) setBusy(null);
     }
   };
 
-  const labelFor = (provider: string): string =>
-    PROVIDER_OPTIONS.find((o) => o.apiProvider === provider)?.label ?? provider;
+  const labelFor = (provider: string): string => {
+    const o = PROVIDER_OPTIONS.find((x) => x.apiProvider === provider);
+    return o?.labelKey ? t(o.labelKey) : (o?.label ?? provider);
+  };
 
   return (
     <Modal
       title={
         <>
-          <Bot className="size-5 text-primary" />
-          Modelos del agente
-        </>
+          <Bot className="size-5 text-primary" />{t("title")}</>
       }
       onClose={onClose}
     >
       {!loaded ? (
-        <p className="text-sm text-muted-foreground">Cargando proveedores…</p>
+        <p className="text-sm text-muted-foreground">{t("loading")}</p>
       ) : (
         <>
           <section className="grid gap-2">
-            <h4 className="text-xs font-medium text-muted-foreground">
-              Proveedor activo (el que usa tu agente)
-            </h4>
+            <h4 className="text-xs font-medium text-muted-foreground">{t("active")}</h4>
             {rows.length === 0 && (
-              <p className="text-[13px] text-amber-400">
-                Sin proveedores — el agente no puede razonar hasta que agregues una key abajo.
-              </p>
+              <p className="text-[13px] text-amber-400">{t("none")}</p>
             )}
             {rows.map((r) => (
               <label
@@ -1061,15 +1044,15 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
                 <span className="flex-1">
                   <span className="font-medium">{labelFor(r.provider)}</span>{" "}
                   <span className="text-xs text-muted-foreground">
-                    · {(r.models ?? []).length} modelo{(r.models ?? []).length === 1 ? "" : "s"}
-                    {r.has_key ? " · key ●" : " · sin key"}
+                    · {t("modelsCount", { count: (r.models ?? []).length })}
+                    {r.has_key ? t("hasKey") : t("noKey")}
                   </span>
                 </span>
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  title={`Desconectar ${labelFor(r.provider)}`}
+                  title={t("disconnect", { provider: labelFor(r.provider) })}
                   disabled={busy !== null}
                   onClick={(e) => {
                     e.preventDefault();
@@ -1087,14 +1070,14 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
             <section className="grid gap-2">
               <h4 className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                 <span className="flex-1">
-                  Modelo de {labelFor(activeRow.provider)}{" "}
-                  {showGroups && `(${freeModels.length} gratis)`}
+                  {t("modelOf", { provider: labelFor(activeRow.provider) })}{" "}
+                  {showGroups && t("freeCount", { count: freeModels.length })}
                 </span>
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  title="Actualizar lista de modelos"
+                  title={t("refresh")}
                   disabled={busy !== null || refreshing}
                   onClick={() => void refreshModels(true)}
                   className="size-6"
@@ -1116,7 +1099,7 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
                     <>
                       {freeModels.length > 0 && (
                         <SelectGroup>
-                          <SelectLabel>Gratis</SelectLabel>
+                          <SelectLabel>{t("free")}</SelectLabel>
                           {freeModels.map((m) => (
                             <SelectItem key={m.id} value={m.id}>
                               {m.id}
@@ -1126,7 +1109,7 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
                       )}
                       {otherModels.length > 0 && (
                         <SelectGroup>
-                          <SelectLabel>Otros</SelectLabel>
+                          <SelectLabel>{t("others")}</SelectLabel>
                           {otherModels.map((m) => (
                             <SelectItem key={m.id} value={m.id}>
                               {m.id}
@@ -1148,9 +1131,7 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
           )}
 
           <section className="grid gap-2">
-            <h4 className="text-xs font-medium text-muted-foreground">
-              Agregar / actualizar key
-            </h4>
+            <h4 className="text-xs font-medium text-muted-foreground">{t("addKey")}</h4>
             <Select
               value={String(providerIdx)}
               onValueChange={(v) => {
@@ -1165,7 +1146,7 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
               <SelectContent>
                 {PROVIDER_OPTIONS.map((o, i) => (
                   <SelectItem key={o.label} value={String(i)}>
-                    {o.label}
+                    {o.labelKey ? t(o.labelKey) : o.label}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1174,7 +1155,7 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
               <Input
                 value={customBaseUrl}
                 onChange={(e) => setCustomBaseUrl(e.target.value)}
-                placeholder="Base URL OpenAI-compat (https://…/v1)"
+                placeholder={t("baseUrlPh")}
               />
             )}
             <div className="flex gap-2">
@@ -1191,7 +1172,7 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
                     conectar();
                   }
                 }}
-                placeholder="Pega tu API key y pulsa Enter"
+                placeholder={t("keyPh")}
                 className="flex-1"
               />
               <Button type="button" onClick={conectar} disabled={connecting}>
@@ -1200,15 +1181,13 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
                 ) : (
                   <PlugZap />
                 )}
-                {connecting ? "Conectando…" : "Conectar"}
+                {connecting ? t("connecting") : t("connect")}
               </Button>
             </div>
           </section>
 
           <footer className="flex justify-end">
-            <Button type="button" variant="ghost" onClick={onClose}>
-              Listo
-            </Button>
+            <Button type="button" variant="ghost" onClick={onClose}>{t("done")}</Button>
           </footer>
         </>
       )}
@@ -1224,9 +1203,7 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
       )}
       {savedNotice && (
         <p className="flex items-center gap-2 text-[13px] text-emerald-400">
-          <CircleCheck className="size-4" />
-          Guardado en la cuenta
-        </p>
+          <CircleCheck className="size-4" />{t("saved")}</p>
       )}
     </Modal>
   );
@@ -1234,6 +1211,9 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
 
 /** Modal Servicios — dapps del agente; el alta registra el flujo x402 en DB. */
 function ServicesModal({ onClose }: { onClose: () => void }) {
+  const t = useTranslations("services");
+  const tc = useTranslations("common");
+  const locale = useLocale();
   const [services, setServices] = useState<ServiceRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState<string | null>(null);
@@ -1248,7 +1228,7 @@ function ServicesModal({ onClose }: { onClose: () => void }) {
       }
       setServices(data.services);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Error de red");
+      setError(e instanceof Error ? e.message : tc("networkError"));
     }
   };
 
@@ -1272,7 +1252,7 @@ function ServicesModal({ onClose }: { onClose: () => void }) {
       }
       await load(); // refresca estado added + snapshot
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Error de red");
+      setError(e instanceof Error ? e.message : tc("networkError"));
     } finally {
       setAdding(null);
     }
@@ -1282,17 +1262,13 @@ function ServicesModal({ onClose }: { onClose: () => void }) {
     <Modal
       title={
         <>
-          <Blocks className="size-5 text-primary" />
-          Servicios del agente
-        </>
+          <Blocks className="size-5 text-primary" />{t("title")}</>
       }
       onClose={onClose}
     >
       {!services && !error && (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <LoaderCircle className="size-4 animate-spin" />
-          Cargando catálogo…
-        </p>
+          <LoaderCircle className="size-4 animate-spin" />{t("loading")}</p>
       )}
 
       {services?.map((s) => (
@@ -1305,8 +1281,7 @@ function ServicesModal({ onClose }: { onClose: () => void }) {
             <Badge variant="secondary">x402</Badge>
           </header>
           <small className="text-xs leading-relaxed text-muted-foreground">
-            Todo el flujo de esta dapp viaja por el gateway x402 (peaje 402
-            firmado por la wallet dPaaS de la cuenta).
+            {t("flow")}
           </small>
           <code className="rounded-md border bg-muted px-2 py-1 font-mono text-xs text-primary">
             {s.resource}
@@ -1314,8 +1289,8 @@ function ServicesModal({ onClose }: { onClose: () => void }) {
           {s.added ? (
             <p className="flex items-center gap-2 text-[13px] text-emerald-400">
               <CircleCheck className="size-4" />
-              Agregada a la cuenta{s.network ? ` · red ${s.network}` : ""}
-              {s.added_at ? ` · ${new Date(s.added_at).toLocaleString()}` : ""}
+              {t("added")}{s.network ? t("addedNet", { network: s.network }) : ""}
+              {s.added_at ? ` · ${new Date(s.added_at).toLocaleString(locale === "en" ? "en-US" : "es-ES")}` : ""}
             </p>
           ) : (
             <Button
@@ -1329,7 +1304,7 @@ function ServicesModal({ onClose }: { onClose: () => void }) {
               ) : (
                 <Plus />
               )}
-              {adding === s.service ? "Agregando…" : "Agregar a la cuenta"}
+              {adding === s.service ? t("adding") : t("add")}
             </Button>
           )}
         </div>
@@ -1346,6 +1321,7 @@ function ServicesModal({ onClose }: { onClose: () => void }) {
 }
 
 export default function TopbarTools() {
+  const t = useTranslations("panel.nav");
   const [modal, setModal] = useState<"wallet" | "models" | "services" | "fleet" | null>(null);
 
   return (
@@ -1355,44 +1331,44 @@ export default function TopbarTools() {
         variant="outline"
         size="sm"
         onClick={() => setModal("wallet")}
-        title="Wallet operativa y red blockchain del agente"
+        title={t("walletTitle")}
         className="h-8 px-2 sm:h-9 sm:px-3"
       >
         <Wallet />
-        <span className="hidden min-[480px]:inline">Wallet</span>
+        <span className="hidden min-[480px]:inline">{t("wallet")}</span>
       </Button>
       <Button
         type="button"
         variant="outline"
         size="sm"
         onClick={() => setModal("models")}
-        title="Proveedor, API key y modelo del agente"
+        title={t("modelsTitle")}
         className="h-8 px-2 sm:h-9 sm:px-3"
       >
         <Bot />
-        <span className="hidden min-[480px]:inline">Modelos</span>
+        <span className="hidden min-[480px]:inline">{t("models")}</span>
       </Button>
       <Button
         type="button"
         variant="outline"
         size="sm"
         onClick={() => setModal("services")}
-        title="Dapps que el agente usará con x402"
+        title={t("servicesTitle")}
         className="h-8 px-2 sm:h-9 sm:px-3"
       >
         <Blocks />
-        <span className="hidden min-[480px]:inline">Servicios</span>
+        <span className="hidden min-[480px]:inline">{t("services")}</span>
       </Button>
       <Button
         type="button"
         variant="outline"
         size="sm"
         onClick={() => setModal("fleet")}
-        title="Flota de dispositivos: emparejar, instalar y monitorear"
+        title={t("fleetTitle")}
         className="h-8 px-2 sm:h-9 sm:px-3"
       >
         <Radio />
-        <span className="hidden min-[480px]:inline">Flota</span>
+        <span className="hidden min-[480px]:inline">{t("fleet")}</span>
       </Button>
       <SandboxIndicator />
 

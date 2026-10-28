@@ -1,0 +1,113 @@
+{
+  "slug": "instalacion-os",
+  "title": "Installing the OS",
+  "icon": "Cpu",
+  "summary": "From firmware to ONLINE: flashing agentd on the ESP32-S3, pairing with a claim code, and joining your fleet.",
+  "updated": "2026-10-27",
+  "sections": [
+    {
+      "heading": "Requirements",
+      "blocks": [
+        {
+          "type": "table",
+          "head": [
+            "Piece",
+            "Detail"
+          ],
+          "rows": [
+            [
+              "Board",
+              "ESP32-S3-Touch-AMOLED-1.43 (1.43\" 466×466 AMOLED, touch, 2.4 GHz Wi-Fi)"
+            ],
+            [
+              "Firmware",
+              "agentd + os-ui (no_std Rust, UI shared with the panel)"
+            ],
+            [
+              "Account",
+              "Your ecosystem email and password (this same account)"
+            ],
+            [
+              "Network",
+              "Board and your phone/PC on the same network to pair"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Flashing",
+      "blocks": [
+        {
+          "type": "steps",
+          "items": [
+            "Download your fleet's firmware (or build it from firmware/ with cargo).",
+            "Connect the board over USB and flash with Espressif's official tool.",
+            "On boot you'll see the NomikOS logo and, if it's new, a claim code on screen.",
+            "If the screen shows the clock and the dock, the OS is running."
+          ]
+        },
+        {
+          "type": "callout",
+          "tone": "warn",
+          "title": "Don't power off mid-flash",
+          "text": "Interrupting the write can leave the board unbootable: repeat the full flash if it happens."
+        }
+      ]
+    },
+    {
+      "heading": "Pairing",
+      "blocks": [
+        {
+          "type": "steps",
+          "items": [
+            "In the panel, open Fleet in the navbar.",
+            "Choose pair and enter the claim code shown on the AMOLED.",
+            "The device goes ONLINE inside YOUR account: taps, voice and tolls are tied to it.",
+            "Try it in the browser sandbox before going to production."
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Device states",
+      "blocks": [
+        {
+          "type": "table",
+          "head": [
+            "State",
+            "Meaning",
+            "What to do"
+          ],
+          "rows": [
+            [
+              "boot",
+              "agentd starting up and enrolling",
+              "Wait a few seconds"
+            ],
+            [
+              "claim",
+              "Shows claim code, no account yet",
+              "Pair from Fleet"
+            ],
+            [
+              "online 🔒",
+              "Linked but locked",
+              "Tap the AMOLED to unlock"
+            ],
+            [
+              "online",
+              "Operational on your account",
+              "Use apps, bank and voice"
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "related": [
+    "aplicaciones",
+    "instalacion-apps",
+    "sandbox"
+  ]
+}

@@ -25,11 +25,27 @@
       "blocks": [
         {
           "type": "table",
-          "head": ["Grupo", "Ejemplos", "Origen"],
+          "head": [
+            "Grupo",
+            "Ejemplos",
+            "Origen"
+          ],
           "rows": [
-            ["Núcleo", "navbar_status, device_specs, solana_status", "Siempre disponibles"],
-            ["x402", "x402_summary, create_invoice, invoice_status, pay_toll", "Siempre disponibles"],
-            ["Tus dapps", "payload_* (si agregaste Payload)", "Solo las agregadas en Servicios"]
+            [
+              "Núcleo",
+              "navbar_status, device_specs, solana_status",
+              "Siempre disponibles"
+            ],
+            [
+              "x402",
+              "x402_summary, create_invoice, invoice_status, pay_toll",
+              "Siempre disponibles"
+            ],
+            [
+              "Tus dapps",
+              "payload_* (si agregaste Payload)",
+              "Solo las agregadas en Servicios"
+            ]
           ]
         },
         {
@@ -64,5 +80,9 @@
       ]
     }
   ],
-  "related": ["aplicaciones", "proveedores", "instalacion-apps"]
+  "related": [
+    "aplicaciones",
+    "proveedores",
+    "sandbox"
+  ]
 }

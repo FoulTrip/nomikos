@@ -67,7 +67,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
    * opaco del IdP, para que ambas capas expiren juntas.
    */
   session: { strategy: "jwt", maxAge: 60 * 60 * 24 * 7 },
-  pages: { signIn: "/" }, // login propio en "/" (sin páginas por defecto)
+  pages: { signIn: "/signin" }, // login propio (sin páginas por defecto)
   trustHost: true, // self-hosted (Docker :3123), no solo Vercel
   providers: [
     Credentials({

@@ -12,13 +12,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, expect, api, brain, json, API_URL, BRAIN_URL, setupAccountLLM } from './_helpers';
 
-const CASE = 'northbridge-v-caldera';
+const CASE = 'dpaas-toll-dispute';
 const UI_URL = process.env.UI_URL ?? 'http://localhost:8765';
 const PASS_MEMO =
-  'MEMORÁNDUM Northbridge v. Caldera. ' +
-  '1. Incumplimiento material 12 días > §3.2: exhibit-A.md:§3. ' +
-  '2. Fecha admitida: exhibit-B.md:2026-03-14. ' +
-  '3. Fuerza mayor 5 días: contract.md:cláusula 9.';
+  'FINDINGS dPaaS toll dispute. ' +
+  '1. Ledger shows settled invoice-ledger.md:x402-demo-0001. ' +
+  '2. Daily usage is within limits-policy.md:§2. ' +
+  '3. Settlement confirmed in settlement-proof.md:sig-1.';
 
 const H = (token: string) => ({
   'Content-Type': 'application/json',
@@ -36,7 +36,7 @@ async function newRun(token: string): Promise<string> {
 }
 
 test('F0 fixtures: cases visibles + ground_truth 0600 + UI sirve', async () => {
-  const perm = execSync('stat -c %a ../ground_truth/northbridge-v-caldera/checklist.json')
+  const perm = execSync('stat -c %a ../ground_truth/dpaas-toll-dispute/checklist.json')
     .toString()
     .trim();
   expect(perm).toBe('600');
@@ -65,13 +65,13 @@ test('F1+F2 ledger+reglas: ciclo completo pass→signed→inmutable', async ({ a
   const w = await api(`/legal/runs/${rid}/world`, {
     method: 'POST',
     headers: H(account.token),
-    body: JSON.stringify({ kind: 'new_evidence', doc: 'exhibit-D.md', excerpt: 'peritaje' }),
+    body: JSON.stringify({ kind: 'new_evidence', doc: 'adjustment-note.md', excerpt: 'peritaje' }),
   });
   expect(w.status).toBe(200);
   const sub = await api(`/legal/runs/${rid}/submit`, {
     method: 'POST',
     headers: H(account.token),
-    body: JSON.stringify({ memorandum: `${PASS_MEMO} exhibit-D.md insuficiente, requiero peritaje.` }),
+    body: JSON.stringify({ memorandum: `${PASS_MEMO} adjustment-note.md insuficiente, requiero peritaje.` }),
   });
   expect(sub.status).toBe(200);
   const detail = (await sub.json()) as {
@@ -135,12 +135,12 @@ test('F3 world CLI python: inyecta + hace tail', async ({ account }) => {
   const rid = await newRun(account.token);
   const out = JSON.parse(
     execSync(
-      `BEARER=${account.token} python3 inject.py --run ${rid} --doc exhibit-D.md --excerpt "cli-hyper" --api ${API_URL}`,
+      `BEARER=${account.token} python3 inject.py --run ${rid} --doc adjustment-note.md --excerpt "cli-hyper" --api ${API_URL}`,
       { cwd: join(process.cwd(), '../world'), timeout: 30_000 },
     ).toString(),
   ) as { ok: boolean; last: { payload: { doc: string } } };
   expect(out.ok).toBe(true);
-  expect(out.last.payload.doc).toBe('exhibit-D.md');
+  expect(out.last.payload.doc).toBe('adjustment-note.md');
   const tail = JSON.parse(
     execSync(`BEARER=${account.token} python3 inject.py --run ${rid} --tail --api ${API_URL}`, {
       cwd: join(process.cwd(), '../world'),
@@ -160,7 +160,7 @@ test(
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${account.token}` },
       body: JSON.stringify({
         device_id: 'hypercomplete',
-        text: 'Lista los documentos visibles del caso northbridge-v-caldera con la tool list_case_docs y dime sus nombres.',
+        text: 'Lista los documentos visibles del caso dpaas-toll-dispute con la tool list_case_docs y dime sus nombres.',
       }),
     });
     expect(res.status).toBe(200);

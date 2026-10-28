@@ -14,6 +14,16 @@ export interface BancoView {
 export type ListScroll = Record<string, number>;
 export type OsTheme = "dark" | "light";
 
+/** Estado del turno agéntico en curso (lo alimenta el micrófono/consola). */
+export type OsChatStatus = "idle" | "listening" | "thinking" | "done" | "error";
+
+export interface OsChatView {
+  status: OsChatStatus;
+  heard: string | null;
+  /** ms desde que arrancó el turno (avanza los pasos del proceso). */
+  elapsed_ms: number;
+}
+
 export interface OsUiView {
   scroll: { apps: number; providers: number; models: number };
   theme: OsTheme;
@@ -22,6 +32,7 @@ export interface OsUiView {
   micMuted: boolean;
   banco: BancoView;
   sendTo: string;
+  chat: OsChatView;
 }
 
 /** Subconjunto del NomikOSState que consume Rust (sin events/secretos). */

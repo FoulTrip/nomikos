@@ -1,4 +1,5 @@
 "use client";
+import { useTranslations } from "next-intl";
 /** ModalShell — overlay + tarjeta de los modales del panel del dapp (estilo shadcn). */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
@@ -20,6 +21,7 @@ export default function Modal({
   // `fixed` (el inset-0 se resolvía contra el header y el modal salía
   // arriba del todo). El guard mounted evita mismatch de hidratación.
   const [mounted, setMounted] = useState(false);
+  const t = useTranslations("panel.modal");
   useEffect(() => setMounted(true), []);
   useEffect(() => {
     setModalOpen(true);
@@ -29,7 +31,7 @@ export default function Modal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-5"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#343433]/40 p-5"
       onClick={onClose}
     >
       <div
@@ -46,7 +48,7 @@ export default function Modal({
             variant="ghost"
             size="icon"
             onClick={onClose}
-            aria-label="Cerrar"
+            aria-label={t("close")}
             className="size-8 shrink-0"
           >
             <X />

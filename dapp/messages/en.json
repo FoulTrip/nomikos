@@ -1,0 +1,570 @@
+{
+  "landing": {
+    "meta": {
+      "title": "Nomik — Your home, with a voice of its own",
+      "description": "Talk to your home: devices, calls and payments that take care of themselves. You just talk."
+    },
+    "nav": {
+      "features": "Features",
+      "how": "How it works",
+      "signin": "Log in",
+      "signup": "Get started",
+      "menu": "Open menu",
+      "web3": "Web3",
+      "business": "Business",
+      "start": "Start risk-free"
+    },
+    "locale": {
+      "label": "Language"
+    },
+    "hero": {
+      "title": "Your home, finally with a voice of its own.",
+      "sub": "Nomik hears what you need, moves your devices, makes your calls and takes care of payments. You just talk.",
+      "start": "Get started free",
+      "how": "See how it works",
+      "note": "You'll be talking in under a minute."
+    },
+    "marquee": [
+      "Good morning",
+      "Call mom",
+      "Turn on the living room",
+      "How much have I spent?",
+      "Play my list",
+      "Turn everything off",
+      "Who called yesterday?",
+      "Turn it up"
+    ],
+    "features": {
+      "eyebrow": "Everything in one place",
+      "title": "Talk, call and control. All together.",
+      "items": [
+        {
+          "title": "Natural speech",
+          "text": "Ask the way you'd ask a person."
+        },
+        {
+          "title": "Pay only for what you use",
+          "text": "You only pay when something works for you."
+        },
+        {
+          "title": "Call anyone",
+          "text": "Say the name and call. Talk, hang up, done."
+        },
+        {
+          "title": "Always with your permission",
+          "text": "Nothing important moves without your approval."
+        }
+      ]
+    },
+    "showcase": [
+      {
+        "eyebrow": "It knows you",
+        "title": "It remembers your home.",
+        "text": "It knows what's in each room, your routines and your schedule. Every conversation picks up where it left off.",
+        "checks": [
+          "Rooms and routines",
+          "Your tastes and schedule",
+          "Conversations that continue"
+        ]
+      },
+      {
+        "eyebrow": "Control",
+        "title": "You set the rules.",
+        "text": "Set how much can be spent, what needs your tap, and when to stop entirely. Nomik always obeys.",
+        "checks": [
+          "Daily spending cap",
+          "One-tap approval",
+          "Full pause whenever"
+        ]
+      },
+      {
+        "eyebrow": "Devices",
+        "title": "Your whole house on one account.",
+        "text": "A little box with a microphone and a touch display. They pair with a short code and obey your voice.",
+        "checks": [
+          "Pair with a short code",
+          "Installs in minutes",
+          "Voice and screen, your choice"
+        ]
+      }
+    ],
+    "details": {
+      "title": "Details that matter.",
+      "sub": "We sweat the small stuff.",
+      "items": [
+        {
+          "title": "Your account travels with you",
+          "text": "Sign in from any device and everything stays put: your home, your history, your settings."
+        },
+        {
+          "title": "Your voice stays home",
+          "text": "What you say is understood on the device itself whenever possible."
+        },
+        {
+          "title": "Real privacy",
+          "text": "Your data travels encrypted and your keys never leave your account."
+        }
+      ]
+    },
+    "cta": {
+      "title": "Start talking to your home.",
+      "text": "Create your account and pair your first device.",
+      "button": "Create a free account"
+    },
+    "footer": {
+      "tagline": "Your home, with a voice of its own.",
+      "product": "Product",
+      "account": "Account",
+      "signin": "Log in",
+      "signup": "Sign up",
+      "panel": "Open panel",
+      "rights": "© 2026 Nomik"
+    },
+    "web3": {
+      "eyebrow": "Payments",
+      "title": "Cents instead of subscriptions.",
+      "intro": "Every service has a tiny, visible price. Your account comes with its own wallet on the Solana network: every payment is recorded and you can check it anytime. You never sign anything weird.",
+      "pay": [
+        {
+          "title": "Wallet included, no weird keys",
+          "text": "Nomik takes care of signing for you. You never touch a key."
+        },
+        {
+          "title": "Everything gets recorded",
+          "text": "Every payment is written to a public network. What, when and how much, always in view."
+        },
+        {
+          "title": "Pay-per-use pricing, always upfront",
+          "text": "You see the price before every service: a call, a lookup, a minute. No surprises."
+        }
+      ],
+      "appsTitle": "Your apps, connected.",
+      "appsText": "Nomik talks to your tools over MCP, an open standard: the store, inventory, bookings or your content. Every installed app adds its skills to the assistant, and every lookup pays cents.",
+      "flowTitle": "From “hello” to done, step by step.",
+      "flow": [
+        {
+          "title": "You talk",
+          "text": "Say what you need, in your own words."
+        },
+        {
+          "title": "Understands",
+          "text": "Reads the request and plans the steps."
+        },
+        {
+          "title": "Verifies",
+          "text": "Checks every step and asks your permission."
+        },
+        {
+          "title": "Pays",
+          "text": "Settles cents per service."
+        },
+        {
+          "title": "Delivers",
+          "text": "Runs it and shows you the result."
+        }
+      ],
+      "contracts": {
+        "title": "Contracts that enforce themselves.",
+        "text": "Important agreements live as smart contracts on Solana: programs that carry out the deal to the letter, with no middlemen. Money only moves when the work is done, and anyone can verify it.",
+        "points": [
+          "They run themselves, no paperwork",
+          "Payment releases on delivery",
+          "Public, verifiable record"
+        ]
+      },
+      "appsYours": "Your apps"
+    },
+    "business": {
+      "eyebrow": "Home and business",
+      "title": "One system for every machine.",
+      "intro": "NomikOS gives every machine what it needs to work: ears to hear you, hands to act, and a wallet to pay for its services. At home it's your assistant; at your company, your workforce. One account that grows with you, from person to organization.",
+      "cases": [
+        {
+          "title": "Your home, alive",
+          "text": "The assistant, the cleaning robot and every corner obey your voice and coordinate on their own."
+        },
+        {
+          "title": "Smart buildings",
+          "text": "Install it in a building and every apartment turns smart for its renter: access, climate and pay-per-use services."
+        },
+        {
+          "title": "Tireless workers",
+          "text": "Agent fleets that serve, sell and solve 24/7, with spending caps and full oversight."
+        }
+      ],
+      "economy": {
+        "title": "An economy that runs itself.",
+        "text": "You set the budget once. Agents pay cents for every service they use —a call, a lookup, a delivery— and every move is recorded end to end, all the way to the final customer."
+      },
+      "cta": "Get started free"
+    },
+    "start": {
+      "eyebrow": "Risk-free",
+      "title": "Trying it is this easy.",
+      "steps": [
+        {
+          "title": "Sign up in 1 click",
+          "text": "Join with your email or usual account. Your wallet is created invisibly behind the scenes: no seed phrases, no weird keys."
+        },
+        {
+          "title": "Add funds and limits",
+          "text": "Top up once and set a daily cap. Like credits in your favorite apps, with optional auto top-up."
+        },
+        {
+          "title": "Watch it work",
+          "text": "Every task lands in your history in real time, with its cost in cents. Anything over your limit is blocked instantly."
+        }
+      ],
+      "sandbox": {
+        "title": "Sandbox mode: play without fear.",
+        "text": "Try the full system on your devices with play money. Break things, reset and start over, without spending a real cent.",
+        "button": "Create an account and try"
+      }
+    }
+  },
+  "common": {
+    "networkError": "Network error"
+  },
+  "panel": {
+    "nav": {
+      "wallet": "Wallet",
+      "models": "Models",
+      "services": "Services",
+      "fleet": "Fleet",
+      "walletTitle": "Agent operator wallet and blockchain network",
+      "modelsTitle": "Agent provider, API key and model",
+      "servicesTitle": "Dapps your agent will use with x402",
+      "fleetTitle": "Device fleet: pair, install and monitor"
+    },
+    "account": {
+      "prefs": "Preferences",
+      "signout": "Sign out",
+      "language": "Language"
+    },
+    "device": {
+      "label": "Device"
+    },
+    "viewlock": {
+      "title": "Lock the camera to front view and disable rotation",
+      "release": "release 3D view",
+      "engage": "lock front view"
+    },
+    "sandbox": {
+      "switchTitle": "Ephemeral test session in your browser, connected to your provider, model, dapps and wallet",
+      "switchLabel": "sandbox mode",
+      "local": "Local run",
+      "remote": "Remote run",
+      "localTitle": "The ecosystem runs on this machine",
+      "remoteTitle": "The ecosystem answers from the remote worker"
+    },
+    "specs": {
+      "title": "Tech specs",
+      "collapse": "Collapse",
+      "expand": "Expand",
+      "items": [
+        {
+          "label": "Controller",
+          "value": "ESP32-S3R8 · dual-core 240 MHz"
+        },
+        {
+          "label": "Display",
+          "value": "1.43\" round AMOLED · 466 × 466 px"
+        },
+        {
+          "label": "Touch",
+          "value": "5-point capacitive"
+        },
+        {
+          "label": "Memory",
+          "value": "16 MB Flash · 8 MB PSRAM"
+        },
+        {
+          "label": "Wireless",
+          "value": "Wi-Fi 2.4 GHz · BLE 5"
+        },
+        {
+          "label": "Extras",
+          "value": "microSD · SPI · I2C · RGB LED"
+        }
+      ]
+    },
+    "charts": {
+      "noInvoices": "No invoices yet.",
+      "noTools": "No tools yet."
+    },
+    "modal": {
+      "close": "Close"
+    },
+    "diagnosis": {
+      "title": "x402 tolls",
+      "invoices": "Invoices",
+      "pending": "Pending",
+      "verifying": "Verifying",
+      "settled": "Settled",
+      "failed": "Failed",
+      "total": "Total",
+      "note": "While a toll is verifying on-chain, its protected resource won't answer until it settles.",
+      "logs": "System logs",
+      "payerOk": "Payer configured",
+      "payerOkDetail": "Outgoing payments are signed automatically (dPaaS).",
+      "payerWarn": "Payer not configured",
+      "payerWarnDetail": "payer_configured: false in the x402 module — outgoing payments are not being signed automatically, which stalls settlements ({failed} payouts failed, {confirmed} confirmed).",
+      "erpOk": "ERP online",
+      "erpOkDetail": "The Payload CMS module answers (health OK).",
+      "erpDown": "ERP down",
+      "erpDownDetail": "The Payload CMS module is Stopped ({detail}). Any ERP query cannot answer right now.",
+      "erpUnknown": "ERP without data",
+      "erpUnknownDetail": "The module hasn't synced its health yet — arriving in seconds.",
+      "noData": "No data yet — the diagnosis arrives in seconds.",
+      "collapse": "Collapse",
+      "expand": "Expand"
+    }
+  },
+  "wallet": {
+    "title": "Agent wallet and network",
+    "loading": "Loading account context…",
+    "signer": "Solana signing wallet (dPaaS)",
+    "dpaasWallet": "dPaaS wallet",
+    "signsTolls": "signs x402 tolls",
+    "unset": "not configured",
+    "copyAddr": "Copy {network} address to fund",
+    "principal": "Primary wallet (dPaaS)",
+    "noSubwallets": "No dPaaS sub-wallets: the account signs with the primary wallet.",
+    "create": "Create dPaaS wallet",
+    "creating": "Creating…",
+    "devnet": "Devnet",
+    "faucet": "Devnet faucet",
+    "dripping": "Dripping…",
+    "faucetInfo": "Transfers SOL from the ecosystem treasury to YOUR dPaaS wallet: x402 tolls settle with real on-chain confirmation (devnet only).",
+    "browser": "Browser wallets",
+    "connecting": "Connecting…",
+    "inUse": "In use",
+    "use": "Use",
+    "browserHint": "Connect Phantom, Solflare, Backpack or MetaMask: your private key never leaves your wallet — the account only stores the pubkey in its DB (add several; only one in use).",
+    "chain": "Solana blockchain network",
+    "saved": "Saved — the agent will operate with this wallet and network.",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving…",
+    "errConnect": "Failed to connect the wallet",
+    "mmMissing": "MetaMask not detected — install the extension",
+    "mmNoAccount": "MetaMask returned no account",
+    "wMissing": "No wallet detected — install the extension",
+    "wNoPubkey": "The wallet returned no pubkey"
+  },
+  "models": {
+    "title": "Agent models",
+    "loading": "Loading providers…",
+    "active": "Active provider (the one your agent uses)",
+    "none": "No providers — the agent cannot reason until you add a key below.",
+    "modelsCount": "{count, plural, one {# model} other {# models}}",
+    "hasKey": "· key ●",
+    "noKey": "· no key",
+    "disconnect": "Disconnect {provider}",
+    "modelOf": "{provider} model",
+    "freeCount": "({count} free)",
+    "refresh": "Refresh model list",
+    "free": "Free",
+    "others": "Others",
+    "addKey": "Add / update key",
+    "customProvider": "Custom (OpenAI-compat)",
+    "baseUrlPh": "OpenAI-compat Base URL (https://…/v1)",
+    "keyPh": "Paste your API key and press Enter",
+    "connecting": "Connecting…",
+    "connect": "Connect",
+    "done": "Done",
+    "saved": "Saved to your account",
+    "errNoModels": "the provider returned no models",
+    "errConn": "Connection error",
+    "errKeyFirst": "Paste your API key first",
+    "errKeyShort": "That key looks incomplete — copy it whole (it's shown only once when created)",
+    "errKeyChars": "That key has invalid characters (emoji or pasted spaces?) — copy it again, just the key",
+    "warnRefresh": "Warning: couldn't refresh the list ({text}) — showing the saved one",
+    "warn": "Warning: {warning}"
+  },
+  "services": {
+    "title": "Agent services",
+    "loading": "Loading catalog…",
+    "flow": "This dapp's entire flow travels the x402 gateway (402 toll signed by your account's dPaaS wallet).",
+    "added": "Added to your account",
+    "addedNet": "· {network} network",
+    "adding": "Adding…",
+    "add": "Add to account"
+  },
+  "fleet": {
+    "title": "Device fleet",
+    "tabFleet": "My fleet",
+    "tabPair": "Pair",
+    "tabInstall": "Installer",
+    "loading": "Loading fleet…",
+    "empty": "No devices yet — pair a board in the “Pair” tab with the code on its screen.",
+    "refresh": "Refresh",
+    "pairLabel": "Pairing code",
+    "pairPh": "The 8-character code on the device screen",
+    "pairHint": "The device shows it at boot (or in the installer serial console). Expires in 15 minutes.",
+    "claimed": "{name} paired — the board will receive its token when polling (POST /api/devices/token).",
+    "claiming": "Pairing…",
+    "pair": "Pair device",
+    "stepBoard": "1 · Board",
+    "sbcNote": "SBC: no USB flashing needed — the NomikOS Buildroot image (Phase 4) will be written to the microSD and the board pairs over the network on first boot.",
+    "stepFlash": "2 · Flash from the browser",
+    "checking": "Checking firmware manifest…",
+    "pendingA": "Firmware on its way (Phase 3: agentd-mini for this board). The install button will enable itself once the manifest is published at",
+    "pendingB": ". Meanwhile you can test the connection in the console below with whatever firmware the board already has.",
+    "stepConsole": "3 · Serial console (115200)",
+    "connectUsb": "Connect board over USB",
+    "disconnect": "Disconnect",
+    "serialRequired": "Requires desktop Chrome/Edge (Web Serial).",
+    "consoleWaiting": "— console waiting —",
+    "sendPh": "Send line to device…",
+    "send": "Send",
+    "useAsCode": "use «{code}» as code",
+    "never": "never seen",
+    "agoS": "{s}s ago",
+    "agoM": "{m} min ago",
+    "agoH": "{h} h ago",
+    "onlineAt": "online · {ago}",
+    "seenAt": "seen {ago}",
+    "limits": "dPaaS: {daily} lamports/day · {tx}/tx",
+    "vidNative": "Native Espressif (ESP32-S2/S3/C3)",
+    "vidCp210x": "SiLabs CP210x bridge (classic ESP32 boards)",
+    "vidCh340": "WCH CH340/CH341 bridge",
+    "vidFtdi": "FTDI bridge",
+    "serialPort": "serial port",
+    "connectedTo": "— connected to {label} @115200 —",
+    "errSerial": "Web Serial unavailable in this browser — use desktop Chrome or Edge.",
+    "errOpenPort": "Couldn't open the port"
+  },
+  "dashboard": {
+    "summary": "Account summary",
+    "scope": "Scope",
+    "prod": "Production",
+    "sandbox": "Sandbox",
+    "tokens": "Token usage",
+    "tokensProd": "Active model consumption",
+    "tokensSandbox": "Sandbox consumption",
+    "noMeter": "No meter — the gateway doesn't report tokens yet. Next step: per-account counter in the api.",
+    "noActivity": "No recorded activity — the sandbox is ephemeral and doesn't log its own usage yet.",
+    "toolsByApps": "Tools by app",
+    "toolsInventory": "Inventory available to the agent",
+    "sameInSandbox": " (same in sandbox)",
+    "noTools": "No tools.",
+    "app": "App",
+    "tools": "Tools",
+    "uses": "Uses",
+    "inAccount": "on your account",
+    "x402": "x402 analysis",
+    "tolls": "Account tolls",
+    "tollsSandbox": "Sandbox tolls",
+    "noSandboxTolls": "0 tolls — the sandbox doesn't log its own tolls yet. Test tolls land in production today.",
+    "invoices": "invoices",
+    "settled": "settled",
+    "sol": "SOL",
+    "dailyUse": "Daily limit usage: {pct}%",
+    "docs": "Documentation",
+    "seeAll": "See all →",
+    "core": "core"
+  },
+  "dock": {
+    "ev": {
+      "boot": "boot",
+      "enroll": "enrollment",
+      "claim": "pairing",
+      "online": "online",
+      "coder": "renewed code",
+      "tap": "tap",
+      "unlock": "unlock",
+      "lock": "lock",
+      "provider": "provider",
+      "model": "model",
+      "apps": "apps",
+      "toll": "x402 toll",
+      "voice": "voice turn",
+      "rebuilt": "rebuilt"
+    },
+    "status": {
+      "idle": "Last turn",
+      "listening": "Listening…",
+      "thinking": "Thinking…",
+      "done": "Done",
+      "error": "Oops"
+    },
+    "now": "now",
+    "agoS": "{s}s ago",
+    "agoM": "{m}m ago",
+    "see": "See agent activity",
+    "minimize": "Minimize",
+    "hide": "Hide",
+    "chatPh": "Type to the agent…",
+    "send": "Send",
+    "empty": "No conversation yet. Talk to me via the OS mic or type here."
+  },
+  "sim": {
+    "unexpected": "unexpected error",
+    "noSTT": "this browser has no speech recognition — type below",
+    "micMuted": "mic muted from the screen — tap it to enable",
+    "micDenied": "microphone permission denied — allow the mic or type below",
+    "micFail": "couldn't open the microphone",
+    "title": "NomikOS simulator",
+    "ecoLocal": "Local run",
+    "ecoDocker": " · docker",
+    "ecoDetected": "detected",
+    "syncing": "syncing…",
+    "noProvider": "🧠 no provider — set it up in Models",
+    "claimOnScreen": "claim code on screen:",
+    "claiming": "pairing…",
+    "addAgent": "ADD to agent",
+    "onlineNote": "The OS goes ONLINE: the simulated device joins your real fleet.",
+    "lockedNote": "🔒 locked — tap the AMOLED screen to unlock.",
+    "unlock": "Unlock",
+    "touchHint": "touch screen: tap the AMOLED icons (apps · bank).",
+    "camTitle": "Lock the camera to front view and disable rotation",
+    "camRelease": "release 3D view",
+    "camFront": "lock front view",
+    "micTalk": "Talk to the agent",
+    "micNoSR": "No Web Speech API in this browser",
+    "micListening": "listening… (tap to stop)",
+    "micTalkLower": "talk to the agent",
+    "ttsTitle": "Read replies out loud (TTS)",
+    "thinking": "the agent is thinking… ",
+    "heard": "heard: «{text}»",
+    "bankLabel": "Bank › Send › Manual",
+    "toPh": "Destination address (base58)",
+    "typePh": "…or type to the agent",
+    "paying": "paying toll…",
+    "payToll": "device x402 toll",
+    "rebuildQ": "Rebuild device+OS keeping progress?",
+    "rebuilding": "rebuilding…",
+    "rebuild": "rebuild (keep progress)",
+    "lastToll": "last toll:",
+    "booting": "the simulated agentd is presenting to the worker…",
+    "stageLine": "stage: {stage} · boots: {boots} · taps: {taps}"
+  },
+  "screen": {
+    "loading": "loading UI…"
+  },
+  "prefs": {
+    "title": "Preferences",
+    "sub": "Your account, your rules: general data and language in one place.",
+    "account": "Account",
+    "email": "Email",
+    "displayName": "Display name",
+    "displayNamePh": "What should we call you",
+    "language": "Language",
+    "country": "Country",
+    "countryNone": "Not set",
+    "save": "Save changes",
+    "saving": "Saving…",
+    "saved": "Saved to your account.",
+    "back": "Back to panel",
+    "error": "Couldn't save. Try again."
+  },
+  "docs": {
+    "indexTitle": "Documentation",
+    "indexSub": "Ecosystem guides: apps, OS, agents and providers.",
+    "back": "Back to panel",
+    "guide": "Guide",
+    "updated": "updated",
+    "follow": "Keep going with"
+  }
+}

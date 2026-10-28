@@ -10,12 +10,27 @@
       "blocks": [
         {
           "type": "table",
-          "head": ["Pieza", "Detalle"],
+          "head": [
+            "Pieza",
+            "Detalle"
+          ],
           "rows": [
-            ["Placa", "ESP32-S3-Touch-AMOLED-1.43 (AMOLED 1.43\" 466×466, táctil, Wi-Fi 2.4 GHz)"],
-            ["Firmware", "agentd + os-ui (Rust no_std, UI compartida con el panel)"],
-            ["Cuenta", "Email y contraseña del ecosistema (esta misma cuenta)"],
-            ["Red", "La placa y tu móvil/PC en la misma red para emparejar"]
+            [
+              "Placa",
+              "ESP32-S3-Touch-AMOLED-1.43 (AMOLED 1.43\" 466×466, táctil, Wi-Fi 2.4 GHz)"
+            ],
+            [
+              "Firmware",
+              "agentd + os-ui (Rust no_std, UI compartida con el panel)"
+            ],
+            [
+              "Cuenta",
+              "Email y contraseña del ecosistema (esta misma cuenta)"
+            ],
+            [
+              "Red",
+              "La placa y tu móvil/PC en la misma red para emparejar"
+            ]
           ]
         }
       ]
@@ -59,16 +74,40 @@
       "blocks": [
         {
           "type": "table",
-          "head": ["Estado", "Significado", "Qué hacer"],
+          "head": [
+            "Estado",
+            "Significado",
+            "Qué hacer"
+          ],
           "rows": [
-            ["boot", "agentd arrancando y presentándose", "Esperar unos segundos"],
-            ["claim", "Muestra claim code, sin cuenta", "Emparejar desde Flota"],
-            ["online 🔒", "Vinculado pero bloqueado", "Tocar el AMOLED para desbloquear"],
-            ["online", "Operativo en tu cuenta", "Usar apps, banco y voz"]
+            [
+              "boot",
+              "agentd arrancando y presentándose",
+              "Esperar unos segundos"
+            ],
+            [
+              "claim",
+              "Muestra claim code, sin cuenta",
+              "Emparejar desde Flota"
+            ],
+            [
+              "online 🔒",
+              "Vinculado pero bloqueado",
+              "Tocar el AMOLED para desbloquear"
+            ],
+            [
+              "online",
+              "Operativo en tu cuenta",
+              "Usar apps, banco y voz"
+            ]
           ]
         }
       ]
     }
   ],
-  "related": ["aplicaciones", "instalacion-apps", "orquestacion"]
+  "related": [
+    "aplicaciones",
+    "instalacion-apps",
+    "sandbox"
+  ]
 }

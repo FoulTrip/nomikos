@@ -515,6 +515,109 @@ pub async fn me_handler(
 }
 
 // ---------------------------------------------------------------------------
+// Handlers: preferencias de cuenta (idioma, país, nombre visible)
+// ---------------------------------------------------------------------------
+
+/// GET /api/accounts/me/preferences — perfil + idioma + país de la cuenta.
+/// El dapp hidrata su cookie de idioma (NOMIK_LOCALE) desde aquí al entrar.
+pub async fn get_preferences_handler(
+    State(state): State<SharedState>,
+    auth: AuthedAccount,
+) -> AppResult<Response> {
+    let prefs: Value = state
+        .db
+        .with(|c| {
+            c.query_row(
+                "SELECT email, display_name, COALESCE(locale, 'es'), country \
+                 FROM accounts WHERE id = ?1",
+                params![auth.account_id],
+                |r| {
+                    Ok(json!({
+                        "email": r.get::<_, String>(0)?,
+                        "display_name": r.get::<_, Option<String>>(1)?,
+                        "locale": r.get::<_, String>(2)?,
+                        "country": r.get::<_, Option<String>>(3)?,
+                    }))
+                },
+            )
+        })
+        .map_err(|_| AppError::unauthorized("sesión inválida o expirada"))?;
+    Ok(Json(json!({ "ok": true, "preferences": prefs })).into_response())
+}
+
+#[derive(Deserialize)]
+pub struct PutPreferencesBody {
+    pub locale: Option<String>,
+    pub country: Option<String>,
+    pub display_name: Option<String>,
+}
+
+/// PUT /api/accounts/me/preferences — actualización parcial: solo los
+/// campos presentes se tocan (ausente = no tocar). `country`/`display_name`
+/// vacíos borran el valor (NULL). `locale` solo acepta es|en.
+pub async fn put_preferences_handler(
+    State(state): State<SharedState>,
+    auth: AuthedAccount,
+    Json(body): Json<PutPreferencesBody>,
+) -> AppResult<Response> {
+    if body.locale.is_none() && body.country.is_none() && body.display_name.is_none() {
+        return Err(AppError::bad_request("nada que actualizar: envía locale, country o display_name"));
+    }
+
+    let locale = body
+        .locale
+        .as_deref()
+        .map(str::trim)
+        .map(str::to_lowercase)
+        .filter(|s| !s.is_empty());
+    if let Some(ref l) = locale {
+        if l != "es" && l != "en" {
+            return Err(AppError::bad_request("locale inválido: usa es o en"));
+        }
+    }
+
+    let country = body.country.as_deref().map(str::trim).map(str::to_uppercase);
+    if let Some(ref c) = country {
+        if !c.is_empty() && !(c.len() == 2 && c.bytes().all(|b| b.is_ascii_alphabetic())) {
+            return Err(AppError::bad_request("country inválido: código ISO de 2 letras (CO, MX, ES…)"));
+        }
+    }
+
+    let display_name = body.display_name.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    if let Some(ref d) = display_name {
+        if d.chars().count() > 64 {
+            return Err(AppError::bad_request("display_name demasiado largo (máx. 64 caracteres)"));
+        }
+    }
+
+    state.db.with(|c| {
+        // COALESCE por campo: NULL en el parámetro = conservar valor actual.
+        c.execute(
+            "UPDATE accounts SET \
+                 locale = COALESCE(?1, locale), \
+                 country = CASE WHEN ?2 IS NULL AND ?5 = 1 THEN NULL \
+                               WHEN ?2 IS NULL THEN country ELSE ?2 END, \
+                 display_name = CASE WHEN ?3 IS NULL AND ?6 = 1 THEN NULL \
+                                    WHEN ?3 IS NULL THEN display_name ELSE ?3 END, \
+                 updated_at = ?4 \
+             WHERE id = ?7",
+            params![
+                locale,
+                country.as_deref().filter(|s| !s.is_empty()),
+                display_name,
+                now_ms(),
+                if body.country.is_some() { 1 } else { 0 },
+                if body.display_name.is_some() { 1 } else { 0 },
+                auth.account_id,
+            ],
+        )?;
+        Ok(())
+    })?;
+
+    get_preferences_handler(State(state), auth).await
+}
+
+// ---------------------------------------------------------------------------
 // Handlers: config por cuenta
 // ---------------------------------------------------------------------------
 

@@ -1,0 +1,96 @@
+{
+  "slug": "proveedores",
+  "title": "AI providers",
+  "icon": "KeyRound",
+  "summary": "Your keys, your model: multi-provider with a single active one, sealed keys and model switching on the fly.",
+  "updated": "2026-10-27",
+  "sections": [
+    {
+      "heading": "The account model",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "Every account carries ITS own API keys, stored sealed (AEAD) in the api. You can connect several providers but only ONE is active: that's what reasons your turns. There is no global provider and no silent fallback to another key."
+        },
+        {
+          "type": "table",
+          "head": [
+            "Provider",
+            "Label in Models",
+            "Key format"
+          ],
+          "rows": [
+            [
+              "NVIDIA NIM",
+              "NVIDIA NIM",
+              "nvapi-…"
+            ],
+            [
+              "OpenAI",
+              "OpenAI",
+              "sk-…"
+            ],
+            [
+              "Meta Llama API",
+              "Meta Llama API",
+              "llama-…"
+            ],
+            [
+              "Anything else",
+              "Custom (OpenAI-compat)",
+              "Depends on provider + Base URL"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Connecting a key",
+      "blocks": [
+        {
+          "type": "steps",
+          "items": [
+            "Open Models in the navbar and pick the provider.",
+            "Paste your full API key (it's shown only once when you create it with the provider).",
+            "Press Connect: the dapp validates live and lists available models.",
+            "The first free model (or the first in the list) becomes the active one."
+          ]
+        },
+        {
+          "type": "callout",
+          "tone": "warn",
+          "title": "Paste only the key",
+          "text": "If it carries spaces or pasted emojis, validation rejects it: copy it again, just the key."
+        }
+      ]
+    },
+    {
+      "heading": "Switching provider or model",
+      "blocks": [
+        {
+          "type": "list",
+          "items": [
+            "Mark the radio of the provider you want: the change is instant for the next turn.",
+            "The Model dropdown lists the active one's saved models (refreshes on open).",
+            "Changing models saves on the fly, no reconnect needed.",
+            "Each row's 🗑 disconnects that provider (deletes key and list)."
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Security",
+      "blocks": [
+        {
+          "type": "p",
+          "text": "Keys travel only over TLS, are stored encrypted, and the browser never sees your api Bearer (the dapp carries it server-side). The device never touches your keys: it only picks the active provider."
+        }
+      ]
+    }
+  ],
+  "related": [
+    "orquestacion",
+    "aplicaciones",
+    "instalacion-apps"
+  ]
+}

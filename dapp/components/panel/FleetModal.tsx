@@ -1,4 +1,5 @@
 "use client";
+import { useTranslations } from "next-intl";
 /**
  * FleetModal — NomikOS Fase 2: gestión de flota e instalador web.
  *
@@ -60,26 +61,28 @@ const BOARDS = [
 ];
 
 /** VID de USB → chip/puente (detección amigable de la placa conectada). */
-const VID_NAMES: Record<number, string> = {
-  0x303a: "Espressif nativo (ESP32-S2/S3/C3)",
-  0x10c4: "Puente SiLabs CP210x (placas ESP32 clásicas)",
-  0x1a86: "Puente WCH CH340/CH341",
-  0x0403: "Puente FTDI",
+const VID_KEYS: Record<number, string> = {
+  0x303a: "native",
+  0x10c4: "cp210x",
+  0x1a86: "ch340",
+  0x0403: "ftdi",
 };
 
 const CLAIM_RE = /\b[0-9A-F]{8}\b/;
 
 type Tab = "fleet" | "pair" | "install";
 
-function timeAgo(ts: number | null): string {
-  if (!ts) return "nunca visto";
+function timeAgo(ts: number | null, t: (key: string, values?: Record<string, string | number>) => string): string {
+  if (!ts) return t("never");
   const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
-  if (s < 60) return `hace ${s}s`;
-  if (s < 3600) return `hace ${Math.round(s / 60)} min`;
-  return `hace ${Math.round(s / 3600)} h`;
+  if (s < 60) return t("agoS", { s });
+  if (s < 3600) return t("agoM", { m: Math.round(s / 60) });
+  return t("agoH", { h: Math.round(s / 3600) });
 }
 
 export default function FleetModal({ onClose }: { onClose: () => void }) {
+  const t = useTranslations("fleet");
+  const tc = useTranslations("common");
   const [tab, setTab] = useState<Tab>("fleet");
 
   // ── Mi flota ──
@@ -97,7 +100,7 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
       }
       setDevices(data.devices ?? []);
     } catch (e) {
-      setFleetError(e instanceof Error ? e.message : "Error de red");
+      setFleetError(e instanceof Error ? e.message : tc("networkError"));
     }
   }, []);
 
@@ -132,7 +135,7 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
       setClaimCode("");
       loadFleet();
     } catch (e) {
-      setClaimError(e instanceof Error ? e.message : "Error de red");
+      setClaimError(e instanceof Error ? e.message : tc("networkError"));
     } finally {
       setClaiming(false);
     }
@@ -197,7 +200,7 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
   const connectSerial = async () => {
     setSerialError(null);
     if (!serialSupported) {
-      setSerialError("Web Serial no disponible en este navegador — usa Chrome o Edge en escritorio.");
+      setSerialError(t("errSerial"));
       return;
     }
     try {
@@ -206,13 +209,14 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
       portRef.current = port;
       const info = port.getInfo();
       const vid = info.usbVendorId ?? 0;
-      const label = VID_NAMES[vid] ?? (vid ? `VID ${vid.toString(16)}` : "puerto serial");
+      const vidKey = VID_KEYS[vid];
+      const label = vidKey ? t(`vid.${vidKey}`) : vid ? `VID ${vid.toString(16)}` : t("serialPort");
       setPortLabel(label);
       setSerialOpen(true);
-      pushLine(`— conectado a ${label} @115200 —`);
+      pushLine(t("connectedTo", { label }));
       startReading(port);
     } catch (e) {
-      setSerialError(e instanceof Error ? e.message : "No se pudo abrir el puerto");
+      setSerialError(e instanceof Error ? e.message : t("errOpenPort"));
     }
   };
 
@@ -282,31 +286,26 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
     <Modal
       title={
         <>
-          <Radio className="size-5 text-primary" />
-          Flota de dispositivos
-        </>
+          <Radio className="size-5 text-primary" />{t("title")}</>
       }
       onClose={onClose}
     >
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="gap-4">
         <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="fleet">Mi flota</TabsTrigger>
-          <TabsTrigger value="pair">Emparejar</TabsTrigger>
-          <TabsTrigger value="install">Instalador</TabsTrigger>
+          <TabsTrigger value="fleet">{t("tabFleet")}</TabsTrigger>
+          <TabsTrigger value="pair">{t("tabPair")}</TabsTrigger>
+          <TabsTrigger value="install">{t("tabInstall")}</TabsTrigger>
         </TabsList>
 
         {/* ───────────────────────── Mi flota ───────────────────────── */}
         <TabsContent value="fleet" className="grid gap-2">
           {!devices && !fleetError && (
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
-              <LoaderCircle className="size-4 animate-spin" />
-              Cargando flota…
-            </p>
+              <LoaderCircle className="size-4 animate-spin" />{t("loading")}</p>
           )}
           {devices?.length === 0 && (
             <p className="text-xs leading-relaxed text-muted-foreground">
-              Sin dispositivos todavía — empareja una placa en la pestaña
-              “Emparejar” con el código que muestra en su pantalla.
+              {t("empty")}
             </p>
           )}
           {devices?.map((d) => (
@@ -326,13 +325,12 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
                 </Badge>
               </header>
               <small className="text-xs text-muted-foreground">
-                {d.online ? `online · ${timeAgo(d.last_seen_at)}` : `visto ${timeAgo(d.last_seen_at)}`}
+                {d.online ? t("onlineAt", { ago: timeAgo(d.last_seen_at, t) }) : t("seenAt", { ago: timeAgo(d.last_seen_at, t) })}
                 {d.agent_version ? ` · ${d.agent_version}` : ""}
               </small>
               {(d.daily_limit_lamports != null || d.tx_limit_lamports != null) && (
                 <code className="w-fit rounded-md border bg-muted px-2 py-0.5 font-mono text-[11px] text-primary">
-                  dPaaS: {d.daily_limit_lamports ?? "—"} lamports/día ·{" "}
-                  {d.tx_limit_lamports ?? "—"}/tx
+                  {t("limits", { daily: d.daily_limit_lamports ?? "—", tx: d.tx_limit_lamports ?? "—" })}
                 </code>
               )}
             </div>
@@ -345,16 +343,14 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
           )}
           <footer className="flex justify-end">
             <Button type="button" variant="ghost" size="sm" onClick={loadFleet}>
-              <RefreshCw />
-              Refrescar
-            </Button>
+              <RefreshCw />{t("refresh")}</Button>
           </footer>
         </TabsContent>
 
         {/* ───────────────────────── Emparejar ───────────────────────── */}
         <TabsContent value="pair" className="grid gap-3">
           <section className="grid gap-2">
-            <Label htmlFor="fleet-claim">Código de emparejado</Label>
+            <Label htmlFor="fleet-claim">{t("pairLabel")}</Label>
             <Input
               id="fleet-claim"
               value={claimCode}
@@ -362,20 +358,18 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
               onKeyDown={(e) => {
                 if (e.key === "Enter") doClaim(claimCode);
               }}
-              placeholder="El código de 8 caracteres de la pantalla del dispositivo"
+              placeholder={t("pairPh")}
               maxLength={8}
               className="font-mono tracking-widest"
             />
             <small className="text-xs leading-relaxed text-muted-foreground">
-              El dispositivo lo enseña al arrancar (o en la consola serial del
-              instalador). Caduca a los 15 minutos.
+              {t("pairHint")}
             </small>
           </section>
           {claimedDev && (
             <p className="flex items-start gap-2 text-[13px] text-emerald-400">
               <CircleCheck className="mt-0.5 size-4 shrink-0" />
-              {claimedDev.name} emparejado — la placa recibirá su token al
-              sondear (POST /api/devices/token).
+              {t("claimed", { name: claimedDev.name })}
             </p>
           )}
           {claimError && (
@@ -391,7 +385,7 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
               disabled={claiming || claimCode.trim().length < 8}
             >
               {claiming && <LoaderCircle className="animate-spin" />}
-              {claiming ? "Emparejando…" : "Emparejar dispositivo"}
+              {claiming ? t("claiming") : t("pair")}
             </Button>
           </footer>
         </TabsContent>
@@ -399,7 +393,7 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
         {/* ───────────────────────── Instalador ───────────────────────── */}
         <TabsContent value="install" className="grid gap-4">
           <section className="grid gap-2">
-            <h4 className="text-xs font-medium text-muted-foreground">1 · Placa</h4>
+            <h4 className="text-xs font-medium text-muted-foreground">{t("stepBoard")}</h4>
             <Select value={boardId} onValueChange={setBoardId}>
               <SelectTrigger className="w-full">
                 <SelectValue />
@@ -414,9 +408,7 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
             </Select>
             {board.kind === "sbc" && (
               <small className="text-xs leading-relaxed text-muted-foreground">
-                SBC: no requiere flasheo por USB — la imagen Buildroot de NomikOS
-                (Fase 4) se escribirá en la microSD y la placa se empareja por red
-                al primer arranque.
+                {t("sbcNote")}
               </small>
             )}
           </section>
@@ -424,14 +416,10 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
           {board.kind === "mcu" && (
             <>
               <section className="grid gap-2">
-                <h4 className="text-xs font-medium text-muted-foreground">
-                  2 · Flashear desde el navegador
-                </h4>
+                <h4 className="text-xs font-medium text-muted-foreground">{t("stepFlash")}</h4>
                 {manifestState === "checking" && (
                   <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <LoaderCircle className="size-3.5 animate-spin" />
-                    Consultando manifiesto de firmware…
-                  </p>
+                    <LoaderCircle className="size-3.5 animate-spin" />{t("checking")}</p>
                 )}
                 {manifestState === "available" && (
                   <div
@@ -443,19 +431,14 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
                 )}
                 {manifestState === "pending" && (
                   <p className="text-xs leading-relaxed text-muted-foreground">
-                    Firmware en camino (Fase 3: agentd-mini para esta placa). El
-                    botón de instalación se activará solo cuando el manifiesto se
-                    publique en <code className="text-primary">/installer/manifests/{boardId}.json</code>.
-                    Mientras tanto puedes probar la conexión por la consola de
-                    abajo con cualquier firmware que ya tenga la placa.
+                    {t("pendingA")} <code className="text-primary">/installer/manifests/{boardId}.json</code>.
+                    {t("pendingB")}
                   </p>
                 )}
               </section>
 
               <section className="grid gap-2">
-                <h4 className="text-xs font-medium text-muted-foreground">
-                  3 · Consola serial (115200)
-                </h4>
+                <h4 className="text-xs font-medium text-muted-foreground">{t("stepConsole")}</h4>
                 {!serialOpen ? (
                   <Button
                     type="button"
@@ -463,9 +446,7 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
                     disabled={!serialSupported}
                     className="w-fit"
                   >
-                    <Usb />
-                    Conectar placa por USB
-                  </Button>
+                    <Usb />{t("connectUsb")}</Button>
                 ) : (
                   <Button
                     type="button"
@@ -474,13 +455,11 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
                     className="w-fit border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
                   >
                     <Unplug />
-                    Desconectar {portLabel ? `(${portLabel})` : ""}
+                    {t("disconnect")} {portLabel ? `(${portLabel})` : ""}
                   </Button>
                 )}
                 {!serialSupported && (
-                  <p className="text-xs text-muted-foreground">
-                    Requiere Chrome/Edge en escritorio (Web Serial).
-                  </p>
+                  <p className="text-xs text-muted-foreground">{t("serialRequired")}</p>
                 )}
                 {serialError && (
                   <Alert variant="destructive">
@@ -494,7 +473,7 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
                   className="thin-scroll h-44 overflow-y-auto rounded-lg border bg-black/60 p-2.5 font-mono text-[11.5px] leading-relaxed break-all whitespace-pre-wrap text-[#9fd6b8]"
                 >
                   {lines.length === 0
-                    ? "— consola en espera —"
+                    ? t("consoleWaiting")
                     : lines.map((l, i) => (
                         <span key={i}>
                           {l.text}
@@ -507,7 +486,7 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
                                 setTab("pair");
                               }}
                             >
-                              usar «{l.code}» como código
+                              {t("useAsCode", { code: l.code! })}
                             </button>
                           )}
                           {"\n"}
@@ -523,13 +502,11 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
                       onKeyDown={(e) => {
                         if (e.key === "Enter") sendSerial();
                       }}
-                      placeholder="Enviar línea al dispositivo…"
+                      placeholder={t("sendPh")}
                       className="flex-1"
                     />
                     <Button type="button" variant="ghost" onClick={sendSerial}>
-                      <Send />
-                      Enviar
-                    </Button>
+                      <Send />{t("send")}</Button>
                   </div>
                 )}
               </section>
