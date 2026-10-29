@@ -1,6 +1,11 @@
 /* tslint:disable */
 /* eslint-disable */
 
+/**
+ * Máximo de scroll del historial calculado con el layout real del renderer.
+ */
+export function osui_chat_scroll_max(state_json: string): number;
+
 export function osui_frame_len(): number;
 
 export function osui_hit(state_json: string, view_json: string, px: number, py: number): string;
@@ -13,6 +18,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly osui_chat_scroll_max: (a: number, b: number) => number;
     readonly osui_frame_len: () => number;
     readonly osui_hit: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly osui_render: (a: number, b: number, c: number, d: number, e: bigint, f: number, g: number, h: number, i: number) => [number, number];

@@ -20,8 +20,8 @@ a través de `API_GATEWAY_URL`.
   `/panel/*`: primero reglas de auth, luego negociación next-intl).
 - Tema: landing, auth y `/panel` usan el sistema cálido claro
   (`.theme-light` en `globals.css`; `:root` oscuro queda solo como base).
-  Excepciones oscuras intencionales: pantalla AMOLED, consola serial y
-  loader 3D usa fondo piedra `#F2EBE0` con dispositivo grafito.
+  El fondo del `/panel`, incluido el lienzo 3D y su loader, es blanco como el
+  navbar. Excepciones oscuras intencionales: pantalla AMOLED y consola serial.
 - El IdP real es `api` (`/api/auth/register|login|logout|me`, tokens opacos
   con TTL 7 días, anti-bruteforce 5 fallos/min). **Auth.js no crea sesiones
   paralelas**: el Credentials provider (`auth.ts`) hace login contra
@@ -59,7 +59,9 @@ dapp/
 │   │                               (logout revoca el token en api)
 │   └── api/
 │       ├── auth/[...nextauth]/route.ts — handlers de Auth.js v5
+│       ├── apps/route.ts          — catálogo DApps + proxy de instalación a api
 │       ├── account/context|chain|llm|services|connected-wallets/route.ts — proxies del panel
+│       ├── account/x402/summary|invoices + tool-usage/route.ts — métricas por entorno
 │       ├── account/devices/route.ts — flota de la cuenta (GET /devices)
 │       ├── account/devices/claim/route.ts — emparejado del modal Flota
 │       │                               (wallet operativa, red, LLM, dapps x402)
@@ -74,7 +76,7 @@ dapp/
 ├── components/
 │   ├── AuthForm.tsx              — tabs login/registro (useActionState)
 │   ├── panel/TopbarTools.tsx     — botones "Wallet · Red", "Modelos",
-│   │                               "Servicios" y "Flota" + modales de cuenta
+│   │                               "DApps" y "Flota" + modales de cuenta
 │   ├── panel/FleetModal.tsx      — NomikOS Fase 2: flota, emparejado (claim
 │   │                               code) e instalador (Web Serial + consola
 │   │                               con autodetección de claim codes; flash
@@ -158,6 +160,12 @@ nunca ve el token):
     `/api/account/connected-wallets`). Se pueden agregar **varias; solo
     una queda en uso** (`is_active`, invariante server-side) con botón
     "Usar" para cambiarla.
+- **Resumen de cuenta** (`components/panel/Dashboard.tsx`): las pestañas de
+  producción y sandbox consultan métricas separadas al API. Producción solo
+  incluye facturas, payouts y wallets dPaaS etiquetados mainnet. El inventario
+  global de tools queda separado del contador de ejecuciones reales por app.
+  El uso de tokens suma los contadores `usage` reportados por cada completion
+  del proveedor y consulta `GET /api/account/llm-usage` por entorno.
 - **🤖 Modelos** (ModelsModal): proveedor LLM de la cuenta (NVIDIA NIM /
   OpenAI / Meta Llama API / Llama Stack local / personalizado OpenAI-compat),
   API key y modelo. "Cargar modelos" valida la key en vivo

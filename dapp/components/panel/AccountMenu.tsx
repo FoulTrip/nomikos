@@ -2,11 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useLocale, useTranslations } from "next-intl";
-import { Check, LogOut, Settings } from "lucide-react";
+import { useTranslations } from "next-intl";
+import { BookOpen, LogOut, Settings } from "lucide-react";
 import { logoutAction } from "@/app/actions/auth";
-import { savePreferencesAction } from "@/app/actions/preferences";
 
 export default function AccountMenu({
   email,
@@ -16,10 +14,7 @@ export default function AccountMenu({
   accountId?: string | null;
 }) {
   const t = useTranslations("panel.account");
-  const locale = useLocale();
-  const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [switching, setSwitching] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -37,17 +32,6 @@ export default function AccountMenu({
       document.removeEventListener("keydown", onKey);
     };
   }, [open ]);
-
-  const switchLocale = async (next: string) => {
-    if (next === locale || switching) return;
-    setSwitching(true);
-    const res = await savePreferencesAction({ locale: next });
-    setSwitching(false);
-    if (res.ok) {
-      setOpen(false);
-      router.refresh();
-    }
-  };
 
   return (
     <div ref={ref} className="relative">
@@ -76,28 +60,15 @@ export default function AccountMenu({
             <Settings className="size-4 text-muted-foreground" />
             {t("prefs")}
           </Link>
-          <div className="flex items-center justify-between gap-2 rounded-sm px-2 py-1.5">
-            <span className="text-sm text-muted-foreground">{t("language")}</span>
-            <span className="flex gap-1">
-              {(["es", "en"] as const).map((code) => (
-                <button
-                  key={code}
-                  type="button"
-                  disabled={switching}
-                  onClick={() => void switchLocale(code)}
-                  aria-pressed={locale === code}
-                  className={`flex cursor-pointer items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold uppercase transition-colors ${
-                    locale === code
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                  }`}
-                >
-                  {locale === code && <Check className="size-3" />}
-                  {code}
-                </button>
-              ))}
-            </span>
-          </div>
+          <Link
+            href="/panel/docs"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
+          >
+            <BookOpen className="size-4 text-muted-foreground" />
+            {t("docs")}
+          </Link>
           <form action={logoutAction}>
             <button
               type="submit"

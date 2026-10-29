@@ -4,7 +4,10 @@
 use embedded_graphics::{
     geometry::{AngleUnit, Point},
     pixelcolor::Rgb888,
-    primitives::{Arc, Circle, Line, Polyline, Primitive, PrimitiveStyle, Rectangle, Triangle},
+    primitives::{
+        Arc, Circle, Line, Polyline, Primitive, PrimitiveStyle, Rectangle, RoundedRectangle,
+        Triangle,
+    },
     Drawable,
 };
 
@@ -98,20 +101,30 @@ pub fn lock(frame: &mut Frame, p: &Palette, cx: i32, cy: i32, s: i32) {
     .draw(frame)
     .ok();
     // arco del candado (semicírculo superior)
-    Arc::with_center(Point::new(cx, cy + 2), (w - 4).max(4) as u32, 180.0.deg(), 180.0.deg())
-        .into_styled(edge(p.gold, 3))
-        .draw(frame)
-        .ok();
+    Arc::with_center(
+        Point::new(cx, cy + 2),
+        (w - 4).max(4) as u32,
+        180.0.deg(),
+        180.0.deg(),
+    )
+    .into_styled(edge(p.gold, 3))
+    .draw(frame)
+    .ok();
 }
 
 /// Wifi: 3 arcos + punto (grados sexagesimales EG).
 pub fn wifi(frame: &mut Frame, color: Rgb888, cx: i32, cy: i32, s: i32) {
     for r in [4, 7, 10] {
         let rr = r * s / 10;
-        Arc::with_center(Point::new(cx, cy), (rr * 2).max(2) as u32, 220.0.deg(), 100.0.deg())
-            .into_styled(edge(color, 2))
-            .draw(frame)
-            .ok();
+        Arc::with_center(
+            Point::new(cx, cy),
+            (rr * 2).max(2) as u32,
+            220.0.deg(),
+            100.0.deg(),
+        )
+        .into_styled(edge(color, 2))
+        .draw(frame)
+        .ok();
     }
     Circle::with_center(Point::new(cx, cy), 4)
         .into_styled(fill(color))
@@ -154,3 +167,55 @@ pub fn tri_down(frame: &mut Frame, color: Rgb888, cx: i32, cy: i32, s: i32) {
     .ok();
 }
 
+/// X: dos trazos cruzados (cerrar el historial del chat).
+pub fn x_mark(frame: &mut Frame, color: Rgb888, cx: i32, cy: i32, s: i32) {
+    let d = s / 2;
+    Line::new(Point::new(cx - d, cy - d), Point::new(cx + d, cy + d))
+        .into_styled(edge(color, 3))
+        .draw(frame)
+        .ok();
+    Line::new(Point::new(cx + d, cy - d), Point::new(cx - d, cy + d))
+        .into_styled(edge(color, 3))
+        .draw(frame)
+        .ok();
+}
+
+/// Burbuja de chat: rectángulo + cola abajo a la izquierda.
+pub fn chat_bubble(frame: &mut Frame, p: &Palette, cx: i32, cy: i32, s: i32) {
+    let w = s;
+    let h = s * 4 / 5;
+    let x = cx - w / 2;
+    let y = cy - h / 2;
+    let corner = ((s / 3).max(2)) as u32;
+    RoundedRectangle::with_equal_corners(
+        Rectangle::new(
+            Point::new(x, y),
+            embedded_graphics::geometry::Size::new(w as u32, h as u32),
+        ),
+        embedded_graphics::geometry::Size::new(corner, corner),
+    )
+    .into_styled(fill(p.gold))
+    .draw(frame)
+    .ok();
+    // cola
+    Triangle::new(
+        Point::new(x + 2, y + h - 2),
+        Point::new(x + 2 + s / 2, y + h - 2),
+        Point::new(x + 2, y + h + s / 2),
+    )
+    .into_styled(fill(p.gold))
+    .draw(frame)
+    .ok();
+}
+
+/// Flecha de envío (triángulo a la derecha).
+pub fn send_arrow(frame: &mut Frame, color: Rgb888, cx: i32, cy: i32, s: i32) {
+    Triangle::new(
+        Point::new(cx - s / 2, cy - s / 2),
+        Point::new(cx + s / 2, cy),
+        Point::new(cx - s / 2, cy + s / 2),
+    )
+    .into_styled(fill(color))
+    .draw(frame)
+    .ok();
+}

@@ -1,6 +1,18 @@
 /* @ts-self-types="./os_ui.d.ts" */
 
 /**
+ * Máximo de scroll del historial calculado con el layout real del renderer.
+ * @param {string} state_json
+ * @returns {number}
+ */
+export function osui_chat_scroll_max(state_json) {
+    const ptr0 = passStringToWasm0(state_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.osui_chat_scroll_max(ptr0, len0);
+    return ret >>> 0;
+}
+
+/**
  * @returns {number}
  */
 export function osui_frame_len() {

@@ -1,5 +1,5 @@
 export interface AIProviderInfo {
-  id: "nvidia" | "meta" | "custom";
+  id: string; // ABIERTO: cualquier proveedor OpenAI-compatible
   label: string;
   baseUrl: string;
   models: string[];
@@ -33,6 +33,14 @@ export const AI_PROVIDERS: Record<string, AIProviderInfo> = {
     envKey: "META_LLAMA_API_KEY",
     docs: "https://www.llama.com/llama-api",
   },
+  baseten: {
+    id: "baseten",
+    label: "Baseten",
+    baseUrl: "https://inference.baseten.co/v1",
+    models: ["meta-models/muse-spark-open-1026"],
+    envKey: "BASETEN_API_KEY",
+    docs: "https://baseten.co",
+  },
   custom: {
     id: "custom",
     label: "Personalizado (OpenAI-compatible)",
@@ -44,14 +52,14 @@ export const AI_PROVIDERS: Record<string, AIProviderInfo> = {
 };
 
 export interface ResolvedAIConfig {
-  provider: "nvidia" | "meta" | "custom";
+  provider: string;
   baseUrl: string;
   model: string;
   apiKey: string;
 }
 
 // Resolve from env (server) — si la key está puesta, retorna la config; si no, null.
-export function resolveFromEnv(provider: "nvidia" | "meta" | "custom"): ResolvedAIConfig | null {
+export function resolveFromEnv(provider: string): ResolvedAIConfig | null {
   const info = AI_PROVIDERS[provider];
   if (!info) return null;
   const key = process.env[info.envKey];
@@ -66,13 +74,13 @@ export function resolveFromEnv(provider: "nvidia" | "meta" | "custom"): Resolved
 
 // Resolve from client-provided config (localStorage; used when UI sets custom values)
 export function resolveFromClient(raw: {
-  provider?: "nvidia" | "meta" | "custom";
+  provider?: string;
   baseUrl?: string;
   model?: string;
   apiKey?: string;
 } | undefined): ResolvedAIConfig | null {
   if (!raw) return null;
-  const p = raw.provider ?? "nvidia";
+  const p = (raw.provider ?? "nvidia").toString();
   const info = AI_PROVIDERS[p];
   if (!info) return null;
   const baseUrl = (raw.baseUrl && raw.baseUrl.trim()) || info.baseUrl;
@@ -109,6 +117,6 @@ export async function chatWithProvider(cfg: ResolvedAIConfig, messages: any[]): 
 
 // -----------------------------------------------------------------
 // utils de selección para el panel UI
-export function listProviderModels(provider: "nvidia" | "meta" | "custom"): string[] {
+export function listProviderModels(provider: string): string[] {
   return (AI_PROVIDERS[provider]?.models ?? []);
 }

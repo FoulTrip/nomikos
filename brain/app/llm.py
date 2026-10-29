@@ -23,6 +23,7 @@ from openai import AsyncOpenAI
 from .config import settings
 from .context import AccountContext
 from .tools import RunEvents, ToolResult, execute_tool, tools_openai_schemas
+from .artifacts import artifact_from_tool
 from . import legal as legal_gate
 
 log = logging.getLogger("agent-brain.llm")
@@ -66,10 +67,36 @@ class AgentRun:
     model: str = ""
     error: str = ""
     x402_events: list[dict] = field(default_factory=list)
+    usage_events: list[dict[str, int]] = field(default_factory=list)
+    artifacts: list[dict] = field(default_factory=list)
 
 
 class LLMNotConfigured(Exception):
     """La cuenta no tiene proveedor LLM activo (o no hay cuenta)."""
+
+
+def _capture_usage(run: AgentRun, completion) -> None:
+    """Guarda solo contadores que el propio proveedor devolvió."""
+    usage = getattr(completion, "usage", None)
+    if usage is None:
+        return
+    prompt_tokens = getattr(usage, "prompt_tokens", None)
+    completion_tokens = getattr(usage, "completion_tokens", None)
+    total_tokens = getattr(usage, "total_tokens", None)
+    if prompt_tokens is None or completion_tokens is None:
+        return
+    prompt_tokens = int(prompt_tokens)
+    completion_tokens = int(completion_tokens)
+    if total_tokens is None:
+        total_tokens = prompt_tokens + completion_tokens
+    total_tokens = int(total_tokens)
+    if prompt_tokens < 0 or completion_tokens < 0 or total_tokens <= 0:
+        return
+    run.usage_events.append({
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+    })
 
 
 async def _resolve_backend(ctx: AccountContext | None) -> tuple[AsyncOpenAI, str, str]:
@@ -159,6 +186,7 @@ async def run_agent(
                 tools=schemas,
                 temperature=0.3,
             )
+            _capture_usage(run, completion)
             choice = completion.choices[0]
             msg = choice.message
 
@@ -228,6 +256,10 @@ async def run_agent(
                         False, None,
                         f"error ejecutando {tc.function.name}: {e}",
                     )
+                if result.ok:
+                    artifact = artifact_from_tool(tc.function.name, result.data, result.x402)
+                    if artifact:
+                        run.artifacts = [artifact]
                 messages.append(
                     {
                         "role": "tool",
@@ -245,6 +277,7 @@ async def run_agent(
         completion = await client.chat.completions.create(
             model=model, messages=messages, temperature=0.3
         )
+        _capture_usage(run, completion)
         run.reply = (completion.choices[0].message.content or "").strip()
         run.x402_events = events.x402
         return run

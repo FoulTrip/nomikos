@@ -24,6 +24,8 @@ api/src/
     │                  middleware x402_gate (402 reactivo), settle_access
     │                  (one-shot), dPaaS (resolve_payer, check_limits,
     │                  pay_invoice delegado, handlers /me/x402/*)
+    ├── apps.rs     — catálogo global de DApps en SQLite, búsqueda por
+    │                  slug/nombre/descripción e instalación
     ├── solana.rs    — SolanaClient (JSON-RPC), wallets CLI, transferencia
     │                  firmada (ed25519, transfer_lamports_with_kp)
     ├── device.rs    — ficha técnica + modelo 3D 100% desde R2 (sin fallback)
@@ -46,6 +48,9 @@ api/src/
 | `sessions` | `token_hash` (sha256 del token opaco), account_id, expires_at · **columna `device_id`**: un token de DISPOSITIVO es una sesión ligada a un device (TTL 30 días) |
 | `login_attempts` | email, at, ok (anti-bruteforce 5/min) |
 | `x402_invoices` | id, resource, amount, payee, status(pending/verifying/settled/failed), tx_signature, **account_id**, **consumed_at** (one-shot) |
+| `x402_payouts` | pagos salientes con **execution_environment + network** capturados al encolarse; el settlement usa el wallet de esa red |
+| `app_tool_calls` | ejecución de tools instaladas (app/tool, método/ruta, factura, **entorno + red + dispositivo**); backfill desde facturas x402 consumidas |
+| `llm_usage_events` | tokens prompt/completion que el proveedor reporta por llamada, **proveedor/modelo + entorno + red + dispositivo**; no guarda prompts ni respuestas |
 | `x402_payouts` | id, to, amount, status(queued/sent/confirmed/failed), **account_id**, attempts, error |
 | `service_status` / `device` / `device_specs` | navbar (ERP/Solana), ficha técnica |
 
@@ -72,9 +77,10 @@ api/src/
 |---|---|
 | Auth | `POST /auth/register` (201/409/400) · `POST /auth/login` (token Bearer; 401; 429 tras 5 fallos) · `POST /auth/logout` · `GET /auth/me` |
 | Cuenta | `PUT /accounts/me/llm` (upsert UN proveedor: api_key AEAD, base_url, models, default_model; el primero auto-activa) · `POST /accounts/me/llm/active {provider?, model?}` (elige el ÚNICO activo) · `DELETE /accounts/me/llm?provider=X` (borra ese; sin activo el agente exige configurar — sin fallback global) · `GET/POST /devices/me/llm[/active]` (el device SOLO lista/elige de su cuenta, sin secretos) · `PUT /accounts/me/chain` (network + **active_wallet_label** tri-state: label/null/ausente; cambiar de red auto-crea SU dPaaS) · `POST /accounts/me/chain/keypair/import` (ROTA la wallet de la red activa; acepta array o string) · `POST /accounts/me/chain/keypair/generate` (relleno si falta; 409 si existe — el registro ya genera devnet+mainnet solas) · `GET /accounts/me/context` (resolución completa para brain, incluye active_wallet_pubkey + `chain.wallets[]` por red para fondear) · `GET/POST /accounts/me/wallets` · `GET/POST /accounts/me/connected-wallets` (Phantom/MetaMask/… — solo pubkeys; conectar la marca como en uso, `PUT …/connected-wallets/activate {label}` cambia cuál) · `GET/POST /accounts/me/services` (catálogo de dapps x402 + alta que persiste cuenta→servicio→x402 con snapshot dPaaS; 201/409/400) |
-| dPaaS | `GET /accounts/me/x402/summary` · `GET /accounts/me/x402/invoices` · `POST /accounts/me/x402/pay` · `POST /accounts/me/x402/pay-invoice` |
+| dPaaS y métricas | `GET /accounts/me/x402/summary[?environment=production|sandbox]` · `GET /accounts/me/x402/invoices[?environment=production|sandbox]` · `GET /accounts/me/tool-usage[?environment=production|sandbox]` · `GET /accounts/me/llm-usage[?environment=production|sandbox]` · Brain registra contadores reales en `POST /accounts/me/llm-usage`; el API asigna entorno desde el Bearer · `POST /accounts/me/x402/pay` · `POST /accounts/me/x402/pay-invoice` |
 | Flota (NomikOS) | `POST /devices/enroll` (placa sin auth → claim_code 15 min + enroll_secret) · `POST /devices/claim {code}` (Bearer cuenta, atómico) · `POST /devices/token` (la placa sondea con enroll_secret → Bearer de dispositivo, 202 antes del claim) · `GET /devices/me` + `POST /devices/me/heartbeat` (token de dispositivo) · `GET /devices` (flota de la cuenta) · `PUT /devices/{id}/limits` (dPaaS por device) · facturas x402 con `device_id` |
 | Llamadas (NomikOS F5) | `POST /calls` (sin X-Payment → crea ringing + peaje del min 0 → **402**; con X-Payment settled → consume el minuto one-shot, pasa a `active` y emite el peaje del SIGUIENTE en la respuesta — cadencia un POST/min, precio `X402_CALL_LAMPORTS`) · `GET /calls/{id}` · `POST /calls/{id}/end` · brain tools `place_call`/`end_call` (guarded_call paga y reintenta solo) |
+| Catálogo DApps | `GET /apps` · `GET /apps?q=...` (búsqueda en tabla global `apps` por slug, nombre y descripción) · `GET /apps/{slug}` · `POST /apps/{slug}/install` |
 | Voz (diagram.d2: User→Worker "Voz/texto") | `POST /voice {text}` (Bearer cuenta o **device**) → el worker pasa el turno al orquestador (`BRAIN_URL/v1/agentic-gateway`) con la MISMA identidad; la respuesta vuelve a la placa para el TTS. El turno es gratis: los peajes están en lo que el AGENTE pide (ver abajo). En la Pi: mic→whisper.cpp→aquí; respuesta→piper→altavoz |
 | Faucet Devnet (W6 — settlement real) | `GET /api/dev/faucet` → estado del treasury `{network, treasury_pubkey, treasury_balance_lamports, lamports_per_drip}` · `POST /api/dev/faucet` (Bearer cuenta, chain **devnet**) → transfiere `FAUCET_LAMPORTS` (default 0.05 SOL) del treasury a la wallet dPaaS de la cuenta — tx real; cooldown 10 s; `FAUCET_ENABLED=0` → 404 oculto. Treasury: `scripts/faucet/nomikos-treasury.json` (SOLO devnet) + `faucet.sh {status\|pubkey\|balance\|fund [N]\|drip <pub>}` |
 | Puente baresip (W4) | `GET /api/calls/for-device` (Bearer de **dispositivo**) → la llamada en curso de la placa, respuesta PLANA para el firmware no_std: `{has_call:"true"/"false", call_id, call_status, call_destination, minutes_paid}`. La Pi marca con `active` y cuelga cuando desaparece (`AGENTD_SIP=1` en agentd → baresip pipe mode) |

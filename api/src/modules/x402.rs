@@ -13,7 +13,7 @@ use crate::db::{new_id, now_ms};
 use crate::error::{AppError, AppResult};
 use crate::modules::solana::{self, SolanaClient};
 use crate::state::SharedState;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -45,13 +45,17 @@ pub struct Invoice {
     /// NomikOS Fase 1 — dispositivo que provocó el peaje (si el Bearer
     /// era un token de dispositivo).
     pub device_id: Option<String>,
+    /// Ámbito de ejecución y red usados al crear la factura. Producción solo
+    /// puede corresponder a mainnet; el simulador siempre queda en sandbox.
+    pub execution_environment: String,
+    pub network: String,
     /// Cómo pagar esta factura (texto).
     pub pay_hint: String,
 }
 
 const INVOICE_COLS: &str =
     "id, resource, amount_lamports, payee, status, tx_signature, confirmation_status, \
-     created_at, updated_at, account_id, consumed_at, device_id";
+     created_at, updated_at, account_id, consumed_at, device_id, execution_environment, network";
 
 fn row_to_invoice(r: &rusqlite::Row<'_>) -> rusqlite::Result<Invoice> {
     Ok(Invoice {
@@ -67,6 +71,12 @@ fn row_to_invoice(r: &rusqlite::Row<'_>) -> rusqlite::Result<Invoice> {
         account_id: r.get(9)?,
         consumed_at: r.get(10)?,
         device_id: r.get(11)?,
+        execution_environment: r
+            .get::<_, Option<String>>(12)?
+            .unwrap_or_else(|| "sandbox".into()),
+        network: r
+            .get::<_, Option<String>>(13)?
+            .unwrap_or_else(|| "devnet".into()),
         pay_hint: String::new(),
     })
 }
@@ -95,11 +105,13 @@ pub struct Payout {
     pub updated_at: i64,
     /// Cuenta que firma el pago (dPaaS); "system" = keypair global.
     pub account_id: String,
+    pub execution_environment: String,
+    pub network: String,
 }
 
 const PAYOUT_COLS: &str =
     "id, to_wallet, amount_lamports, memo, status, tx_signature, attempts, error, \
-     created_at, updated_at, account_id";
+     created_at, updated_at, account_id, execution_environment, network";
 
 fn row_to_payout(r: &rusqlite::Row<'_>) -> rusqlite::Result<Payout> {
     Ok(Payout {
@@ -114,6 +126,12 @@ fn row_to_payout(r: &rusqlite::Row<'_>) -> rusqlite::Result<Payout> {
         created_at: r.get(8)?,
         updated_at: r.get(9)?,
         account_id: r.get(10)?,
+        execution_environment: r
+            .get::<_, Option<String>>(11)?
+            .unwrap_or_else(|| "sandbox".into()),
+        network: r
+            .get::<_, Option<String>>(12)?
+            .unwrap_or_else(|| "devnet".into()),
     })
 }
 
@@ -140,6 +158,23 @@ fn load_invoice(state: &SharedState, id: &str) -> AppResult<Invoice> {
     Ok(invoice_with_hint(inv, &state.cfg.device_name))
 }
 
+pub fn invoice_for_app_usage(
+    state: &SharedState,
+    id: &str,
+) -> Option<(String, Option<String>, String, String)> {
+    state
+        .db
+        .with(|c| {
+            c.query_row(
+                "SELECT account_id, device_id, execution_environment, network \
+             FROM x402_invoices WHERE id = ?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+        })
+        .ok()
+}
+
 fn invoice_value_of(state: &SharedState, inv: Invoice) -> Value {
     let with_hint = invoice_with_hint(inv, &state.cfg.device_name);
     serde_json::to_value(with_hint).unwrap_or(Value::Null)
@@ -153,7 +188,13 @@ fn invoice_state_of(state: &SharedState, id: &str) -> Option<(String, Option<Str
             c.query_row(
                 "SELECT status, tx_signature, verify_attempts FROM x402_invoices WHERE id = ?1",
                 params![id],
-                |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, i64>(2)?)),
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, Option<String>>(1)?,
+                        r.get::<_, i64>(2)?,
+                    ))
+                },
             )
         })
         .ok()
@@ -195,13 +236,22 @@ fn list_payouts(state: &SharedState, status: &str) -> Vec<Payout> {
 
 async fn client_for(state: &SharedState) -> AppResult<SolanaClient> {
     let url = state.cfg.solana_url().cloned().ok_or_else(|| {
-        AppError::unavailable(format!("SOLANA_NETWORK «{}» desconocida", state.cfg.solana_network))
+        AppError::unavailable(format!(
+            "SOLANA_NETWORK «{}» desconocida",
+            state.cfg.solana_network
+        ))
     })?;
     Ok(SolanaClient::new(state.http.clone(), url))
 }
 
 fn default_payee(state: &SharedState) -> Option<String> {
-    if let Some(p) = state.cfg.x402_payee.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+    if let Some(p) = state
+        .cfg
+        .x402_payee
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+    {
         return Some(p.to_string());
     }
     solana::resolve_wallet(&state.cfg)
@@ -244,6 +294,8 @@ pub async fn create_invoice_value_for(
     account_id: Option<&str>,
     device_id: Option<&str>,
 ) -> AppResult<Value> {
+    let (execution_environment, network) =
+        execution_context(state, account_id.unwrap_or("system"), device_id);
     let body = NewInvoice {
         resource: resource.trim().to_string(),
         amount_lamports,
@@ -266,19 +318,82 @@ pub async fn create_invoice_value_for(
     state.db.with(|c| {
         c.execute(
             "INSERT INTO x402_invoices (id, resource, amount_lamports, payee, status, \
-             account_id, device_id, created_at, updated_at) \
-             VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?6, ?7, ?8)",
-            params![id, body.resource, body.amount_lamports, payee, body.account_id, device_id, now, now],
+             account_id, device_id, execution_environment, network, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?6, ?7, ?8, ?9, ?9)",
+            params![
+                id,
+                body.resource,
+                body.amount_lamports,
+                payee,
+                body.account_id,
+                device_id,
+                execution_environment,
+                network,
+                now
+            ],
         )?;
         Ok(())
     })?;
 
     let inv = load_invoice(state, &id)?;
     tracing::info!(
-        "x402 invoice {id}: {} lamports por «{}» (cuenta {})",
-        body.amount_lamports, body.resource, body.account_id
+        "x402 invoice {id}: {} lamports por «{}» (cuenta {}, {}, {})",
+        body.amount_lamports,
+        body.resource,
+        body.account_id,
+        execution_environment,
+        network
     );
     Ok(invoice_value_of(state, inv))
+}
+
+/// El entorno procede del contexto autenticado, no de una etiqueta del
+/// navegador. El dispositivo del simulador queda en sandbox/devnet; para las
+/// sesiones de cuenta la red mainnet identifica producción.
+pub(crate) fn execution_context(
+    state: &SharedState,
+    account_id: &str,
+    device_id: Option<&str>,
+) -> (String, String) {
+    let active_network = if account_id == "system" {
+        state.cfg.solana_network.clone()
+    } else {
+        state
+            .db
+            .with(|c| {
+                c.query_row(
+                    "SELECT network FROM account_chain WHERE account_id = ?1",
+                    params![account_id],
+                    |r| r.get::<_, String>(0),
+                )
+            })
+            .unwrap_or_else(|_| "devnet".into())
+    };
+    let is_simulator = device_id
+        .and_then(|id| {
+            state
+                .db
+                .with(|c| {
+                    c.query_row(
+                        "SELECT 1 FROM devices d WHERE d.id = ?1 AND d.account_id = ?2 \
+             AND d.board = 'esp32-s3-amoled-143' AND d.execution_environment = 'sandbox' \
+             AND EXISTS (SELECT 1 FROM simulation_states ss \
+                 WHERE ss.account_id = d.account_id \
+                   AND json_extract(ss.state, '$.device_id') = d.id)",
+                        params![id, account_id],
+                        |_| Ok(()),
+                    )
+                })
+                .ok()
+        })
+        .is_some();
+    if is_simulator {
+        ("sandbox".into(), "devnet".into())
+    } else if active_network == "mainnet" {
+        ("production".into(), active_network)
+    } else {
+        ("sandbox".into(), active_network)
+    }
 }
 
 /// Handlers HTTP ------------------------------------------------------------
@@ -396,13 +511,16 @@ async fn attempt_verify(state: &SharedState, id: &str) -> Option<Value> {
         }
         Ok(None) => {
             let n = attempts + 1;
-            state.db.with(|c| {
-                c.execute(
+            state
+                .db
+                .with(|c| {
+                    c.execute(
                     "UPDATE x402_invoices SET verify_attempts = ?1, updated_at = ?2 WHERE id = ?3",
                     params![n, now_ms(), id],
                 )?;
-                Ok(())
-            }).ok()?;
+                    Ok(())
+                })
+                .ok()?;
             if n >= state.cfg.x402_max_verify_attempts.max(1) as i64 {
                 mark_invoice(state, id, "failed", Some("sin confirmación on-chain"));
                 Some(invoice_value_of(state, load_invoice(state, id).ok()?))
@@ -492,10 +610,62 @@ fn resolve_payer(state: &SharedState, account_id: &str) -> AppResult<Payer> {
         .accounts_master_key
         .ok_or_else(|| AppError::unavailable("ACCOUNTS_MASTER_KEY no configurada"))?;
     let raw = crypto::open(&mk, &enc).map_err(|e| AppError::internal(format!("dPaaS: {e}")))?;
-    let json = String::from_utf8(raw)
-        .map_err(|_| AppError::internal("dPaaS: keypair no es UTF-8"))?;
+    let json =
+        String::from_utf8(raw).map_err(|_| AppError::internal("dPaaS: keypair no es UTF-8"))?;
     let kp = crate::modules::accounts::parse_keypair_str(&json)?;
-    Ok(Payer::Account { network, keypair: kp })
+    Ok(Payer::Account {
+        network,
+        keypair: kp,
+    })
+}
+
+/// Resuelve la bóveda dPaaS para la red que quedó grabada en la factura o
+/// payout. Así cambiar la red activa no puede pagar una factura devnet con
+/// una wallet mainnet (ni al revés).
+fn resolve_payer_for_network(
+    state: &SharedState,
+    account_id: &str,
+    network: &str,
+) -> AppResult<Payer> {
+    if account_id == "system" {
+        return resolve_payer(state, account_id);
+    }
+    let enc = state
+        .db
+        .with(|c| {
+            c.query_row(
+                "SELECT payer_keypair_enc FROM account_chain_wallets \
+             WHERE account_id = ?1 AND network = ?2",
+                params![account_id, network],
+                |r| r.get::<_, String>(0),
+            )
+            .or_else(|_| {
+                c.query_row(
+                    "SELECT payer_keypair_enc FROM account_chain \
+                 WHERE account_id = ?1 AND network = ?2",
+                    params![account_id, network],
+                    |r| r.get::<_, Option<String>>(0),
+                )
+                .and_then(|v| v.ok_or(rusqlite::Error::QueryReturnedNoRows))
+            })
+        })
+        .map_err(|_| {
+            AppError::bad_request(format!(
+                "la cuenta no tiene wallet dPaaS configurada para {network}"
+            ))
+        })?;
+    let mk = state
+        .cfg
+        .accounts_master_key
+        .ok_or_else(|| AppError::unavailable("ACCOUNTS_MASTER_KEY no configurada"))?;
+    let raw = crypto::open(&mk, &enc).map_err(|e| AppError::internal(format!("dPaaS: {e}")))?;
+    let json =
+        String::from_utf8(raw).map_err(|_| AppError::internal("dPaaS: keypair no es UTF-8"))?;
+    let keypair = crate::modules::accounts::parse_keypair_str(&json)?;
+    Ok(Payer::Account {
+        network: network.into(),
+        keypair,
+    })
 }
 
 /// Cliente RPC para una red concreta (la de la cuenta o la global).
@@ -576,7 +746,16 @@ pub struct PayBody {
 /// `account_id`: "system" (keypair global) o una cuenta autenticada (dPaaS).
 pub async fn pay_value(state: &SharedState, body: PayBody, account_id: &str) -> AppResult<Value> {
     // El firmante debe existir ANTES de encolar (fallo rápido y claro).
-    resolve_payer(state, account_id)?;
+    let payer = resolve_payer(state, account_id)?;
+    let network = match &payer {
+        Payer::System => state.cfg.solana_network.clone(),
+        Payer::Account { network, .. } => network.clone(),
+    };
+    let execution_environment = if network == "mainnet" {
+        "production"
+    } else {
+        "sandbox"
+    };
     if body.to.trim().is_empty() {
         return Err(AppError::bad_request("to vacío"));
     }
@@ -590,8 +769,18 @@ pub async fn pay_value(state: &SharedState, body: PayBody, account_id: &str) -> 
     state.db.with(|c| {
         c.execute(
             "INSERT INTO x402_payouts (id, to_wallet, amount_lamports, memo, status, account_id, \
-             created_at, updated_at) VALUES (?1, ?2, ?3, ?4, 'queued', ?5, ?6, ?6)",
-            params![id, body.to.trim(), body.lamports, body.memo, account_id, now],
+             execution_environment, network, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, 'queued', ?5, ?6, ?7, ?8, ?8)",
+            params![
+                id,
+                body.to.trim(),
+                body.lamports,
+                body.memo,
+                account_id,
+                execution_environment,
+                network,
+                now
+            ],
         )?;
         Ok(())
     })?;
@@ -609,7 +798,8 @@ pub async fn pay_value(state: &SharedState, body: PayBody, account_id: &str) -> 
 
     tracing::info!(
         "x402 payout {id} encolado (cuenta {account_id}): {} lamports → {}",
-        body.lamports, body.to.trim()
+        body.lamports,
+        body.to.trim()
     );
     Ok(serde_json::to_value(payout)?)
 }
@@ -626,13 +816,7 @@ pub async fn pay_handler(
     Ok(Json(pay_value(&state, body, &account).await?).into_response())
 }
 
-fn payout_set(
-    state: &SharedState,
-    id: &str,
-    status: &str,
-    tx: Option<&str>,
-    error: Option<&str>,
-) {
+fn payout_set(state: &SharedState, id: &str, status: &str, tx: Option<&str>, error: Option<&str>) {
     let res = state.db.with(|c| {
         c.execute(
             "UPDATE x402_payouts SET status = ?1, tx_signature = COALESCE(?2, tx_signature), \
@@ -680,7 +864,7 @@ fn payout_attempt(state: &SharedState, id: &str, phase: &str, error: &str, max: 
 async fn advance_payouts(state: &SharedState) {
     for p in list_payouts(state, "queued") {
         // Resuelve el firmante por cuenta (paso «3. Pide firma» del diagrama).
-        let payer = match resolve_payer(state, &p.account_id) {
+        let payer = match resolve_payer_for_network(state, &p.account_id, &p.network) {
             Ok(p) => p,
             Err(e) => {
                 payout_attempt(state, &p.id, "resolve", &e.message, 3);
@@ -702,8 +886,13 @@ async fn advance_payouts(state: &SharedState) {
                     .await
             }
             Payer::Account { keypair, .. } => {
-                solana::transfer_lamports_with_kp(&client, keypair, &p.to_wallet, p.amount_lamports as u64)
-                    .await
+                solana::transfer_lamports_with_kp(
+                    &client,
+                    keypair,
+                    &p.to_wallet,
+                    p.amount_lamports as u64,
+                )
+                .await
             }
         };
 
@@ -712,7 +901,8 @@ async fn advance_payouts(state: &SharedState) {
                 payout_set(state, &p.id, "sent", Some(&sig), None);
                 tracing::info!(
                     "x402 payout {} enviada por {} → {sig} (esperando confirmación)",
-                    p.id, payer.account_label()
+                    p.id,
+                    payer.account_label()
                 );
             }
             Err(e) => {
@@ -722,14 +912,24 @@ async fn advance_payouts(state: &SharedState) {
     }
 
     for p in list_payouts(state, "sent") {
-        let Some(sig) = p.tx_signature.clone() else { continue };
+        let Some(sig) = p.tx_signature.clone() else {
+            continue;
+        };
         // Confirmar en la red del firmante de esa cuenta.
-        let Ok(payer) = resolve_payer(state, &p.account_id) else { continue };
-        let Ok(client) = client_for_payer(state, &payer).await else { continue };
+        let Ok(payer) = resolve_payer_for_network(state, &p.account_id, &p.network) else {
+            continue;
+        };
+        let Ok(client) = client_for_payer(state, &payer).await else {
+            continue;
+        };
         match client.get_signature_status(&sig).await {
             Ok(Some((true, _conf))) => {
                 payout_set(state, &p.id, "confirmed", None, None);
-                tracing::info!("x402 payout {} confirmado on-chain ({})", p.id, payer.account_label());
+                tracing::info!(
+                    "x402 payout {} confirmado on-chain ({})",
+                    p.id,
+                    payer.account_label()
+                );
             }
             Ok(Some((false, err))) => {
                 payout_set(state, &p.id, "failed", None, err.as_deref());
@@ -750,7 +950,11 @@ async fn advance_payouts(state: &SharedState) {
 
 /// Respuesta 402 estándar del gateway: invoice + WWW-Authenticate: X402.
 pub fn payment_required_response(invoice: Value, message: &str) -> Response {
-    let id = invoice.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let id = invoice
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
     let mut res = Json(json!({
         "ok": false,
         "error": message,
@@ -818,7 +1022,12 @@ pub fn verify_access(
                 &format!("factura X-Payment «{invoice_id}» no encontrada"),
             ));
         }
-        Err(e) => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("db: {e}"))),
+        Err(e) => {
+            return Err(error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("db: {e}"),
+            ))
+        }
     };
 
     // Ownership: el pagador solo puede usar facturas de SU cuenta.
@@ -844,7 +1053,10 @@ pub fn verify_access(
             Ok(i) => invoice_value_of(state, i),
             Err(e) => return Err(e.into_response()),
         };
-        return Err(payment_required_response(inv, "Pago aún no confirmado on-chain"));
+        return Err(payment_required_response(
+            inv,
+            "Pago aún no confirmado on-chain",
+        ));
     }
 
     Ok(())
@@ -914,7 +1126,15 @@ pub async fn protected(State(state): State<SharedState>, headers: HeaderMap) -> 
     }
 
     // Sin pago: factura nueva del recurso demo para esta cuenta.
-    match create_invoice_value_for(&state, "x402/protected-demo", 1_000, account.as_deref(), None).await {
+    match create_invoice_value_for(
+        &state,
+        "x402/protected-demo",
+        1_000,
+        account.as_deref(),
+        None,
+    )
+    .await
+    {
         Ok(invoice) => payment_required_response(
             invoice,
             "Payment Required (x402): paga el micro-peaje para acceder",
@@ -1005,13 +1225,18 @@ pub async fn pay_invoice_value(
 ) -> AppResult<Value> {
     let inv = load_invoice(state, invoice_id)?;
     if inv.account_id != account_id {
-        return Err(AppError::forbidden("factura de otra cuenta (no puedes pagarla)"));
+        return Err(AppError::forbidden(
+            "factura de otra cuenta (no puedes pagarla)",
+        ));
     }
     if inv.status == "settled" {
         return Ok(invoice_value_of(state, inv)); // ya pagada
     }
     if inv.status != "pending" && inv.status != "verifying" {
-        return Err(AppError::bad_request(format!("factura en estado no pagable: {}", inv.status)));
+        return Err(AppError::bad_request(format!(
+            "factura en estado no pagable: {}",
+            inv.status
+        )));
     }
 
     // Límites dPaaS antes de firmar.
@@ -1019,18 +1244,23 @@ pub async fn pay_invoice_value(
 
     if inv.status == "pending" {
         // «3. Pide firma» — el Gestor de Wallet de la CUENTA firma en background.
-        let payer = resolve_payer(state, account_id)?;
+        let payer = resolve_payer_for_network(state, account_id, &inv.network)?;
         let Payer::Account { keypair, network } = payer else {
             return Err(AppError::internal("dPaaS: firmante inesperado"));
         };
         let client = client_for_network(state, &network).await?;
-        let sig = solana::transfer_lamports_with_kp(&client, &keypair, &inv.payee, inv.amount_lamports as u64)
-            .await
-            .map_err(|e| {
-                AppError::bad_request(format!(
-                    "firma delegada falló (wallet de la cuenta sin fondos o RPC rechazó): {e}"
-                ))
-            })?;
+        let sig = solana::transfer_lamports_with_kp(
+            &client,
+            &keypair,
+            &inv.payee,
+            inv.amount_lamports as u64,
+        )
+        .await
+        .map_err(|e| {
+            AppError::bad_request(format!(
+                "firma delegada falló (wallet de la cuenta sin fondos o RPC rechazó): {e}"
+            ))
+        })?;
         tracing::info!("dPaaS: factura {invoice_id} firmada por la cuenta → {sig}");
         state.db.with(|c| {
             c.execute(
@@ -1075,19 +1305,25 @@ pub async fn me_x402_pay_handler(
 pub async fn me_x402_invoices_handler(
     State(state): State<SharedState>,
     auth: crate::modules::accounts::AuthedAccount,
+    Query(query): Query<EnvironmentQuery>,
 ) -> AppResult<Response> {
+    let environment = parse_environment(query.environment.as_deref())?;
+    let scope = invoice_scope_sql(environment, "");
     let rows: Vec<Invoice> = state
         .db
         .with(|c| {
             let mut stmt = c.prepare(&format!(
-                "SELECT {INVOICE_COLS} FROM x402_invoices WHERE account_id = ?1 \
+                "SELECT {INVOICE_COLS} FROM x402_invoices WHERE account_id = ?1{scope} \
                  ORDER BY created_at DESC LIMIT 100"
             ))?;
             let rows = stmt.query_map(params![auth.account_id], row_to_invoice)?;
             rows.collect()
         })
         .unwrap_or_default();
-    let invoices: Vec<Value> = rows.into_iter().map(|i| invoice_value_of(&state, i)).collect();
+    let invoices: Vec<Value> = rows
+        .into_iter()
+        .map(|i| invoice_value_of(&state, i))
+        .collect();
     Ok(Json(json!({ "ok": true, "invoices": invoices })).into_response())
 }
 
@@ -1096,12 +1332,15 @@ pub async fn me_x402_invoices_handler(
 pub async fn me_x402_summary_handler(
     State(state): State<SharedState>,
     auth: crate::modules::accounts::AuthedAccount,
+    Query(query): Query<EnvironmentQuery>,
 ) -> AppResult<Response> {
+    let environment = parse_environment(query.environment.as_deref())?;
+    let scope = invoice_scope_sql(environment, "");
     let invoices: Vec<Invoice> = state
         .db
         .with(|c| {
             let mut stmt = c.prepare(&format!(
-                "SELECT {INVOICE_COLS} FROM x402_invoices WHERE account_id = ?1"
+                "SELECT {INVOICE_COLS} FROM x402_invoices WHERE account_id = ?1{scope}"
             ))?;
             let rows = stmt.query_map(params![auth.account_id], row_to_invoice)?;
             rows.collect()
@@ -1117,16 +1356,19 @@ pub async fn me_x402_summary_handler(
         }
     }
 
+    let payout_scope = payout_scope_sql(environment, "");
     let payouts: Value = state
         .db
         .with(|c| {
-            let mut stmt = c.prepare(
+            let mut stmt = c.prepare(&format!(
                 "SELECT status, COUNT(*), COALESCE(SUM(amount_lamports), 0) \
-                 FROM x402_payouts WHERE account_id = ?1 GROUP BY status",
-            )?;
+                 FROM x402_payouts WHERE account_id = ?1{payout_scope} GROUP BY status"
+            ))?;
             let mut rows = stmt.query_map(params![auth.account_id], |r| {
-                Ok(json!({ "status": r.get::<_, String>(0)?, "count": r.get::<_, i64>(1)?,
-                           "lamports": r.get::<_, i64>(2)? }))
+                Ok(
+                    json!({ "status": r.get::<_, String>(0)?, "count": r.get::<_, i64>(1)?,
+                           "lamports": r.get::<_, i64>(2)? }),
+                )
             })?;
             let mut out = Vec::new();
             while let Some(row) = rows.next() {
@@ -1136,23 +1378,58 @@ pub async fn me_x402_summary_handler(
         })
         .unwrap_or(json!([]));
 
-    let (tx_limit, daily_limit, wallet, payee, network): (Option<i64>, Option<i64>, Option<String>, Option<String>, String) =
-        state
-            .db
-            .with(|c| {
-                c.query_row(
-                    "SELECT tx_limit_lamports, daily_limit_lamports, wallet_pubkey, payee, network \
+    let (tx_limit, daily_limit, active_network, payee): (
+        Option<i64>,
+        Option<i64>,
+        String,
+        Option<String>,
+    ) = state
+        .db
+        .with(|c| {
+            c.query_row(
+                "SELECT tx_limit_lamports, daily_limit_lamports, network, payee \
                      FROM account_chain WHERE account_id = ?1",
-                    params![auth.account_id],
-                    |r| {
-                        Ok((
-                            r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?,
-                            r.get::<_, Option<String>>(4)?.unwrap_or_else(|| "devnet".to_string()),
-                        ))
-                    },
+                params![auth.account_id],
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get::<_, Option<String>>(2)?
+                            .unwrap_or_else(|| "devnet".to_string()),
+                        r.get(3)?,
+                    ))
+                },
+            )
+        })
+        .unwrap_or((None, None, "devnet".to_string(), None));
+
+    // El ámbito producción resuelve exclusivamente la bóveda mainnet; sandbox
+    // no devuelve pubkeys de mainnet aunque esa sea la red activa de la cuenta.
+    let network = match environment {
+        Some("production") => "mainnet".to_string(),
+        Some("sandbox") if active_network == "mainnet" => "devnet".to_string(),
+        Some("sandbox") => active_network.clone(),
+        _ => active_network.clone(),
+    };
+    let wallet: Option<String> = state
+        .db
+        .with(|c| {
+            c.query_row(
+                "SELECT wallet_pubkey FROM account_chain_wallets \
+             WHERE account_id = ?1 AND network = ?2",
+                params![auth.account_id, network],
+                |r| r.get(0),
+            )
+            .or_else(|_| {
+                c.query_row(
+                    "SELECT wallet_pubkey FROM account_chain \
+                 WHERE account_id = ?1 AND network = ?2",
+                    params![auth.account_id, network],
+                    |r| r.get(0),
                 )
             })
-            .unwrap_or((None, None, None, None, "devnet".to_string()));
+        })
+        .ok();
 
     // Balance vivo de la wallet dPaaS (best-effort: null si el RPC falla).
     let balance_lamports: Option<i64> = match wallet.as_deref().filter(|w| !w.is_empty()) {
@@ -1165,6 +1442,16 @@ pub async fn me_x402_summary_handler(
 
     // Todas las dPaaS por red (para fondear) con balance vivo best-effort.
     let mut wallets = crate::modules::accounts::dpaas_wallets_list(&state, &auth.account_id);
+    if let Some(env) = environment {
+        wallets.retain(|w| {
+            let net = w["network"].as_str().unwrap_or_default();
+            if env == "production" {
+                net == "mainnet"
+            } else {
+                net != "mainnet"
+            }
+        });
+    }
     for w in wallets.iter_mut() {
         let net = w["network"].as_str().unwrap_or("devnet");
         let pk = w["wallet_pubkey"].as_str().unwrap_or_default();
@@ -1178,8 +1465,10 @@ pub async fn me_x402_summary_handler(
         .db
         .with(|c| {
             c.query_row(
-                "SELECT COALESCE(SUM(amount_lamports), 0) FROM x402_payouts \
-                 WHERE account_id = ?1 AND status != 'failed' AND created_at > ?2",
+                &format!(
+                    "SELECT COALESCE(SUM(amount_lamports), 0) FROM x402_payouts \
+                 WHERE account_id = ?1 AND status != 'failed' AND created_at > ?2{payout_scope}"
+                ),
                 params![auth.account_id, now_ms() - 86_400_000],
                 |r| r.get(0),
             )
@@ -1188,6 +1477,7 @@ pub async fn me_x402_summary_handler(
 
     Ok(Json(json!({
         "ok": true,
+        "environment": environment,
         "dpaas": {
             "wallet": wallet,
             "network": network,
@@ -1204,6 +1494,88 @@ pub async fn me_x402_summary_handler(
         "payouts_by_status": payouts,
     }))
     .into_response())
+}
+
+/// GET /api/accounts/me/tool-usage — llamadas reales a tools de aplicaciones,
+/// agrupadas por app/tool para el dashboard (separado del inventario global).
+pub async fn me_app_tool_usage_handler(
+    State(state): State<SharedState>,
+    auth: crate::modules::accounts::AuthedAccount,
+    Query(query): Query<EnvironmentQuery>,
+) -> AppResult<Response> {
+    let environment = parse_environment(query.environment.as_deref())?;
+    let scope = invoice_scope_sql(environment, "");
+    let rows: Vec<Value> = state.db.with(|c| {
+        let mut stmt = c.prepare(&format!(
+            "SELECT app_slug, tool_name, COUNT(*), MAX(created_at), device_id, \
+                    execution_environment, network \
+             FROM app_tool_calls WHERE account_id = ?1{scope} \
+             GROUP BY app_slug, tool_name, device_id, execution_environment, network \
+             ORDER BY app_slug, tool_name"
+        ))?;
+        let rows = stmt.query_map(params![auth.account_id], |r| {
+            Ok(json!({
+                "app": r.get::<_, String>(0)?,
+                "tool": r.get::<_, String>(1)?,
+                "uses": r.get::<_, i64>(2)?,
+                "last_used_at": r.get::<_, Option<i64>>(3)?,
+                "device_id": r.get::<_, Option<String>>(4)?,
+                "execution_environment": r.get::<_, Option<String>>(5)?,
+                "network": r.get::<_, Option<String>>(6)?,
+            }))
+        })?;
+        rows.collect()
+    })?;
+    let total: i64 = rows.iter().map(|r| r["uses"].as_i64().unwrap_or(0)).sum();
+    Ok(Json(json!({
+        "ok": true,
+        "environment": environment,
+        "total": total,
+        "usage": rows,
+    }))
+    .into_response())
+}
+
+#[derive(Deserialize)]
+pub struct EnvironmentQuery {
+    pub environment: Option<String>,
+}
+
+fn parse_environment(value: Option<&str>) -> AppResult<Option<&'static str>> {
+    match value.map(str::trim).filter(|v| !v.is_empty()) {
+        None => Ok(None),
+        Some("production" | "prod") => Ok(Some("production")),
+        Some("sandbox") => Ok(Some("sandbox")),
+        Some(other) => Err(AppError::bad_request(format!(
+            "environment inválido «{other}»: usa production o sandbox"
+        ))),
+    }
+}
+
+fn invoice_scope_sql(environment: Option<&str>, alias: &str) -> String {
+    let p = if alias.is_empty() { "" } else { alias };
+    match environment {
+        Some("production") => {
+            format!(" AND {p}execution_environment = 'production' AND {p}network = 'mainnet'")
+        }
+        Some("sandbox") => {
+            format!(" AND {p}execution_environment = 'sandbox' AND {p}network != 'mainnet'")
+        }
+        _ => String::new(),
+    }
+}
+
+fn payout_scope_sql(environment: Option<&str>, alias: &str) -> String {
+    let p = if alias.is_empty() { "" } else { alias };
+    match environment {
+        Some("production") => {
+            format!(" AND {p}execution_environment = 'production' AND {p}network = 'mainnet'")
+        }
+        Some("sandbox") => {
+            format!(" AND {p}execution_environment = 'sandbox' AND {p}network != 'mainnet'")
+        }
+        _ => String::new(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1225,9 +1597,8 @@ pub async fn summary_value(state: &SharedState) -> AppResult<Value> {
         .with(|c| {
             let mut stmt =
                 c.prepare("SELECT status, COUNT(*) FROM x402_payouts GROUP BY status")?;
-            let mut rows = stmt.query_map([], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
-            })?;
+            let mut rows =
+                stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
             let mut m = serde_json::Map::new();
             while let Some(row) = rows.next() {
                 let (status, n): (String, i64) = row?;
@@ -1262,7 +1633,8 @@ pub async fn settler_loop(state: SharedState) {
         let verifying: Vec<String> = state
             .db
             .with(|c| {
-                let mut stmt = c.prepare("SELECT id FROM x402_invoices WHERE status = 'verifying'")?;
+                let mut stmt =
+                    c.prepare("SELECT id FROM x402_invoices WHERE status = 'verifying'")?;
                 let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
                 rows.collect()
             })

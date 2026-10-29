@@ -2,10 +2,7 @@
 //! Coordenadas = las del canvas (x + baseline y). Negrita real donde
 //! existe variante B; si no, doble pasada (faux-bold).
 
-use embedded_graphics::{
-    geometry::Point,
-    pixelcolor::Rgb888,
-};
+use embedded_graphics::{geometry::Point, pixelcolor::Rgb888};
 use u8g2_fonts::{
     fonts::*,
     types::{FontColor, HorizontalAlignment, VerticalPosition},
@@ -163,12 +160,7 @@ pub fn text_auto(
 }
 
 /// Cuenta las líneas que `wrap_lines_at` pintaría (sin dibujar).
-pub fn wrap_count(
-    face: Face,
-    content: &str,
-    max_width: i32,
-    max_lines: usize,
-) -> usize {
+pub fn wrap_count(face: Face, content: &str, max_width: i32, max_lines: usize) -> usize {
     let mut words = [""; 64];
     let mut n_words = 0usize;
     for w in content.split(|c: char| c.is_whitespace()) {
@@ -290,6 +282,159 @@ pub fn wrap_lines_at(
         start = end.max(start + 1);
     }
     painted
+}
+
+/// Cuenta líneas de chat preservando saltos y cortando palabras largas.
+pub fn wrap_chat_count(face: Face, content: &str, max_width: i32, max_lines: usize) -> usize {
+    wrap_chat(face, content, |_| max_width, max_lines, |_, _| {})
+}
+
+/// Dibuja líneas de chat con ancho y ancla variables por renglón.
+/// Las palabras largas (como separadores de tablas Markdown) se parten por
+/// caracteres para que nunca desborden la viñeta.
+pub fn wrap_chat_lines_at<F>(
+    frame: &mut Frame,
+    face: Face,
+    color: Rgb888,
+    content: &str,
+    first_baseline: i32,
+    line_h: i32,
+    max_lines: usize,
+    align: HorizontalAlignment,
+    geometry_at: F,
+) -> usize
+where
+    F: Fn(i32) -> (i32, i32),
+{
+    wrap_chat(
+        face,
+        content,
+        |line| {
+            let baseline = first_baseline + line as i32 * line_h;
+            geometry_at(baseline).1
+        },
+        max_lines,
+        |line, index| {
+            let baseline = first_baseline + index as i32 * line_h;
+            let (x, _) = geometry_at(baseline);
+            text(frame, face, align, x, baseline, color, line);
+        },
+    )
+}
+
+fn wrap_chat<FWidth, FEmit>(
+    face: Face,
+    content: &str,
+    mut width_at: FWidth,
+    max_lines: usize,
+    mut emit: FEmit,
+) -> usize
+where
+    FWidth: FnMut(usize) -> i32,
+    FEmit: FnMut(&str, usize),
+{
+    if max_lines == 0 {
+        return 0;
+    }
+
+    let mut buf = [0u8; 256];
+    let mut len = 0usize;
+    let mut lines = 0usize;
+    let mut stopped = false;
+
+    for source_line in content.split('\n') {
+        if stopped {
+            break;
+        }
+        let mut has_word = false;
+        for word in source_line.split_whitespace() {
+            has_word = true;
+            let mut rest = word;
+            while !rest.is_empty() {
+                if lines >= max_lines {
+                    stopped = true;
+                    break;
+                }
+                let available = width_at(lines).max(1);
+                let current = core::str::from_utf8(&buf[..len]).unwrap_or("");
+                let current_width = text_width(face, current);
+                let space_width = if len > 0 { text_width(face, " ") } else { 0 };
+                let rest_width = text_width(face, rest);
+                let space_bytes = if len > 0 { 1 } else { 0 };
+
+                if current_width + space_width + rest_width <= available
+                    && len + space_bytes + rest.len() <= buf.len()
+                {
+                    if len > 0 {
+                        buf[len] = b' ';
+                        len += 1;
+                    }
+                    buf[len..len + rest.len()].copy_from_slice(rest.as_bytes());
+                    len += rest.len();
+                    break;
+                }
+
+                if len > 0 {
+                    let line = core::str::from_utf8(&buf[..len]).unwrap_or("");
+                    emit(line, lines);
+                    lines += 1;
+                    len = 0;
+                    continue;
+                }
+
+                let mut cut = 0usize;
+                for (start, ch) in rest.char_indices() {
+                    let end = start + ch.len_utf8();
+                    if end > buf.len() || text_width(face, &rest[..end]) > available {
+                        break;
+                    }
+                    cut = end;
+                }
+                if cut == 0 {
+                    cut = rest
+                        .chars()
+                        .next()
+                        .map(char::len_utf8)
+                        .unwrap_or(rest.len());
+                }
+                buf[..cut].copy_from_slice(&rest.as_bytes()[..cut]);
+                len = cut;
+                rest = &rest[cut..];
+                if !rest.is_empty() {
+                    let line = core::str::from_utf8(&buf[..len]).unwrap_or("");
+                    emit(line, lines);
+                    lines += 1;
+                    len = 0;
+                }
+            }
+            if stopped {
+                break;
+            }
+        }
+
+        if stopped {
+            break;
+        }
+        if len > 0 {
+            let line = core::str::from_utf8(&buf[..len]).unwrap_or("");
+            emit(line, lines);
+            lines += 1;
+            len = 0;
+        } else if !has_word {
+            emit("", lines);
+            lines += 1;
+        }
+        if lines >= max_lines {
+            stopped = true;
+        }
+    }
+
+    if len > 0 && lines < max_lines {
+        let line = core::str::from_utf8(&buf[..len]).unwrap_or("");
+        emit(line, lines);
+        lines += 1;
+    }
+    lines
 }
 
 /// Envuelve por palabras, centrado en `cx` (compat).

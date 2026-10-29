@@ -31,7 +31,7 @@ class ToolResult:
     def as_tool_message(self) -> str:
         payload = {"ok": self.ok}
         if self.ok:
-            payload["data"] = self.data
+            payload["data"] = _without_artifact_media(self.data)
         else:
             payload["error"] = self.error
         if self.x402:
@@ -39,6 +39,19 @@ class ToolResult:
         if self.verification:
             payload["verification"] = self.verification
         return json.dumps(payload, ensure_ascii=False, default=str)[:4000]
+
+
+def _without_artifact_media(value: Any) -> Any:
+    """No meter imágenes base64 en el prompt que se envía al proveedor LLM."""
+    if isinstance(value, dict):
+        return {
+            key: _without_artifact_media(item)
+            for key, item in value.items()
+            if key != "artifact_media"
+        }
+    if isinstance(value, list):
+        return [_without_artifact_media(item) for item in value]
+    return value
 
 
 @dataclass
@@ -141,14 +154,14 @@ async def _end_call(id: str, ctx=None, ev=None, **_: Any) -> ToolResult:
     )
 
 
-async def _app_request(path: str, method: str = "GET", body: dict | None = None, ctx=None, ev=None, **_: Any) -> ToolResult:
+async def _app_request(path: str, method: str = "GET", body: dict | None = None, tool_name: str = "app_request", ctx=None, ev=None, **_: Any) -> ToolResult:
     """NomikOS F5 (diagram.d2 paso 6): tool call a la APP del ecosistema
     — Payload CMS (colecciones: /api/users, /api/media, …). CADA petición
     cobra un micro-peaje x402 que la cuenta paga por dPaaS (402 → pago
     delegado → reintento automático con X-Payment)."""
     return await _call_api(
         "/app/request", method="POST",
-        body={"path": path, "method": method, "body": body},
+        body={"path": path, "method": method, "body": body, "tool_name": tool_name},
         ctx=ctx, events=ev,
     )
 

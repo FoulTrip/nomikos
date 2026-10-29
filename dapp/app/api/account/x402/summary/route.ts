@@ -6,6 +6,8 @@ import { forwardToApi } from "@/lib/account-proxy";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  return forwardToApi("/accounts/me/x402/summary", { method: "GET" });
+export async function GET(req: Request) {
+  const environment = new URL(req.url).searchParams.get("environment");
+  const query = environment ? `?environment=${encodeURIComponent(environment)}` : "";
+  return forwardToApi(`/accounts/me/x402/summary${query}`, { method: "GET" });
 }

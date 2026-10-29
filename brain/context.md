@@ -45,6 +45,13 @@ brain/
   → {ok, reply, tools_used, shield_in, shield_out, x402[], account, backend, model}
 ```
 
+Cada respuesta de completion se inspecciona por `usage.prompt_tokens`,
+`usage.completion_tokens` y `usage.total_tokens`. Brain envía esos contadores
+a `POST /accounts/me/llm-usage` con el Bearer original; API clasifica el
+registro a partir de la sesión (token de dispositivo = sandbox, cuenta en
+mainnet = producción). No se estiman tokens cuando el proveedor no reporta
+`usage`, y no se guardan prompts ni respuestas en el medidor.
+
 Backend observable en `backend`: `account:<provider>` (LLM ACTIVO de la
 cuenta, api_key de `account_llm_providers` desencriptada en `/me/context`).
 Ollama queda SOLO para shields Llama Guard (`GUARD_VIA_LLAMA_STACK=false`);
@@ -125,3 +132,9 @@ post-check (efectos sin pass → `ok:false` + `verification{}`) y refusal
 en contexto legal → auto-escalado. Respuesta añade `verification{run_id,
 status, verdict, omissions, score}` (aditivo; sin contexto legal = `{}`).
 No existe tool de checklist/verdict: el LLM no puede auto-verificarse.
+
+Las tools MCP dinámicas y `app_request` reenvían `tool_name` junto a app,
+método y ruta. El API registra ejecuciones exitosas junto a la factura,
+`execution_environment`, red y `device_id`. El token de la placa simulada
+identifica sandbox; el API determina el entorno desde la sesión y la red,
+nunca desde una etiqueta confiada al browser.

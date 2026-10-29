@@ -62,6 +62,23 @@ pub struct LastReply<'a> {
     pub reply: &'a str,
 }
 
+/// Resumen del artifact asociado a un turno. Los productos completos e
+/// imágenes quedan en la capa web; el núcleo solo dibuja el acceso visual.
+#[derive(Clone, Copy, Default)]
+pub struct ChatArtifact<'a> {
+    pub title: &'a str,
+    pub app: &'a str,
+    pub item_count: u32,
+}
+
+/// Un turno del historial de chat de la cuenta (lo mantiene el api).
+#[derive(Clone, Copy, Default)]
+pub struct ChatTurn<'a> {
+    pub text: &'a str,
+    pub reply: &'a str,
+    pub artifact: Option<ChatArtifact<'a>>,
+}
+
 #[derive(Clone, Copy, Default)]
 pub struct Qr<'a> {
     pub width: u32,
@@ -103,6 +120,9 @@ pub struct OsState<'a> {
     pub wallet: Wallet<'a>,
     pub last_x402: LastX402<'a>,
     pub last_reply: Option<LastReply<'a>>,
+    /// Historial completo de chat de la cuenta (turnos, del más antiguo
+    /// al más reciente): lo pinta la pantalla completa del chat.
+    pub chat: &'a [ChatTurn<'a>],
     pub qr: Option<Qr<'a>>,
     pub clock: Clock<'a>,
 }
@@ -130,6 +150,23 @@ pub struct ViewState<'a> {
     pub chat_heard: &'a str,
     /// ms desde que arrancó el turno (progreso de los pasos).
     pub chat_elapsed_ms: u64,
+    /// Pantalla completa del historial de chat (desliza desde la derecha).
+    pub chat_full: bool,
+    /// Progreso del deslizamiento 0..100 (0 = fuera, 100 = puesta).
+    pub chat_anim: u8,
+    /// Scroll vertical del historial (px desde el turno más antiguo).
+    pub chat_scroll: u32,
+    /// La barra inferior es un input para escribir al agente.
+    pub chat_compose: bool,
+    /// Texto que se está escribiendo (lo teclea el usuario).
+    pub chat_draft: &'a str,
+    /// Drawer lateral de historial de chat: se desliza de derecha a
+    /// izquierda mostrando TODOS los turnos de la cuenta, scrolleable.
+    pub chat_drawer: bool,
+    /// Progreso del drawer 0..100 (0 = cerrado a la derecha, 100 = abierto).
+    pub chat_drawer_anim: u8,
+    /// Scroll vertical del drawer (px desde el turno más antiguo).
+    pub chat_drawer_scroll: u32,
     /// ms para animaciones (ondas, pulso, boot).
     pub elapsed_ms: u64,
 }

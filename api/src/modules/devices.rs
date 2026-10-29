@@ -139,7 +139,7 @@ impl FromRequestParts<SharedState> for AuthedDevice {
 
 const DEVICE_COLS: &str =
     "id, account_id, name, board, pubkey, status, last_seen_at, agent_version, \
-     daily_limit_lamports, tx_limit_lamports, created_at";
+     daily_limit_lamports, tx_limit_lamports, created_at, execution_environment";
 
 fn row_to_device(r: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
     let last_seen: Option<i64> = r.get(6)?;
@@ -157,6 +157,9 @@ fn row_to_device(r: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
         "daily_limit_lamports": r.get::<_, Option<i64>>(8)?,
         "tx_limit_lamports": r.get::<_, Option<i64>>(9)?,
         "created_at": r.get::<_, i64>(10)?,
+        "execution_environment": r
+            .get::<_, Option<String>>(11)?
+            .unwrap_or_else(|| "production".into()),
     }))
 }
 

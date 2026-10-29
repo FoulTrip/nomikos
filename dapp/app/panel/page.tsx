@@ -4,13 +4,9 @@ import { getTranslations } from "next-intl/server";
 import DeviceViewer from "@/components/DeviceViewer";
 import TopbarTools from "@/components/panel/TopbarTools";
 import CanvasBoundary from "@/components/panel/CanvasBoundary";
-import SpecsCard from "@/components/panel/SpecsCard";
-import DiagnosisCard from "@/components/panel/DiagnosisCard";
-import ViewLockButton from "@/components/panel/ViewLockButton";
 import AccountMenu from "@/components/panel/AccountMenu";
 import SandboxSwitch from "@/components/panel/SandboxSwitch";
 import SandboxGate from "@/components/panel/SandboxGate";
-import DeviceSelect from "@/components/panel/DeviceSelect";
 import DeviceMicBridge from "@/components/panel/DeviceMicBridge";
 import AgentDock from "@/components/panel/AgentDock";
 
@@ -27,7 +23,7 @@ export default async function PanelPage() {
   // Next.js 16 es no confiar solo en el proxy (Server Actions incluidas).
   if (!session?.user?.email) redirect("/signin");
   const t = await getTranslations("panel.specs");
-  // i18n trae items como {label, value}; SpecsCard espera tuplas.
+  // i18n trae items como {label, value}; el dock espera tuplas.
   const specs = (t.raw("items") as { label: string; value: string }[]).map(
     (i) => [i.label, i.value] as [string, string],
   );
@@ -51,19 +47,13 @@ export default async function PanelPage() {
         {/* Boundary: R3F 9.8 + React 19 crashean al desmontar el Canvas
             (navegación login⇄panel) — ver components/panel/CanvasBoundary */}
         <DeviceMicBridge />
-        <AgentDock />
+        <AgentDock specs={specs} />
         <SandboxGate>
           <CanvasBoundary>
             <DeviceViewer />
           </CanvasBoundary>
         </SandboxGate>
 
-        <div className="absolute top-4 right-4 z-[5] flex w-64 flex-col gap-3 max-md:right-3 max-md:left-3 max-md:w-auto">
-          <DeviceSelect />
-          <ViewLockButton />
-          <SpecsCard specs={specs} />
-          <DiagnosisCard />
-        </div>
       </main>
     </div>
   );

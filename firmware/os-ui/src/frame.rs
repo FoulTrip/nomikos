@@ -1,6 +1,7 @@
 //! Framebuffer RGBA 466×466: el DrawTarget que el navegador
 //! convierte en textura 3D (y que la placa volcará al AMOLED).
 
+use crate::{CENTER, CLIP_R, PX};
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{OriginDimensions, Size},
@@ -8,7 +9,6 @@ use embedded_graphics::{
     primitives::Rectangle,
     Pixel,
 };
-use crate::{CLIP_R, CENTER, PX};
 
 pub const W: usize = PX as usize;
 pub const H: usize = PX as usize;
@@ -17,6 +17,18 @@ pub const LEN: usize = W * H * 4;
 /// Lienzo RGBA sobre un buffer prestado (el dueño vive en el wrapper).
 pub struct Frame<'a> {
     pub buf: &'a mut [u8],
+    /// Desplazamiento vertical aplicado al dibujar (px). Lo usa la hoja
+    /// del chat para deslizarse (contenido fijo + lienzo que sube).
+    pub dy: i32,
+    /// Desplazamiento horizontal aplicado al dibujar (px). Lo usa el
+    /// drawer de chats para deslizarse de derecha a izquierda.
+    pub dx: i32,
+    /// Recorte vertical (y0..y1) en coordenadas FINALES de pantalla.
+    /// None = sin recorte (la hoja del chat recorta el historial).
+    pub clip_y: Option<(i32, i32)>,
+    /// Recorte horizontal (x0..x1) en coordenadas FINALES de pantalla.
+    /// None = sin recorte (el drawer de chats recorta su contenido).
+    pub clip_x: Option<(i32, i32)>,
 }
 
 impl<'a> Frame<'a> {
@@ -105,8 +117,20 @@ impl<'a> Frame<'a> {
 
     /// Mezcla un color sobre un píxel (alpha 0..255).
     pub fn blend_px(&mut self, x: i32, y: i32, color: Rgb888, alpha: u8) {
+        let x = x + self.dx;
+        let y = y + self.dy;
         if x < 0 || y < 0 || x >= W as i32 || y >= H as i32 {
             return;
+        }
+        if let Some((x0, x1)) = self.clip_x {
+            if x < x0 || x >= x1 {
+                return;
+            }
+        }
+        if let Some((y0, y1)) = self.clip_y {
+            if y < y0 || y >= y1 {
+                return;
+            }
         }
         let o = (y as usize * W + x as usize) * 4;
         let a = alpha as u32;
@@ -124,11 +148,27 @@ impl<'a> DrawTarget for Frame<'a> {
     where
         I: IntoIterator<Item = Pixel<Self::Color>>,
     {
+        let dx = self.dx;
+        let dy = self.dy;
+        let clip_x = self.clip_x;
+        let clip_y = self.clip_y;
         for Pixel(point, color) in pixels {
-            if point.x < 0 || point.y < 0 || point.x >= PX || point.y >= PX {
+            let x = point.x + dx;
+            let y = point.y + dy;
+            if x < 0 || y < 0 || x >= PX || y >= PX {
                 continue;
             }
-            let o = (point.y as usize * W + point.x as usize) * 4;
+            if let Some((x0, x1)) = clip_x {
+                if x < x0 || x >= x1 {
+                    continue;
+                }
+            }
+            if let Some((y0, y1)) = clip_y {
+                if y < y0 || y >= y1 {
+                    continue;
+                }
+            }
+            let o = (y as usize * W + x as usize) * 4;
             self.buf[o] = color.r();
             self.buf[o + 1] = color.g();
             self.buf[o + 2] = color.b();

@@ -12,7 +12,7 @@ import { pushMsg, setAIMode, setTyping, finishChat, trimMsgs, getSnapshot } from
 interface ChatBody {
   text: string;
   config?: {
-    provider?: "nvidia" | "meta" | "custom";
+    provider?: string;
     baseUrl?: string;
     model?: string;
     apiKey?: string;

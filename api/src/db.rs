@@ -9,6 +9,7 @@
 
 use rusqlite::params;
 use serde::Serialize;
+use serde_json::Value;
 use std::sync::Mutex;
 
 pub struct Db(pub Mutex<rusqlite::Connection>);
@@ -109,6 +110,7 @@ impl Db {
                  display_name  TEXT,
                  locale        TEXT NOT NULL DEFAULT 'es',
                  country       TEXT,
+                 currency      TEXT,
                  is_active     INTEGER NOT NULL DEFAULT 1,
                  created_at    INTEGER NOT NULL,
                  updated_at    INTEGER NOT NULL
@@ -256,6 +258,43 @@ impl Db {
                  updated_at      INTEGER NOT NULL
              );
 
+             -- Uso real de tools instaladas, separado del inventario global.
+             -- Una fila por ejecución de POST /app/request que obtuvo respuesta.
+             CREATE TABLE IF NOT EXISTS app_tool_calls (
+                 id                    TEXT PRIMARY KEY,
+                 account_id            TEXT NOT NULL,
+                 app_slug              TEXT NOT NULL,
+                 tool_name             TEXT NOT NULL,
+                 method                TEXT NOT NULL,
+                 path                  TEXT NOT NULL,
+                 status_code           INTEGER,
+                 invoice_id            TEXT,
+                 execution_environment TEXT,
+                 network               TEXT,
+                 device_id             TEXT,
+                 created_at            INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_app_tool_calls_scope
+                 ON app_tool_calls(account_id, execution_environment, network, created_at);
+
+             -- Tokens facturados por el proveedor LLM. Una fila por completion
+             -- que devuelve usage; el prompt/respuesta nunca se persisten.
+             CREATE TABLE IF NOT EXISTS llm_usage_events (
+                 id                    TEXT PRIMARY KEY,
+                 account_id            TEXT NOT NULL REFERENCES accounts(id),
+                 provider              TEXT NOT NULL,
+                 model                 TEXT NOT NULL,
+                 prompt_tokens         INTEGER NOT NULL,
+                 completion_tokens     INTEGER NOT NULL,
+                 total_tokens          INTEGER NOT NULL,
+                 execution_environment TEXT NOT NULL,
+                 network               TEXT NOT NULL,
+                 device_id             TEXT,
+                 created_at            INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_llm_usage_scope
+                 ON llm_usage_events(account_id, execution_environment, network, created_at);
+
              -- Verificador legal S2 (workshop (casos nativos dpaas/call)).
              -- El agente (brain) escribe runs/turns; SOLO api evalua contra
              -- ground_truth/ (0600, fuera de la DB). Efectos bloqueados sin pass.
@@ -315,12 +354,83 @@ impl Db {
         // NomikOS Fase 1 — flota: facturas ligadas al dispositivo que las
         // provocó, y tokens de dispositivo (= sesiones con device_id).
         Self::add_column_if_missing(conn, "x402_invoices", "device_id", "TEXT")?;
+        Self::add_column_if_missing(conn, "x402_invoices", "execution_environment", "TEXT")?;
+        Self::add_column_if_missing(conn, "x402_invoices", "network", "TEXT")?;
+        Self::add_column_if_missing(conn, "x402_payouts", "execution_environment", "TEXT")?;
+        Self::add_column_if_missing(conn, "x402_payouts", "network", "TEXT")?;
         Self::add_column_if_missing(conn, "sessions", "device_id", "TEXT")?;
+        Self::add_column_if_missing(
+            conn,
+            "devices",
+            "execution_environment",
+            "TEXT DEFAULT 'production'",
+        )?;
         // Preferencias de cuenta: idioma de la interfaz (es|en) + país
         // ISO-3166 (NULL = sin definir). Las lee el dapp (cookie de idioma
         // + página /preferences); la landing usa su propio prefijo.
         Self::add_column_if_missing(conn, "accounts", "locale", "TEXT DEFAULT 'es'")?;
         Self::add_column_if_missing(conn, "accounts", "country", "TEXT")?;
+        Self::add_column_if_missing(conn, "accounts", "currency", "TEXT")?;
+        conn.execute(
+            "UPDATE devices SET execution_environment = 'sandbox' \
+             WHERE agent_version LIKE 'nomikos-sim%' OR id IN ( \
+                 SELECT json_extract(state, '$.device_id') FROM simulation_states \
+                 WHERE json_extract(state, '$.device_id') IS NOT NULL \
+             )",
+            [],
+        )?;
+        conn.execute(
+            "UPDATE devices SET execution_environment = 'production' \
+             WHERE execution_environment IS NULL OR execution_environment = ''",
+            [],
+        )?;
+        conn.execute(
+            "UPDATE x402_invoices SET \
+                 network = COALESCE((SELECT network FROM account_chain \
+                     WHERE account_chain.account_id = x402_invoices.account_id), 'devnet') \
+             WHERE network IS NULL OR network = ''",
+            [],
+        )?;
+        conn.execute(
+            "UPDATE x402_invoices SET execution_environment = CASE \
+                 WHEN EXISTS (SELECT 1 FROM devices d WHERE d.id = x402_invoices.device_id \
+                     AND d.execution_environment = 'sandbox') THEN 'sandbox' \
+                 WHEN network = 'mainnet' THEN 'production' ELSE 'sandbox' END \
+             WHERE execution_environment IS NULL OR execution_environment = ''",
+            [],
+        )?;
+        // Los peajes históricos de la cuenta que usaba el simulador en redes
+        // de prueba se enlazan a su dispositivo guardado en simulation_states.
+        // La inferencia no alcanza registros mainnet.
+        conn.execute(
+            "UPDATE x402_invoices SET \
+                 device_id = (SELECT d.id FROM simulation_states ss \
+                     JOIN devices d ON d.id = json_extract(ss.state, '$.device_id') \
+                     WHERE ss.account_id = x402_invoices.account_id \
+                       AND d.account_id = x402_invoices.account_id \
+                       AND d.board = 'esp32-s3-amoled-143' LIMIT 1), \
+                 execution_environment = 'sandbox' \
+             WHERE device_id IS NULL AND network != 'mainnet' \
+               AND EXISTS (SELECT 1 FROM simulation_states ss \
+                   JOIN devices d ON d.id = json_extract(ss.state, '$.device_id') \
+                   WHERE ss.account_id = x402_invoices.account_id \
+                     AND d.account_id = x402_invoices.account_id \
+                     AND d.board = 'esp32-s3-amoled-143')",
+            [],
+        )?;
+        conn.execute(
+            "UPDATE x402_payouts SET network = COALESCE((SELECT network FROM account_chain \
+                 WHERE account_chain.account_id = x402_payouts.account_id), 'devnet') \
+             WHERE network IS NULL OR network = ''",
+            [],
+        )?;
+        conn.execute(
+            "UPDATE x402_payouts SET execution_environment = \
+                 CASE WHEN network = 'mainnet' THEN 'production' ELSE 'sandbox' END \
+             WHERE execution_environment IS NULL OR execution_environment = ''",
+            [],
+        )?;
+        Self::migrate_legacy_app_tool_calls(conn)?;
         // Multi-proveedor LLM por cuenta (un solo activo): la tabla vieja
         // account_llm (una fila por cuenta) migra a account_llm_providers.
         conn.execute(
@@ -390,9 +500,156 @@ impl Db {
             .filter_map(Result::ok)
             .any(|name| name == column);
         if !exists {
-            conn.execute(&format!("ALTER TABLE {table} ADD COLUMN {column} {ddl}"), [])?;
+            conn.execute(
+                &format!("ALTER TABLE {table} ADD COLUMN {column} {ddl}"),
+                [],
+            )?;
         }
         Ok(())
+    }
+
+    /// Backfill idempotente del uso histórico: una factura app consumida
+    /// prueba que el gateway llegó a ejecutar la petición a esa app. El tool
+    /// exacto anterior no se guardaba, por eso se representa como MÉTODO + ruta.
+    fn migrate_legacy_app_tool_calls(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+        let mut stmt = conn.prepare(
+            "SELECT id, account_id, resource, execution_environment, network, device_id, created_at \
+             FROM x402_invoices WHERE resource LIKE 'x402:app:%' AND consumed_at IS NOT NULL",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, Option<String>>(3)?,
+                r.get::<_, Option<String>>(4)?,
+                r.get::<_, Option<String>>(5)?,
+                r.get::<_, i64>(6)?,
+            ))
+        })?;
+        let invoices = rows.collect::<Result<Vec<_>, _>>()?;
+        drop(stmt);
+
+        for (invoice_id, account_id, resource, environment, network, device_id, created_at) in
+            invoices
+        {
+            let mut parts = resource.splitn(5, ':');
+            let _ = parts.next();
+            let _ = parts.next();
+            let app_slug = parts.next().unwrap_or("unknown");
+            let method = parts.next().unwrap_or("UNKNOWN");
+            let path = parts.next().unwrap_or("/");
+            let inferred_tool = Self::legacy_tool_name(conn, app_slug, method, path);
+            let tool_name = inferred_tool
+                .clone()
+                .unwrap_or_else(|| format!("{method} {path}"));
+            conn.execute(
+                "INSERT OR IGNORE INTO app_tool_calls \
+                 (id, account_id, app_slug, tool_name, method, path, status_code, invoice_id, \
+                  execution_environment, network, device_id, created_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, ?8, ?9, ?10, ?11)",
+                rusqlite::params![
+                    format!("legacy-{invoice_id}"),
+                    account_id,
+                    app_slug,
+                    tool_name,
+                    method,
+                    path,
+                    invoice_id,
+                    environment,
+                    network,
+                    device_id,
+                    created_at
+                ],
+            )?;
+            if let Some(name) = inferred_tool {
+                conn.execute(
+                    "UPDATE app_tool_calls SET tool_name = ?1 WHERE id = ?2",
+                    rusqlite::params![name, format!("legacy-{invoice_id}")],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Recupera el nombre de tool desde el catálogo MCP cuando el path
+    /// histórico coincide con la plantilla que registra la app.
+    fn legacy_tool_name(
+        conn: &rusqlite::Connection,
+        app_slug: &str,
+        method: &str,
+        path: &str,
+    ) -> Option<String> {
+        let tools: String = conn
+            .query_row(
+                "SELECT tools FROM apps WHERE slug = ?1",
+                rusqlite::params![app_slug],
+                |r| r.get(0),
+            )
+            .ok()?;
+        let tools: Vec<Value> = serde_json::from_str(&tools).ok()?;
+        let matches_method = |tool: &Value| {
+            tool.get("call")
+                .and_then(|call| call.get("method"))
+                .and_then(Value::as_str)
+                .unwrap_or("GET")
+                .eq_ignore_ascii_case(method)
+        };
+        if let Some(name) = tools.iter().find_map(|tool| {
+            let name = tool.get("name")?.as_str()?;
+            let template = tool.get("call")?.get("path")?.as_str()?;
+            (matches_method(tool) && template == path).then(|| name.to_string())
+        }) {
+            return Some(name);
+        }
+        tools.into_iter().find_map(|tool| {
+            let name = tool.get("name")?.as_str()?;
+            let call = tool.get("call")?;
+            let tool_method = call.get("method").and_then(Value::as_str).unwrap_or("GET");
+            let template = call.get("path").and_then(Value::as_str).unwrap_or("/");
+            (tool_method.eq_ignore_ascii_case(method) && Self::legacy_path_matches(template, path))
+                .then(|| name.to_string())
+        })
+    }
+
+    fn legacy_path_matches(template: &str, actual: &str) -> bool {
+        let (template_path, template_query) = template.split_once('?').unwrap_or((template, ""));
+        let (actual_path, actual_query) = actual.split_once('?').unwrap_or((actual, ""));
+        let template_parts: Vec<&str> = template_path.split('/').collect();
+        let actual_parts: Vec<&str> = actual_path.split('/').collect();
+        if template_parts.len() != actual_parts.len()
+            || template_parts
+                .iter()
+                .zip(&actual_parts)
+                .any(|(pattern, value)| {
+                    if pattern.starts_with('{') && pattern.ends_with('}') {
+                        value.is_empty()
+                    } else {
+                        pattern != value
+                    }
+                })
+        {
+            return false;
+        }
+
+        let actual_params: std::collections::HashMap<&str, &str> = actual_query
+            .split('&')
+            .filter(|pair| !pair.is_empty())
+            .map(|pair| pair.split_once('=').unwrap_or((pair, "")))
+            .collect();
+        template_query
+            .split('&')
+            .filter(|pair| !pair.is_empty())
+            .all(|pair| {
+                let (key, expected) = pair.split_once('=').unwrap_or((pair, ""));
+                let Some(value) = actual_params.get(key) else {
+                    return false;
+                };
+                (expected.starts_with('{') && expected.ends_with('}'))
+                    || expected.is_empty()
+                    || value.is_empty()
+                    || *value == expected
+            })
     }
 
     /// Semillas: dispositivo + ficha técnica.
@@ -559,9 +816,15 @@ impl Db {
 
     pub fn list_specs(&self) -> rusqlite::Result<Vec<SpecRow>> {
         self.with(|c| {
-            let mut stmt =
-                c.prepare("SELECT slot, value FROM device_specs WHERE device_id = 1 ORDER BY position")?;
-            let rows = stmt.query_map([], |r| Ok(SpecRow { slot: r.get(0)?, value: r.get(1)? }))?;
+            let mut stmt = c.prepare(
+                "SELECT slot, value FROM device_specs WHERE device_id = 1 ORDER BY position",
+            )?;
+            let rows = stmt.query_map([], |r| {
+                Ok(SpecRow {
+                    slot: r.get(0)?,
+                    value: r.get(1)?,
+                })
+            })?;
             rows.collect()
         })
     }

@@ -8,7 +8,7 @@ import {
   type AIClientConfig,
 } from "@/lib/os/store";
 
-type Provider = "nvidia" | "meta" | "custom";
+type Provider = string; // ABIERTO: cualquier proveedor OpenAI-compatible
 type Status = { ok: boolean; text: string } | null;
 type ModelEntry = { id: string; free: boolean };
 
@@ -84,16 +84,20 @@ export default function AIProviderPanel() {
           model: cfg.model || undefined,
         }),
       });
-      const data = await res.json();
-      if (!data.ok) {
-        setConnected(false);
-        setModels([]);
-        setStatus({ ok: false, text: data.error || "No se pudo conectar" });
-        return;
+      const data = await res.json().catch(() => null);
+      const validated = data?.ok;
+      let list: ModelEntry[] = validated ? (data.models || []) : [];
+      if (!validated) {
+        // validación en vivo no disponible (proveedor sin /models, ping falló, …):
+        // guardamos sin validación estricta, al estilo opencode.
+        list = (AI_PROVIDERS[cfg.provider]?.models.map((id) => ({ id, free: false })) ?? []);
+        setStatus({
+          ok: true,
+          text: "Saved without live validation — the key will be tested on the first chat.",
+        });
       }
-      const list: ModelEntry[] = data.models || [];
       setModels(list);
-      setConnected(true);
+      if (validated) setConnected(true);
 
       // mantener el modelo actual si sigue en la lista; si no, el 1º gratis
       const keep = list.some((m) => m.id === cfg.model);

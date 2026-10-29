@@ -116,7 +116,7 @@ export default function AgentConsole({ mode = "direct" }: { mode?: ConsoleMode }
   const togglePanel = () => setPanelOpen(!panelOpen);
 
   // cuando el usuario selecciona un proveedor en el panel, actualizar config local
-  const onProviderChange = (provider: "nvidia" | "meta" | "custom") => {
+  const onProviderChange = (provider: string) => {
     setAIClientConfig({provider});
     setPanelOpen(false);
   };

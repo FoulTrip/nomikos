@@ -19,26 +19,81 @@ pub struct Rect {
 }
 
 pub fn in_rect(px: f32, py: f32, r: Rect) -> bool {
-    px >= r.x as f32
-        && px <= (r.x + r.w) as f32
-        && py >= r.y as f32
-        && py <= (r.y + r.h) as f32
+    px >= r.x as f32 && px <= (r.x + r.w) as f32 && py >= r.y as f32 && py <= (r.y + r.h) as f32
 }
 
-pub const HEADER_ZONE: Rect = Rect { x: CENTER - 150, y: 52, w: 300, h: 44 };
-pub const STATUS_STRIP: Rect = Rect { x: CENTER - 160, y: 36, w: 320, h: 60 };
+pub const HEADER_ZONE: Rect = Rect {
+    x: CENTER - 150,
+    y: 52,
+    w: 300,
+    h: 44,
+};
+pub const STATUS_STRIP: Rect = Rect {
+    x: CENTER - 160,
+    y: 36,
+    w: 320,
+    h: 60,
+};
 pub const SHADE_PANEL_H: i32 = 466;
-pub const SHADE_GEAR: Rect = Rect { x: 296, y: 44, w: 44, h: 44 };
-pub const MIC_ZONE: Rect = Rect { x: CENTER - 34, y: 404, w: 68, h: 52 };
-pub const BANK_SEND: Rect = Rect { x: 73, y: 250, w: 150, h: 56 };
-pub const BANK_RECV: Rect = Rect { x: 243, y: 250, w: 150, h: 56 };
-pub const BANK_PILL_A: Rect = Rect { x: 133, y: 132, w: 90, h: 36 };
-pub const BANK_PILL_B: Rect = Rect { x: 243, y: 132, w: 90, h: 36 };
+pub const SHADE_GEAR: Rect = Rect {
+    x: 296,
+    y: 44,
+    w: 44,
+    h: 44,
+};
+pub const MIC_ZONE: Rect = Rect {
+    x: CENTER - 34,
+    y: 404,
+    w: 68,
+    h: 52,
+};
+pub const BANK_SEND: Rect = Rect {
+    x: 73,
+    y: 250,
+    w: 150,
+    h: 56,
+};
+pub const BANK_RECV: Rect = Rect {
+    x: 243,
+    y: 250,
+    w: 150,
+    h: 56,
+};
+pub const BANK_PILL_A: Rect = Rect {
+    x: 133,
+    y: 132,
+    w: 90,
+    h: 36,
+};
+pub const BANK_PILL_B: Rect = Rect {
+    x: 243,
+    y: 132,
+    w: 90,
+    h: 36,
+};
 
 /** Iconos junto a la onda (apps izq · banco der), sin texto. */
-pub const APPS_ICON: Rect = Rect { x: 150, y: 395, w: 56, h: 54 };
-pub const BANK_ICON: Rect = Rect { x: 260, y: 395, w: 56, h: 54 };
+pub const APPS_ICON: Rect = Rect {
+    x: 150,
+    y: 395,
+    w: 56,
+    h: 54,
+};
+pub const BANK_ICON: Rect = Rect {
+    x: 260,
+    y: 395,
+    w: 56,
+    h: 54,
+};
 
+/// Drawer lateral de chat (derecha → izquierda): X para cerrar.
+/// Cuando está abierto (anim=100) el drawer ocupa x=166..466; la X va en x≈316.
+pub const DRAWER_X: Rect = Rect {
+    x: 288,
+    y: 392,
+    w: 56,
+    h: 56,
+};
 /// Acción resuelta (el wrapper la ejecuta: api o local).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Hit {
@@ -67,6 +122,10 @@ pub enum Hit {
     BankNfc,
     BankSendNfc,
     BankSendManual,
+    /// Cerrar el drawer lateral de chat (X).
+    ChatDrawerClose,
+    /// Abrir el artifact asociado a un turno del historial.
+    ChatArtifact(usize),
 }
 
 fn clamp_offset(total: usize, want: u32) -> usize {
@@ -92,6 +151,24 @@ pub fn hit_test(os: &OsState, view: &ViewState, px: f32, py: f32) -> Hit {
     if matches!(os.screen, crate::state::Screen::Home) && in_rect(px, py, STATUS_STRIP) {
         return Hit::ShadeOpen;
     }
+    // Historial a pantalla completa, sin botones inferiores.
+    if view.chat_full {
+        if view.chat_anim >= 95 {
+            if let Some(index) =
+                crate::draw::chat_full_artifact_hit(os.chat, view.chat_scroll, px, py)
+            {
+                return Hit::ChatArtifact(index);
+            }
+        }
+        return Hit::None;
+    }
+    // Si quedó abierto el drawer antiguo, solo la X es interactiva.
+    if view.chat_drawer {
+        if in_rect(px, py, DRAWER_X) {
+            return Hit::ChatDrawerClose;
+        }
+        return Hit::None;
+    }
     match os.screen {
         crate::state::Screen::Home => {
             if in_rect(px, py, APPS_ICON) {
@@ -111,7 +188,12 @@ pub fn hit_test(os: &OsState, view: &ViewState, px: f32, py: f32) -> Hit {
             }
             let o = clamp_offset(os.apps.len(), view.scroll_apps);
             for (i, _) in os.apps.iter().skip(o).take(LIST_PAGE as usize).enumerate() {
-                let r = Rect { x: CENTER - 150, y: 148 + i as i32 * 66, w: 300, h: 58 };
+                let r = Rect {
+                    x: CENTER - 150,
+                    y: 148 + i as i32 * 66,
+                    w: 300,
+                    h: 58,
+                };
                 if in_rect(px, py, r) {
                     return Hit::App(o + i);
                 }
@@ -130,9 +212,21 @@ pub fn hit_test(os: &OsState, view: &ViewState, px: f32, py: f32) -> Hit {
                 return Hit::Home;
             }
             // wifi, dispositivo, proveedor, modelo, tema, bloquear
-            const TARGETS: [Hit; 6] = [Hit::None, Hit::None, Hit::Providers, Hit::Models, Hit::Theme, Hit::Lock];
+            const TARGETS: [Hit; 6] = [
+                Hit::None,
+                Hit::None,
+                Hit::Providers,
+                Hit::Models,
+                Hit::Theme,
+                Hit::Lock,
+            ];
             for (i, t) in TARGETS.iter().enumerate() {
-                let r = Rect { x: CENTER - 150, y: 140 + i as i32 * 44, w: 300, h: 40 };
+                let r = Rect {
+                    x: CENTER - 150,
+                    y: 140 + i as i32 * 44,
+                    w: 300,
+                    h: 40,
+                };
                 if in_rect(px, py, r) {
                     return *t;
                 }
@@ -154,7 +248,12 @@ pub fn hit_test(os: &OsState, view: &ViewState, px: f32, py: f32) -> Hit {
                     continue;
                 }
                 if idx >= o && shown < LIST_PAGE as usize {
-                    let r = Rect { x: CENTER - 150, y: 148 + shown as i32 * 58, w: 300, h: 52 };
+                    let r = Rect {
+                        x: CENTER - 150,
+                        y: 148 + shown as i32 * 58,
+                        w: 300,
+                        h: 52,
+                    };
                     if in_rect(px, py, r) {
                         return Hit::ProviderIdx(pi);
                     }
@@ -176,8 +275,18 @@ pub fn hit_test(os: &OsState, view: &ViewState, px: f32, py: f32) -> Hit {
                 }
             }
             let o = clamp_offset(active_models.len(), view.scroll_models);
-            for (i, _) in active_models.iter().skip(o).take(LIST_PAGE as usize).enumerate() {
-                let r = Rect { x: CENTER - 150, y: 148 + i as i32 * 58, w: 300, h: 52 };
+            for (i, _) in active_models
+                .iter()
+                .skip(o)
+                .take(LIST_PAGE as usize)
+                .enumerate()
+            {
+                let r = Rect {
+                    x: CENTER - 150,
+                    y: 148 + i as i32 * 58,
+                    w: 300,
+                    h: 52,
+                };
                 if in_rect(px, py, r) {
                     return Hit::ModelIdx(o + i);
                 }
@@ -321,10 +430,22 @@ mod tests {
         assert_eq!(hit_test(&os, &v, 233.0, 74.0), Hit::Apps);
         os.screen = Screen::Settings;
         assert_eq!(hit_test(&os, &v, 233.0, 74.0), Hit::Home);
-        assert_eq!(hit_test(&os, &v, 233.0, (140 + 2 * 44 + 20) as f32), Hit::Providers);
-        assert_eq!(hit_test(&os, &v, 233.0, (140 + 3 * 44 + 20) as f32), Hit::Models);
-        assert_eq!(hit_test(&os, &v, 233.0, (140 + 4 * 44 + 20) as f32), Hit::Theme);
-        assert_eq!(hit_test(&os, &v, 233.0, (140 + 5 * 44 + 20) as f32), Hit::Lock);
+        assert_eq!(
+            hit_test(&os, &v, 233.0, (140 + 2 * 44 + 20) as f32),
+            Hit::Providers
+        );
+        assert_eq!(
+            hit_test(&os, &v, 233.0, (140 + 3 * 44 + 20) as f32),
+            Hit::Models
+        );
+        assert_eq!(
+            hit_test(&os, &v, 233.0, (140 + 4 * 44 + 20) as f32),
+            Hit::Theme
+        );
+        assert_eq!(
+            hit_test(&os, &v, 233.0, (140 + 5 * 44 + 20) as f32),
+            Hit::Lock
+        );
         assert_eq!(hit_test(&os, &v, 233.0, (140 + 20) as f32), Hit::None);
     }
 
@@ -334,10 +455,16 @@ mod tests {
         let v = view();
         os.screen = Screen::Providers;
         assert_eq!(hit_test(&os, &v, 233.0, 74.0), Hit::Settings);
-        assert_eq!(hit_test(&os, &v, 233.0, (148 + 29) as f32), Hit::ProviderIdx(0));
+        assert_eq!(
+            hit_test(&os, &v, 233.0, (148 + 29) as f32),
+            Hit::ProviderIdx(0)
+        );
         os.screen = Screen::Models;
         assert_eq!(hit_test(&os, &v, 233.0, 74.0), Hit::Settings);
-        assert_eq!(hit_test(&os, &v, 233.0, (148 + 29) as f32), Hit::ModelIdx(0));
+        assert_eq!(
+            hit_test(&os, &v, 233.0, (148 + 29) as f32),
+            Hit::ModelIdx(0)
+        );
     }
 
     #[test]
@@ -360,10 +487,19 @@ mod tests {
         os.screen = Screen::Models;
         let mut v = view();
         v.scroll_models = 2;
-        assert_eq!(hit_test(&os, &v, 233.0, (148 + 29) as f32), Hit::ModelIdx(2));
-        assert_eq!(hit_test(&os, &v, 233.0, (148 + 3 * 58 + 29) as f32), Hit::ModelIdx(5));
+        assert_eq!(
+            hit_test(&os, &v, 233.0, (148 + 29) as f32),
+            Hit::ModelIdx(2)
+        );
+        assert_eq!(
+            hit_test(&os, &v, 233.0, (148 + 3 * 58 + 29) as f32),
+            Hit::ModelIdx(5)
+        );
         v.scroll_models = 99; // clamp → 2
-        assert_eq!(hit_test(&os, &v, 233.0, (148 + 29) as f32), Hit::ModelIdx(2));
+        assert_eq!(
+            hit_test(&os, &v, 233.0, (148 + 29) as f32),
+            Hit::ModelIdx(2)
+        );
     }
 
     #[test]
@@ -391,5 +527,21 @@ mod tests {
         let v = view();
         // STATUS_STRIP (73..393, 36..96) en inicio → ShadeOpen
         assert_eq!(hit_test(&os, &v, 233.0, 60.0), Hit::ShadeOpen);
+    }
+
+    #[test]
+    fn chat_full_has_no_bottom_buttons() {
+        let os = home_os();
+        let mut v = view();
+        v.chat_full = true;
+        assert_eq!(hit_test(&os, &v, 202.0, 420.0), Hit::None);
+        assert_eq!(hit_test(&os, &v, 264.0, 420.0), Hit::None);
+        assert_eq!(hit_test(&os, &v, 174.0, 420.0), Hit::None);
+        // el resto de la pantalla no hace nada (el scroll es del visor)
+        assert_eq!(hit_test(&os, &v, 233.0, 200.0), Hit::None);
+        v.chat_compose = true;
+        assert_eq!(hit_test(&os, &v, 330.0, 420.0), Hit::None);
+        assert_eq!(hit_test(&os, &v, 134.0, 420.0), Hit::None);
+        assert_eq!(hit_test(&os, &v, 230.0, 420.0), Hit::None);
     }
 }

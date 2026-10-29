@@ -116,8 +116,8 @@ fn sim_enroll(state: &SharedState, sim: &mut Value) -> AppResult<()> {
     state.db.with(|c| {
         c.execute(
             "INSERT INTO devices (id, name, board, pubkey, claim_code, claim_expires_at, \
-             enroll_secret_hash, status, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'offline', ?8)",
+             enroll_secret_hash, status, execution_environment, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'offline', 'sandbox', ?8)",
             params![
                 id,
                 sim["name"].as_str().unwrap_or(NAME),
@@ -196,7 +196,9 @@ fn sim_claim_and_token(state: &SharedState, account: &str, sim: &mut Value) -> A
                 return Ok(true);
             }
             Some(Some(_)) => {
-                return Err(AppError::conflict("ese dispositivo ya pertenece a otra cuenta"));
+                return Err(AppError::conflict(
+                    "ese dispositivo ya pertenece a otra cuenta",
+                ));
             }
             _ => {}
         }
@@ -334,7 +336,11 @@ async fn sim_x402(state: &SharedState, account: &str, sim: &mut Value) {
     let lamports = state.cfg.x402_path_lamports.max(1);
     let resource = "x402:device:GET:/api/device";
     let inv = match crate::modules::x402::create_invoice_value_for(
-        state, resource, lamports, Some(account), device_id.as_deref(),
+        state,
+        resource,
+        lamports,
+        Some(account),
+        device_id.as_deref(),
     )
     .await
     {
@@ -383,7 +389,10 @@ async fn sim_x402(state: &SharedState, account: &str, sim: &mut Value) {
                     "recarga con 💧 Faucet del panel".to_string(),
                 )
             } else {
-                ("no se pudo pagar".to_string(), "reintenta más tarde".to_string())
+                (
+                    "no se pudo pagar".to_string(),
+                    "reintenta más tarde".to_string(),
+                )
             };
             ("error".to_string(), access, Some(hint), None)
         }
@@ -529,7 +538,10 @@ pub async fn step_handler(
                     // cargan en el panel; el device solo elige)
                     let name = t.trim_start_matches("provider:");
                     crate::modules::accounts::set_active_llm(
-                        &state, &auth.account_id, Some(name), None,
+                        &state,
+                        &auth.account_id,
+                        Some(name),
+                        None,
                     )?;
                     sim["screen"] = json!("settings");
                     event(&mut sim, "set-provider");
@@ -537,7 +549,10 @@ pub async fn step_handler(
                 t if t.starts_with("model:") && !locked => {
                     let id = t.trim_start_matches("model:");
                     crate::modules::accounts::set_active_llm(
-                        &state, &auth.account_id, None, Some(id),
+                        &state,
+                        &auth.account_id,
+                        None,
+                        Some(id),
                     )?;
                     sim["screen"] = json!("settings");
                     event(&mut sim, "set-model");
@@ -549,9 +564,7 @@ pub async fn step_handler(
                         .map(|a| a.iter().any(|x| x["slug"].as_str() == Some(slug)))
                         .unwrap_or(false);
                     if !known {
-                        return Err(AppError::not_found(format!(
-                            "dapp «{slug}» no instalada"
-                        )));
+                        return Err(AppError::not_found(format!("dapp «{slug}» no instalada")));
                     }
                     sim["detail_app"] = json!(slug);
                     sim["screen"] = json!("appdetail");
@@ -560,9 +573,7 @@ pub async fn step_handler(
                     return Err(AppError::forbidden("OS bloqueado — desbloquea primero"));
                 }
                 _ => {
-                    return Err(AppError::bad_request(format!(
-                        "target «{target}» inválido"
-                    )));
+                    return Err(AppError::bad_request(format!("target «{target}» inválido")));
                 }
             }
         }
@@ -576,7 +587,9 @@ pub async fn step_handler(
         }
         "x402" => {
             if sim["stage"].as_str() != Some("online") {
-                return Err(AppError::bad_request("el OS debe estar ONLINE (claim primero)"));
+                return Err(AppError::bad_request(
+                    "el OS debe estar ONLINE (claim primero)",
+                ));
             }
             sim_x402(&state, &auth.account_id, &mut sim).await;
             refresh_agent_wallet(&state, &auth.account_id, &mut sim).await;
@@ -584,14 +597,18 @@ pub async fn step_handler(
         }
         "say" => {
             if sim["stage"].as_str() != Some("online") {
-                return Err(AppError::bad_request("el OS debe estar ONLINE (claim primero)"));
+                return Err(AppError::bad_request(
+                    "el OS debe estar ONLINE (claim primero)",
+                ));
             }
             let text: String = body
                 .text
                 .as_deref()
                 .map(str::trim)
                 .filter(|t| !t.is_empty())
-                .ok_or_else(|| AppError::bad_request("say necesita text (lo que dijo el micrófono)"))?
+                .ok_or_else(|| {
+                    AppError::bad_request("say necesita text (lo que dijo el micrófono)")
+                })?
                 .chars()
                 .take(500)
                 .collect();
@@ -610,10 +627,11 @@ pub async fn step_handler(
                 .json(&json!({ "device_id": device_id, "text": text }))
                 .send()
                 .await;
-            let reply = match res {
+            let (reply, artifacts) = match res {
                 Ok(r) => {
                     let v: Value = r.json().await.unwrap_or(Value::Null);
-                    v.get("reply")
+                    let reply = v
+                        .get("reply")
                         .and_then(|x| x.as_str())
                         .map(str::trim)
                         .filter(|x| !x.is_empty())
@@ -623,12 +641,24 @@ pub async fn step_handler(
                                 .and_then(|x| x.as_str())
                                 .unwrap_or("sin respuesta")
                                 .to_string()
-                        })
+                        });
+                    let artifacts = v
+                        .get("artifacts")
+                        .and_then(Value::as_array)
+                        .cloned()
+                        .unwrap_or_default();
+                    (reply, artifacts)
                 }
-                Err(e) => format!("orquestador no disponible ({e})"),
+                Err(e) => (format!("orquestador no disponible ({e})"), Vec::new()),
             };
-            let turn = json!({ "text": text, "reply": reply, "ts": now_ms() });
+            let mut turn = json!({ "text": text, "reply": reply, "ts": now_ms() });
+            if !artifacts.is_empty() {
+                turn["artifacts"] = Value::Array(artifacts);
+            }
             sim["last_reply"] = turn.clone();
+            if let Some(last_reply) = sim["last_reply"].as_object_mut() {
+                last_reply.remove("artifacts");
+            }
             // historial del chat (para leer la conversación completa en el
             // panel): se conserva en rebuild y viaja con el progreso.
             if !sim["chat"].is_array() {
@@ -638,6 +668,21 @@ pub async fn step_handler(
                 chat.push(turn);
                 while chat.len() > 50 {
                     chat.remove(0);
+                }
+                let mut retained_artifacts = 0;
+                for old_turn in chat.iter_mut().rev() {
+                    let has_artifacts = old_turn
+                        .get("artifacts")
+                        .and_then(Value::as_array)
+                        .is_some_and(|items| !items.is_empty());
+                    if has_artifacts {
+                        retained_artifacts += 1;
+                        if retained_artifacts > 2 {
+                            if let Some(old_turn) = old_turn.as_object_mut() {
+                                old_turn.remove("artifacts");
+                            }
+                        }
+                    }
                 }
             }
             sim["screen"] = json!("home"); // la respuesta se lee en la principal

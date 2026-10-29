@@ -1,5 +1,5 @@
 export type DeviceApp = "home" | "agent" | "config";
-export type AIMode = "simulated" | "nvidia" | "meta" | "custom" | null;
+export type AIMode = string | null; // "simulated" o cualquier proveedor configurado
 
 export interface OSMessage {
   id: string;

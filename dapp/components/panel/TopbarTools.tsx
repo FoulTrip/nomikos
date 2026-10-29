@@ -9,10 +9,12 @@
  *        sección "Configurar proveedor de IA": Conectar → "Modelo (N
  *        gratis)" → Desconectar, pero persistiendo en la cuenta
  *        `account_llm` — api_key sellada AEAD — en vez de localStorage).
- *   "Servicios"    — dapps que el agente usará con x402 (account_services).
+ *   "DApps"        — catálogo real de aplicaciones de la API e instalación
+ *                     disponible para la cuenta y sus dispositivos.
  */
-import { useEffect, useRef, useState } from "react";
-import { useLocale, useTranslations } from "next-intl";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Image from "next/image";
+import { useTranslations } from "next-intl";
 import {
   Backpack,
   Blocks,
@@ -27,6 +29,7 @@ import {
   Plus,
   Radio,
   RotateCw,
+  Search,
   Sun,
   Trash2,
   TriangleAlert,
@@ -39,6 +42,13 @@ import SandboxIndicator from "./SandboxIndicator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -50,8 +60,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { AI_PROVIDERS } from "@/lib/ai/providers";
+import { useSandbox } from "@/lib/viewer/sandbox";
 
 const NETWORKS = ["local", "devnet", "testnet", "mainnet"] as const;
+const SANDBOX_NETWORKS = ["local", "devnet", "testnet"] as const;
 type Network = (typeof NETWORKS)[number];
 
 interface Chain {
@@ -73,16 +86,13 @@ interface AccountContext {
   wallets?: WalletRow[];
   error?: string;
 }
-interface ServiceRow {
-  service: string;
-  display_name: string;
-  resource: string;
-  via_x402: boolean;
-  added: boolean;
-  status?: string | null;
-  added_at?: number | null;
-  payer_pubkey?: string | null;
-  network?: string | null;
+interface DAppRow {
+  slug: string;
+  name: string;
+  description: string;
+  version: string;
+  status: string;
+  tools_count: number;
 }
 interface LlmConfig {
   provider?: string;
@@ -111,7 +121,7 @@ interface ProviderOption {
   label: string;
   labelKey?: string;
   apiProvider: string;
-  modelsProvider: "nvidia" | "meta" | "custom";
+  modelsProvider: string; // ABIERTO: cualquier proveedor OpenAI-compatible
   baseUrl?: string;
   keyOptional?: boolean;
   keyHint?: string;
@@ -120,7 +130,8 @@ interface ProviderOption {
 const PROVIDER_OPTIONS: ProviderOption[] = [
   { label: "NVIDIA NIM", apiProvider: "nvidia-nim", modelsProvider: "nvidia", keyHint: "nvapi-…" },
   { label: "OpenAI", apiProvider: "openai", modelsProvider: "custom", baseUrl: "https://api.openai.com/v1", keyHint: "sk-…" },
-  { label: "Meta Llama API", apiProvider: "custom", modelsProvider: "meta", baseUrl: "https://api.llama.com/compat/v1", keyHint: "llama-…" },
+  { label: "Meta Llama API", apiProvider: "meta", modelsProvider: "meta", baseUrl: "https://api.llama.com/compat/v1", keyHint: "llama-…" },
+  { label: "Baseten", apiProvider: "baseten", modelsProvider: "baseten", baseUrl: "https://inference.baseten.co/v1", keyHint: "b10_…" },
   { label: "Personalizado (OpenAI-compat)", labelKey: "customProvider", apiProvider: "custom", modelsProvider: "custom", keyHint: "según proveedor" },
 ];
 
@@ -211,6 +222,7 @@ async function connectBrowserWallet(id: string, t: (key: string) => string): Pro
 function WalletModal({ onClose }: { onClose: () => void }) {
   const t = useTranslations("wallet");
   const tc = useTranslations("common");
+  const sandbox = useSandbox();
   const [ctx, setCtx] = useState<AccountContext | null>(null);
   const [walletLabel, setWalletLabel] = useState(""); // "" = wallet principal (dPaaS)
   const [network, setNetwork] = useState<Network>("devnet");
@@ -225,6 +237,23 @@ function WalletModal({ onClose }: { onClose: () => void }) {
   const [generating, setGenerating] = useState(false);
   const [evmBalance, setEvmBalance] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const selectedNetwork: Network = sandbox
+    ? SANDBOX_NETWORKS.includes(network as (typeof SANDBOX_NETWORKS)[number])
+      ? network
+      : "devnet"
+    : "mainnet";
+  const visibleDpaasWallets = (dpaas?.wallets ?? []).filter((dw) =>
+    sandbox ? dw.network !== "mainnet" : dw.network === "mainnet",
+  );
+  const wallets = (ctx?.wallets ?? []).filter((w) => w.network === selectedNetwork);
+  const selectedWalletLabel = wallets.some((w) => w.label === walletLabel) ? walletLabel : "";
+  const primaryWallet = visibleDpaasWallets.find((dw) => dw.network === selectedNetwork);
+  const primaryPubkey =
+    primaryWallet?.wallet_pubkey ??
+    (dpaas?.network === selectedNetwork ? dpaas.wallet : null);
+  const primaryBalance =
+    primaryWallet?.balance_lamports ??
+    (dpaas?.network === selectedNetwork ? dpaas.balance_lamports : null);
 
   /** Copiar dirección dPaaS para fondearla (portapapeles). */
   const copyAddr = async (addr: string) => {
@@ -409,7 +438,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
       const res = await fetch("/api/account/chain", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ network, active_wallet_label: walletLabel }),
+        body: JSON.stringify({ network: selectedNetwork, active_wallet_label: selectedWalletLabel }),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
@@ -425,265 +454,288 @@ function WalletModal({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const wallets = ctx?.wallets ?? [];
-
   return (
     <Modal
       title={
         <>
-          <Wallet className="size-5 text-primary" />{t("title")}</>
+          <Wallet className="size-5 text-primary" />
+          {t("title")}
+        </>
       }
       onClose={onClose}
     >
       {!ctx && !error && (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <LoaderCircle className="size-4 animate-spin" />{t("loading")}</p>
+          <LoaderCircle className="size-4 animate-spin" />
+          {t("loading")}
+        </p>
       )}
 
       {ctx && (
         <>
-          <section className="grid gap-2">
-            <h4 className="text-xs font-medium text-muted-foreground">{t("signer")}</h4>
-            {/* dPaaS por red (auto-generadas; solo se muestran para fondear).
-                La fila de la red ACTIVA además elige la wallet principal. */}
-            {(dpaas?.wallets ?? []).map((dw) => {
-              const isActiveNet = dw.network === (dpaas?.network ?? network);
-              const inner = (
-                <>
-                  <span className="flex flex-1 flex-col gap-0.5">
-                    <b className="flex items-center gap-2 text-[13px] font-semibold">{t("dpaasWallet")}<Badge variant="secondary" className="font-mono text-[10px]">
-                        {dw.network}
-                      </Badge>
-                    </b>
-                    <small className="text-xs text-muted-foreground">
-                      {shortKey(dw.wallet_pubkey, t("unset"))} · {fmtSol(dw.balance_lamports)} · {t("signsTolls")}
-                    </small>
-                  </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    title={t("copyAddr", { network: dw.network })}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void copyAddr(dw.wallet_pubkey);
-                    }}
-                    className="size-7"
-                  >
-                    {copied === dw.wallet_pubkey ? (
-                      <Check className="size-3.5 text-emerald-400" />
-                    ) : (
-                      <Copy className="size-3.5" />
-                    )}
-                  </Button>
-                  {isActiveNet && walletLabel === "" && <Check className="size-4 shrink-0 text-primary" />}
-                </>
-              );
-              const cls = cn(
-                "flex items-center gap-3 rounded-lg border p-3 text-left transition-colors",
-                isActiveNet && "cursor-pointer",
-                isActiveNet && walletLabel === ""
-                  ? "border-primary bg-primary/10"
-                  : isActiveNet
-                    ? "hover:border-muted-foreground/40"
-                    : "",
-              );
-              return isActiveNet ? (
-                <button key={dw.network} type="button" onClick={() => setWalletLabel("")} className={cls}>
-                  {inner}
-                </button>
-              ) : (
-                <div key={dw.network} className={cls}>
-                  {inner}
-                </div>
-              );
-            })}
-            {!dpaas?.wallets?.length && (
-              <button
-                type="button"
-                onClick={() => setWalletLabel("")}
-                className={cn(
-                  "flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-left transition-colors",
-                  walletLabel === ""
-                    ? "border-primary bg-primary/10"
-                    : "hover:border-muted-foreground/40",
-                )}
-              >
-                <span className="flex flex-1 flex-col gap-0.5">
-                  <b className="text-[13px] font-semibold">{t("principal")}</b>
-                  <small className="text-xs text-muted-foreground">
-                    {dpaas?.wallet
-                      ? `${shortKey(dpaas.wallet, t("unset"))} · ${fmtSol(dpaas.balance_lamports)} · ${t("signsTolls")}`
-                      : `${t("unset")} · ${t("signsTolls")}`}
-                  </small>
-                </span>
-                {walletLabel === "" && dpaas?.wallet && <Check className="size-4 shrink-0 text-primary" />}
-              </button>
-            )}
-            {!dpaas?.wallets?.length && !dpaas?.wallet && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={onGenerate}
-                disabled={generating}
-                className="w-fit"
-              >
-                {generating ? (
-                  <LoaderCircle className="animate-spin" />
-                ) : (
-                  <Plus />
-                )}
-                {generating ? t("creating") : t("create")}
-              </Button>
-            )}
-            {wallets.map((w) => (
-              <button
-                key={w.id}
-                type="button"
-                onClick={() => setWalletLabel(w.label)}
-                className={cn(
-                  "flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-left transition-colors",
-                  walletLabel === w.label
-                    ? "border-primary bg-primary/10"
-                    : "hover:border-muted-foreground/40",
-                )}
-              >
-                <span className="flex flex-1 flex-col gap-0.5">
-                  <b className="text-[13px] font-semibold">{w.label}</b>
-                  <small className="text-xs text-muted-foreground">
-                    {shortKey(w.pubkey, t("unset"))} · {w.network}
-                  </small>
-                </span>
-                {walletLabel === w.label && (
-                  <Check className="size-4 shrink-0 text-primary" />
-                )}
-              </button>
-            ))}
-            {wallets.length === 0 && (
-              <p className="text-xs text-muted-foreground">
-                {t("noSubwallets")}
-              </p>
-            )}
-          </section>
-
-          <section className="grid gap-2">
-            <h4 className="text-xs font-medium text-muted-foreground">{t("devnet")}</h4>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={onFaucet}
-                disabled={faucetBusy || network !== "devnet"}
-              >
-                {faucetBusy ? (
-                  <LoaderCircle className="animate-spin" />
-                ) : (
-                  <Droplets />
-                )}
-                {faucetBusy ? t("dripping") : t("faucet")}
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {faucetMsg ?? t("faucetInfo")}
-            </p>
-          </section>
-
-          <section className="grid gap-2">
-            <h4 className="text-xs font-medium text-muted-foreground">{t("browser")}</h4>
-            <div className="flex flex-wrap gap-2">
-              {BROWSER_WALLETS.map((bw) => {
-                // el botón queda seleccionado si ESE proveedor es el de la
-                // wallet en uso (ej: MetaMask conectada → botón MetaMask)
-                const isProviderActive =
-                  connected?.some((c) => c.is_active && c.provider === bw.id) ?? false;
+          <Card className="gap-0 py-0 shadow-none">
+            <CardHeader className="gap-1 px-4 py-3">
+              <CardTitle className="flex items-center justify-between gap-2 text-sm">
+                {t("signer")}
+                <Badge variant={sandbox ? "secondary" : "outline"}>
+                  {sandbox ? t("sandboxMode") : t("productionMode")}
+                </Badge>
+              </CardTitle>
+              <CardDescription>{t("signerHint")}</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-2 px-4 pb-4">
+              {visibleDpaasWallets.map((dw) => {
+                const isActiveNet = dw.network === selectedNetwork;
                 return (
-                  <Button
-                    key={bw.id}
-                    type="button"
-                    variant={isProviderActive ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => onConnect(bw.id)}
-                    disabled={connectingWallet !== null}
-                  >
-                    {connectingWallet === bw.id ? (
-                      <LoaderCircle className="animate-spin" />
-                    ) : (
-                      <bw.icon />
+                  <div
+                    key={dw.network}
+                    className={cn(
+                      "flex items-center gap-2 rounded-lg border p-3 transition-colors",
+                      isActiveNet && selectedWalletLabel === "" && "border-primary bg-primary/10",
                     )}
-                    {connectingWallet === bw.id ? t("connecting") : bw.label}
-                  </Button>
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setWalletLabel("")}
+                      disabled={!isActiveNet}
+                      className="flex min-w-0 flex-1 items-center gap-3 text-left disabled:cursor-default"
+                    >
+                      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <b className="flex items-center gap-2 text-[13px] font-semibold">
+                          {t("dpaasWallet")}
+                          <Badge variant="secondary" className="font-mono text-[10px]">
+                            {dw.network}
+                          </Badge>
+                        </b>
+                        <small className="truncate text-xs text-muted-foreground">
+                          {shortKey(dw.wallet_pubkey, t("unset"))} · {fmtSol(dw.balance_lamports)}
+                        </small>
+                      </span>
+                      {isActiveNet && selectedWalletLabel === "" && (
+                        <Check className="size-4 shrink-0 text-primary" />
+                      )}
+                    </button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      title={t("copyAddr", { network: dw.network })}
+                      onClick={() => void copyAddr(dw.wallet_pubkey)}
+                      className="size-8 shrink-0"
+                    >
+                      {copied === dw.wallet_pubkey ? (
+                        <Check className="size-3.5 text-emerald-700" />
+                      ) : (
+                        <Copy className="size-3.5" />
+                      )}
+                    </Button>
+                  </div>
                 );
               })}
-            </div>
-            {connected && connected.length > 0 ? (
-              <div className="grid gap-2">
-                {connected.map((cw) => (
-                  <div
-                    key={cw.id}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg border p-3",
-                      cw.is_active && "border-primary bg-primary/10",
-                    )}
-                  >
-                    <span className="flex flex-1 flex-col gap-0.5">
-                      <b className="flex items-center gap-2 text-[13px] font-semibold">
-                        {cw.label}
-                        <Badge variant="secondary" className="font-mono text-[10px]">
-                          {cw.chain}
-                        </Badge>
-                      </b>
-                      <small className="text-xs text-muted-foreground">
-                        {shortKey(cw.pubkey, t("unset"))}
-                        {cw.chain === "solana" &&
-                          ` · ${fmtSol(cw.balance_lamports)}`}
-                        {cw.chain === "evm" &&
-                          cw.is_active &&
-                          evmBalance != null &&
-                          ` · ${evmBalance}`}
-                      </small>
-                    </span>
-                    {cw.is_active ? (
-                      <Badge>{t("inUse")}</Badge>
-                    ) : (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => useWallet(cw.label)}
-                      >{t("use")}</Button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                {t("browserHint")}
-              </p>
-            )}
-          </section>
-
-          <section className="grid gap-2">
-            <h4 className="text-xs font-medium text-muted-foreground">{t("chain")}</h4>
-            <div className="flex flex-wrap gap-2">
-              {NETWORKS.map((n) => (
+              {!primaryWallet && (
                 <button
-                  key={n}
                   type="button"
-                  onClick={() => setNetwork(n)}
+                  onClick={() => setWalletLabel("")}
                   className={cn(
-                    "cursor-pointer rounded-full border px-4 py-1.5 text-xs capitalize transition-colors",
-                    network === n
-                      ? "border-transparent bg-primary font-semibold text-primary-foreground"
-                      : "text-muted-foreground hover:border-muted-foreground/40 hover:text-foreground",
+                    "flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-left transition-colors",
+                    selectedWalletLabel === ""
+                      ? "border-primary bg-primary/10"
+                      : "hover:border-muted-foreground/40",
                   )}
                 >
-                  {n}
+                  <span className="flex flex-1 flex-col gap-0.5">
+                    <b className="text-[13px] font-semibold">{t("principal")}</b>
+                    <small className="text-xs text-muted-foreground">
+                      {primaryPubkey
+                        ? `${shortKey(primaryPubkey, t("unset"))} · ${fmtSol(primaryBalance)} · ${t("signsTolls")}`
+                        : `${t("unset")} · ${t("signsTolls")}`}
+                    </small>
+                  </span>
+                  {selectedWalletLabel === "" && primaryPubkey && <Check className="size-4 shrink-0 text-primary" />}
+                </button>
+              )}
+              {!dpaas?.wallets?.length && !dpaas?.wallet && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={onGenerate}
+                  disabled={generating}
+                  className="w-fit"
+                >
+                  {generating ? (
+                    <LoaderCircle className="animate-spin" />
+                  ) : (
+                    <Plus />
+                  )}
+                  {generating ? t("creating") : t("create")}
+                </Button>
+              )}
+              {wallets.map((w) => (
+                <button
+                  key={w.id}
+                  type="button"
+                  onClick={() => setWalletLabel(w.label)}
+                  className={cn(
+                    "flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-left transition-colors",
+                    selectedWalletLabel === w.label
+                      ? "border-primary bg-primary/10"
+                      : "hover:border-muted-foreground/40",
+                  )}
+                >
+                  <span className="flex flex-1 flex-col gap-0.5">
+                    <b className="text-[13px] font-semibold">{w.label}</b>
+                    <small className="text-xs text-muted-foreground">
+                      {shortKey(w.pubkey, t("unset"))} · {w.network}
+                    </small>
+                  </span>
+                  {selectedWalletLabel === w.label && (
+                    <Check className="size-4 shrink-0 text-primary" />
+                  )}
                 </button>
               ))}
-            </div>
-          </section>
+              {wallets.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {t("noSubwallets")}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {sandbox && (
+            <Card className="gap-0 py-0 shadow-none">
+              <CardHeader className="gap-1 px-4 py-3">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Droplets className="size-4 text-muted-foreground" />
+                  {t("devnet")}
+                  <Badge variant="secondary">Sandbox</Badge>
+                </CardTitle>
+                <CardDescription>{t("faucetInfo")}</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-2 px-4 pb-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={onFaucet}
+                  disabled={faucetBusy || selectedNetwork !== "devnet"}
+                >
+                  {faucetBusy ? (
+                    <LoaderCircle className="animate-spin" />
+                  ) : (
+                    <Droplets />
+                  )}
+                  {faucetBusy ? t("dripping") : t("faucet")}
+                </Button>
+                {faucetMsg && (
+                  <p className="text-xs text-muted-foreground">
+                    {faucetMsg}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          <Card className="gap-0 py-0 shadow-none">
+            <CardHeader className="gap-1 px-4 py-3">
+              <CardTitle className="text-sm">{t("browser")}</CardTitle>
+              <CardDescription>{t("browserHint")}</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 px-4 pb-4">
+              <div className="flex flex-wrap gap-2">
+                {BROWSER_WALLETS.map((bw) => {
+                  // el botón queda seleccionado si ESE proveedor es el de la
+                  // wallet en uso (ej: MetaMask conectada → botón MetaMask)
+                  const isProviderActive =
+                    connected?.some((c) => c.is_active && c.provider === bw.id) ?? false;
+                  return (
+                    <Button
+                      key={bw.id}
+                      type="button"
+                      variant={isProviderActive ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => onConnect(bw.id)}
+                      disabled={connectingWallet !== null}
+                    >
+                      {connectingWallet === bw.id ? (
+                        <LoaderCircle className="animate-spin" />
+                      ) : (
+                        <bw.icon />
+                      )}
+                      {connectingWallet === bw.id ? t("connecting") : bw.label}
+                    </Button>
+                  );
+                })}
+              </div>
+              {connected && connected.length > 0 ? (
+                <div className="grid gap-2">
+                  {connected.map((cw) => (
+                    <div
+                      key={cw.id}
+                      className={cn(
+                        "flex items-center gap-3 rounded-lg border p-3",
+                        cw.is_active && "border-primary bg-primary/10",
+                      )}
+                    >
+                      <span className="flex flex-1 flex-col gap-0.5">
+                        <b className="flex items-center gap-2 text-[13px] font-semibold">
+                          {cw.label}
+                          <Badge variant="secondary" className="font-mono text-[10px]">
+                            {cw.chain}
+                          </Badge>
+                        </b>
+                        <small className="text-xs text-muted-foreground">
+                          {shortKey(cw.pubkey, t("unset"))}
+                          {cw.chain === "solana" &&
+                            ` · ${fmtSol(cw.balance_lamports)}`}
+                          {cw.chain === "evm" &&
+                            cw.is_active &&
+                            evmBalance != null &&
+                            ` · ${evmBalance}`}
+                        </small>
+                      </span>
+                      {cw.is_active ? (
+                        <Badge>{t("inUse")}</Badge>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => useWallet(cw.label)}
+                        >{t("use")}</Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <Card className="gap-0 py-0 shadow-none">
+            <CardHeader className="gap-1 px-4 py-3">
+              <CardTitle className="text-sm">{t("chain")}</CardTitle>
+              <CardDescription>
+                {sandbox ? t("sandboxNetworkHint") : t("productionNetworkHint")}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="px-4 pb-4">
+              <Select
+                value={selectedNetwork}
+                onValueChange={(value) => setNetwork(value as Network)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="theme-light bg-white text-[#343433]">
+                  {(sandbox ? SANDBOX_NETWORKS : ["mainnet"] as const).map((n) => (
+                    <SelectItem key={n} value={n} className="capitalize">
+                      {n}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </CardContent>
+          </Card>
 
           {error && (
             <Alert variant="destructive">
@@ -692,7 +744,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
             </Alert>
           )}
           {saved && (
-            <p className="flex items-center gap-2 text-[13px] text-emerald-400">
+            <p className="flex items-center gap-2 text-[13px] text-emerald-700">
               <CircleCheck className="size-4" />
               {t("saved")}
             </p>
@@ -873,20 +925,39 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
         }),
       });
       const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.ok) {
-        setStatus({ ok: false, text: data?.error ?? `HTTP ${res.status}` });
-        return;
+      const validated = res.ok && data?.ok;
+      let list: { id: string; free: boolean }[] = validated
+        ? (data?.models ?? [])
+        : [];
+      let pick = (list.find((m) => m.free) ?? list[0])?.id;
+
+      if (!validated) {
+        // validación en vivo no disponible (proveedor sin /models, ping falló, …):
+        // guardamos directamente sin validación estricta, al estilo opencode.
+        const known = AI_PROVIDERS[o.modelsProvider]?.models ?? [];
+        list = known.map((id) => ({ id, free: false }));
+        pick = list[0]?.id;
+        if (data?.warning) {
+          setStatus({ ok: true, text: t("warn", { warning: String(data.warning) }) });
+        } else {
+          setStatus({ ok: true, text: t("warnNoValidate") });
+        }
+      } else {
+        if (!pick) {
+          setStatus({ ok: false, text: t("errNoModels") });
+          return;
+        }
+        if (data.warning) {
+          setStatus({ ok: true, text: t("warn", { warning: String(data.warning) }) });
+        }
       }
-      const list: { id: string; free: boolean }[] = data.models ?? [];
-      const pick = (list.find((m) => m.free) ?? list[0])?.id;
+
       if (!pick) {
         setStatus({ ok: false, text: t("errNoModels") });
         return;
       }
-      if (data.warning) setStatus({ ok: true, text: t("warn", { warning: String(data.warning) }) });
 
-      // conectar = guardar lista COMPLETA (para cambiar de modelo sin
-      // revalidar) + default; la key solo si el usuario la escribió ahora
+      // conectar = guardar (PUT a la cuenta) lista + default; la key solo si el usuario la escribió ahora
       const body: Record<string, unknown> = {
         provider: o.apiProvider,
         models: list.map((m) => m.id),
@@ -1021,7 +1092,7 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
           <section className="grid gap-2">
             <h4 className="text-xs font-medium text-muted-foreground">{t("active")}</h4>
             {rows.length === 0 && (
-              <p className="text-[13px] text-amber-400">{t("none")}</p>
+              <p className="text-[13px] text-amber-700">{t("none")}</p>
             )}
             {rows.map((r) => (
               <label
@@ -1094,7 +1165,7 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
                   <SelectValue />
                 </SelectTrigger>
                 {/* item-aligned: lista alta (70 modelos), no el popper corto */}
-                <SelectContent position="item-aligned">
+                <SelectContent position="item-aligned" className="theme-light bg-white text-[#343433]">
                   {showGroups ? (
                     <>
                       {freeModels.length > 0 && (
@@ -1143,7 +1214,7 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="theme-light bg-white text-[#343433]">
                 {PROVIDER_OPTIONS.map((o, i) => (
                   <SelectItem key={o.label} value={String(i)}>
                     {o.labelKey ? t(o.labelKey) : o.label}
@@ -1202,113 +1273,197 @@ function ModelsModal({ onClose }: { onClose: () => void }) {
         <p className="text-xs text-muted-foreground">{status.text}</p>
       )}
       {savedNotice && (
-        <p className="flex items-center gap-2 text-[13px] text-emerald-400">
+        <p className="flex items-center gap-2 text-[13px] text-emerald-700">
           <CircleCheck className="size-4" />{t("saved")}</p>
       )}
     </Modal>
   );
 }
 
-/** Modal Servicios — dapps del agente; el alta registra el flujo x402 en DB. */
-function ServicesModal({ onClose }: { onClose: () => void }) {
-  const t = useTranslations("services");
-  const tc = useTranslations("common");
-  const locale = useLocale();
-  const [services, setServices] = useState<ServiceRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [adding, setAdding] = useState<string | null>(null);
+const DAPP_LOGOS: Record<string, string> = {
+  "payload-cms": "/apps/payload-cms.svg",
+};
 
-  const load = async () => {
+function DAppLogo({ app }: { app: DAppRow }) {
+  const logo = DAPP_LOGOS[app.slug];
+  return (
+    <div className="flex h-12 w-36 shrink-0 items-center justify-center rounded-lg border bg-white px-3">
+      {logo ? (
+        <Image
+          src={logo}
+          alt={`${app.name} logo`}
+          width={132}
+          height={34}
+          className="h-auto max-h-8 w-full object-contain"
+        />
+      ) : (
+        <Blocks className="size-6 text-muted-foreground" aria-hidden="true" />
+      )}
+    </div>
+  );
+}
+
+/** Catálogo de DApps disponible en la API del ecosistema. */
+function DAppsModal({ onClose }: { onClose: () => void }) {
+  const t = useTranslations("dapps");
+  const tc = useTranslations("common");
+  const [apps, setApps] = useState<DAppRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [installingSlug, setInstallingSlug] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const load = useCallback(async (query: string) => {
     try {
-      const res = await fetch("/api/account/services", { cache: "no-store" });
+      const trimmedQuery = query.trim();
+      const url = trimmedQuery
+        ? `/api/apps?q=${encodeURIComponent(trimmedQuery)}`
+        : "/api/apps";
+      const res = await fetch(url, { cache: "no-store" });
       const data = await res.json();
       if (!res.ok || !data.ok) {
         setError(data.error ?? `HTTP ${res.status}`);
         return;
       }
-      setServices(data.services);
+      setApps(data.apps ?? []);
+      setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : tc("networkError"));
     }
-  };
+  }, [tc]);
 
   useEffect(() => {
-    load();
-  }, []);
+    void load("");
+  }, [load]);
 
-  const add = async (service: string) => {
-    setAdding(service);
+  useEffect(() => {
+    if (!apps?.some((app) => app.status === "installing")) return;
+    const timer = window.setInterval(() => void load(searchQuery), 2500);
+    return () => window.clearInterval(timer);
+  }, [apps, load, searchQuery]);
+
+  const install = async (slug: string) => {
+    setInstallingSlug(slug);
     setError(null);
     try {
-      const res = await fetch("/api/account/services", {
+      const res = await fetch("/api/apps", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ service }),
+        body: JSON.stringify({ slug }),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
         setError(data.error ?? `HTTP ${res.status}`);
         return;
       }
-      await load(); // refresca estado added + snapshot
+      await load(searchQuery);
     } catch (e) {
       setError(e instanceof Error ? e.message : tc("networkError"));
     } finally {
-      setAdding(null);
+      setInstallingSlug(null);
     }
   };
 
+  const statusLabel = (status: string) => {
+    if (status === "installed") return t("statusInstalled");
+    if (status === "installing") return t("statusInstalling");
+    if (status === "failed") return t("statusFailed");
+    return t("statusAvailable");
+  };
   return (
     <Modal
       title={
-        <>
-          <Blocks className="size-5 text-primary" />{t("title")}</>
+        <><Blocks className="size-5 text-primary" />{t("title")}</>
       }
       onClose={onClose}
     >
-      {!services && !error && (
+      <form
+        className="relative"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const query = searchInput.trim();
+          setSearchQuery(query);
+          void load(query);
+        }}
+      >
+        <Input
+          value={searchInput}
+          onChange={(event) => setSearchInput(event.target.value)}
+          placeholder={t("searchPlaceholder")}
+          aria-label={t("searchPlaceholder")}
+          className="pr-11"
+        />
+        <Button
+          type="submit"
+          variant="ghost"
+          size="icon"
+          title={t("search")}
+          aria-label={t("search")}
+          className="absolute top-1/2 right-1 size-8 -translate-y-1/2"
+        >
+          <Search className="size-4" />
+        </Button>
+      </form>
+
+      {!apps && !error && (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <LoaderCircle className="size-4 animate-spin" />{t("loading")}</p>
+          <LoaderCircle className="size-4 animate-spin" />{t("loading")}
+        </p>
       )}
 
-      {services?.map((s) => (
-        <div
-          key={s.service}
-          className="flex flex-col items-start gap-2 rounded-xl border p-4"
-        >
-          <header className="flex items-center gap-2 text-sm">
-            <b className="font-semibold">{s.display_name}</b>
-            <Badge variant="secondary">x402</Badge>
-          </header>
-          <small className="text-xs leading-relaxed text-muted-foreground">
-            {t("flow")}
-          </small>
-          <code className="rounded-md border bg-muted px-2 py-1 font-mono text-xs text-primary">
-            {s.resource}
-          </code>
-          {s.added ? (
-            <p className="flex items-center gap-2 text-[13px] text-emerald-400">
-              <CircleCheck className="size-4" />
-              {t("added")}{s.network ? t("addedNet", { network: s.network }) : ""}
-              {s.added_at ? ` · ${new Date(s.added_at).toLocaleString(locale === "en" ? "en-US" : "es-ES")}` : ""}
-            </p>
-          ) : (
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => add(s.service)}
-              disabled={adding === s.service}
-            >
-              {adding === s.service ? (
-                <LoaderCircle className="animate-spin" />
-              ) : (
-                <Plus />
-              )}
-              {adding === s.service ? t("adding") : t("add")}
-            </Button>
-          )}
-        </div>
-      ))}
+      {apps?.length === 0 && !error && (
+        <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+          {searchQuery ? t("notFound", { query: searchQuery }) : t("empty")}
+        </p>
+      )}
+
+      {apps?.map((app) => {
+        const pending = app.status === "installing" || installingSlug === app.slug;
+        const installed = app.status === "installed";
+        return (
+          <Card key={app.slug} className="gap-0 rounded-xl py-0 shadow-none">
+            <CardContent className="grid gap-4 p-4">
+              <div className="flex min-w-0 flex-col gap-3 sm:flex-row">
+                <DAppLogo app={app} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-semibold">{app.name}</h3>
+                    <Badge variant="outline" className="text-[10px]">
+                      {statusLabel(app.status)}
+                    </Badge>
+                    {app.version && (
+                      <Badge variant="secondary" className="font-mono text-[10px]">
+                        v{app.version}
+                      </Badge>
+                    )}
+                    <Badge variant="secondary" className="text-[10px]">
+                      {t("toolsCount", { count: app.tools_count })}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {app.description || t("noDescription")}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 border-t pt-3">
+                {!installed && (
+                  <span className="text-xs text-muted-foreground">{t("connectHint")}</span>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => void install(app.slug)}
+                  disabled={pending || installed}
+                >
+                  {pending ? <LoaderCircle className="animate-spin" /> : <Plus />}
+                  {pending ? t("installing") : t("install")}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
 
       {error && (
         <Alert variant="destructive">
@@ -1322,7 +1477,7 @@ function ServicesModal({ onClose }: { onClose: () => void }) {
 
 export default function TopbarTools() {
   const t = useTranslations("panel.nav");
-  const [modal, setModal] = useState<"wallet" | "models" | "services" | "fleet" | null>(null);
+  const [modal, setModal] = useState<"wallet" | "models" | "dapps" | "fleet" | null>(null);
 
   return (
     <>
@@ -1352,12 +1507,12 @@ export default function TopbarTools() {
         type="button"
         variant="outline"
         size="sm"
-        onClick={() => setModal("services")}
-        title={t("servicesTitle")}
+        onClick={() => setModal("dapps")}
+        title={t("dappsTitle")}
         className="h-8 px-2 sm:h-9 sm:px-3"
       >
         <Blocks />
-        <span className="hidden min-[480px]:inline">{t("services")}</span>
+        <span className="hidden min-[480px]:inline">{t("dapps")}</span>
       </Button>
       <Button
         type="button"
@@ -1374,7 +1529,7 @@ export default function TopbarTools() {
 
       {modal === "wallet" && <WalletModal onClose={() => setModal(null)} />}
       {modal === "models" && <ModelsModal onClose={() => setModal(null)} />}
-      {modal === "services" && <ServicesModal onClose={() => setModal(null)} />}
+      {modal === "dapps" && <DAppsModal onClose={() => setModal(null)} />}
       {modal === "fleet" && <FleetModal onClose={() => setModal(null)} />}
     </>
   );

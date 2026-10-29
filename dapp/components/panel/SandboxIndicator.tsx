@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
  */
 
 import { useEffect, useState } from "react";
+import { Badge } from "@/components/ui/badge";
 import { useSandbox } from "@/lib/viewer/sandbox";
 import { cn } from "@/lib/utils";
 
@@ -31,18 +32,19 @@ export default function SandboxIndicator() {
   const local = env === "local";
 
   return (
-    <span
+    <Badge
+      variant="outline"
       title={
         local
           ? t("localTitle")
           : t("remoteTitle")
       }
-      className="flex h-8 items-center gap-1.5 rounded-full border px-2 text-xs whitespace-nowrap sm:h-9 sm:px-2.5"
+      className="h-8 gap-1.5 rounded-full border-[#EDEDED] bg-white px-2 text-xs font-normal whitespace-nowrap sm:h-9 sm:px-2.5"
     >
-      <span className={cn("size-1.5 rounded-full", local ? "bg-emerald-400" : "bg-sky-400")} />
-      <span className={cn("hidden min-[480px]:inline", local ? "text-emerald-400" : "text-sky-400")}>
+      <span className={cn("size-1.5 rounded-full", local ? "bg-emerald-500" : "bg-sky-500")} />
+      <span className={cn("hidden min-[480px]:inline", local ? "text-emerald-700" : "text-sky-700")}>
         {local ? t("local") : t("remote")}
       </span>
-    </span>
+    </Badge>
   );
 }

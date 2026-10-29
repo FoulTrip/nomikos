@@ -15,25 +15,16 @@ use crate::{
     frame::{rect, Frame},
     hit::LIST_PAGE,
     icons,
-    palette::{Palette, ALERT_RED, BADGE_BLUE},
-    state::{OsState, Screen, Stage, ViewState},
+    palette::{Palette, ALERT_RED, BADGE_BLUE, LIGHT},
+    state::{ChatTurn, OsState, Screen, Stage, ViewState},
     text::{self, Face},
-    CENTER, PX,
+    CENTER, CLIP_R, PX,
 };
 use u8g2_fonts::types::HorizontalAlignment as Align;
 
 // ── helpers ────────────────────────────────────────────────────────────
 
-fn txt(
-    f: &mut Frame,
-    face: Face,
-    bold: bool,
-    align: Align,
-    x: i32,
-    y: i32,
-    c: Rgb888,
-    s: &str,
-) {
+fn txt(f: &mut Frame, face: Face, bold: bool, align: Align, x: i32, y: i32, c: Rgb888, s: &str) {
     text::text_auto(f, face, bold, align, x, y, c, s);
 }
 
@@ -268,10 +259,28 @@ fn draw_connecting(f: &mut Frame, p: &Palette, elapsed_ms: u64) {
         1 => "..",
         _ => "...",
     };
-    txt(f, Face::Xl, true, Align::Center, CENTER, CENTER - 6, p.muted, "NOMIKOS");
+    txt(
+        f,
+        Face::Xl,
+        true,
+        Align::Center,
+        CENTER,
+        CENTER - 6,
+        p.muted,
+        "NOMIKOS",
+    );
     let mut buf = [0u8; 64];
     let msg = snip_append("conectando con el worker", dots, &mut buf);
-    txt(f, Face::Base, false, Align::Center, CENTER, CENTER + 24, p.muted, msg);
+    txt(
+        f,
+        Face::Base,
+        false,
+        Align::Center,
+        CENTER,
+        CENTER + 24,
+        p.muted,
+        msg,
+    );
     let a0 = -90.0 + (elapsed_ms % 1000) as f32 / 1000.0 * 360.0;
     embedded_graphics::primitives::Arc::with_center(
         embedded_graphics::geometry::Point::new(CENTER, CENTER),
@@ -279,7 +288,9 @@ fn draw_connecting(f: &mut Frame, p: &Palette, elapsed_ms: u64) {
         a0.deg(),
         90.0.deg(),
     )
-    .into_styled(embedded_graphics::primitives::PrimitiveStyle::with_stroke(p.gold, 3))
+    .into_styled(embedded_graphics::primitives::PrimitiveStyle::with_stroke(
+        p.gold, 3,
+    ))
     .draw(f)
     .ok();
 }
@@ -403,8 +414,26 @@ fn draw_boot(f: &mut Frame, p: &Palette, boot_count: u32, elapsed_ms: u64) {
     .into_styled(PrimitiveStyle::with_stroke(p.gold, 3))
     .draw(f)
     .ok();
-    txt(f, Face::Clock, true, Align::Center, R, R - 78, p.gold, "NOMIKOS");
-    txt(f, Face::Mid, false, Align::Center, R, R - 52, p.muted, "nomikos v0.1.0");
+    txt(
+        f,
+        Face::Clock,
+        true,
+        Align::Center,
+        R,
+        R - 78,
+        p.gold,
+        "NOMIKOS",
+    );
+    txt(
+        f,
+        Face::Mid,
+        false,
+        Align::Center,
+        R,
+        R - 52,
+        p.muted,
+        "nomikos v0.1.0",
+    );
     // barra
     let bw = 260;
     let bx = R - bw / 2;
@@ -415,8 +444,12 @@ fn draw_boot(f: &mut Frame, p: &Palette, boot_count: u32, elapsed_ms: u64) {
         rrect(f, bx, by, fw as u32, 10, 5, p.gold, None);
     }
     // log por etapas
-    const STEPS: [(u64, &str); 4] =
-        [(0, "kernel 6.6-rpi"), (650, "agentd"), (1300, "red"), (1950, "worker")];
+    const STEPS: [(u64, &str); 4] = [
+        (0, "kernel 6.6-rpi"),
+        (650, "agentd"),
+        (1300, "red"),
+        (1950, "worker"),
+    ];
     for (i, (t, name)) in STEPS.iter().enumerate() {
         let y = R + 22 + i as i32 * 20;
         if (elapsed_ms as u64) < *t {
@@ -440,19 +473,55 @@ fn draw_boot(f: &mut Frame, p: &Palette, boot_count: u32, elapsed_ms: u64) {
         .draw(f)
         .ok();
     } else {
-        txt(f, Face::Base, true, Align::Center, R, R + 138, p.green, "listo!");
+        txt(
+            f,
+            Face::Base,
+            true,
+            Align::Center,
+            R,
+            R + 138,
+            p.green,
+            "listo!",
+        );
     }
     let mut buf = [0u8; 32];
     let n = fmt_u32(boot_count, &mut buf);
     let mut line = [0u8; 64];
     let msg = snip_append("boot #", n, &mut line);
-    txt(f, Face::Small, false, Align::Center, R, R + 164, p.muted, msg);
+    txt(
+        f,
+        Face::Small,
+        false,
+        Align::Center,
+        R,
+        R + 164,
+        p.muted,
+        msg,
+    );
 }
 
 fn draw_claim(f: &mut Frame, p: &Palette, os: &OsState) {
     use crate::CENTER as R;
-    txt(f, Face::Xxl, true, Align::Center, R, R - 120, p.gold, "NOMIKOS");
-    txt(f, Face::Large, false, Align::Center, R, R - 90, p.text, os.device_id);
+    txt(
+        f,
+        Face::Xxl,
+        true,
+        Align::Center,
+        R,
+        R - 120,
+        p.gold,
+        "NOMIKOS",
+    );
+    txt(
+        f,
+        Face::Large,
+        false,
+        Align::Center,
+        R,
+        R - 90,
+        p.text,
+        os.device_id,
+    );
     txt(
         f,
         Face::Xxxl,
@@ -461,10 +530,32 @@ fn draw_claim(f: &mut Frame, p: &Palette, os: &OsState) {
         R,
         R + 10,
         p.text,
-        if os.claim_code.is_empty() { "????????" } else { os.claim_code },
+        if os.claim_code.is_empty() {
+            "????????"
+        } else {
+            os.claim_code
+        },
     );
-    txt(f, Face::Base, false, Align::Center, R, R + 50, p.muted, "empareja en el panel");
-    txt(f, Face::Base, false, Align::Center, R, R + 74, p.muted, "(Flota -> Emparejar)");
+    txt(
+        f,
+        Face::Base,
+        false,
+        Align::Center,
+        R,
+        R + 50,
+        p.muted,
+        "empareja en el panel",
+    );
+    txt(
+        f,
+        Face::Base,
+        false,
+        Align::Center,
+        R,
+        R + 74,
+        p.muted,
+        "(Flota -> Emparejar)",
+    );
     let mut buf = [0u8; 32];
     let n = fmt_u32(os.taps, &mut buf);
     let mut line = [0u8; 64];
@@ -472,7 +563,16 @@ fn draw_claim(f: &mut Frame, p: &Palette, os: &OsState) {
     let mut tmp = [0u8; 64];
     let a = snip_append("toques: ", n, &mut tmp);
     let msg = snip_append(a, " · pulsa AGREGAR", &mut line);
-    txt(f, Face::Small, false, Align::Center, R, R + 100, p.muted, msg);
+    txt(
+        f,
+        Face::Small,
+        false,
+        Align::Center,
+        R,
+        R + 100,
+        p.muted,
+        msg,
+    );
 }
 
 fn draw_lock(
@@ -495,11 +595,38 @@ fn draw_lock(
     let gap = 20;
     let total = w2 * 2 + gap;
     let x0 = R - total / 2;
-    txt(f, Face::ClockBig, false, Align::Left, x0, R - 20, p.text, hs);
+    txt(
+        f,
+        Face::ClockBig,
+        false,
+        Align::Left,
+        x0,
+        R - 20,
+        p.text,
+        hs,
+    );
     circle_fill(f, x0 + w2 + gap / 2, R - 20 - 28, 4, p.text);
     circle_fill(f, x0 + w2 + gap / 2, R - 20 - 10, 4, p.text);
-    txt(f, Face::ClockBig, false, Align::Left, x0 + w2 + gap, R - 20, p.text, ms);
-    txt(f, Face::Base, false, Align::Center, R, R + 14, p.muted, date_line);
+    txt(
+        f,
+        Face::ClockBig,
+        false,
+        Align::Left,
+        x0 + w2 + gap,
+        R - 20,
+        p.text,
+        ms,
+    );
+    txt(
+        f,
+        Face::Base,
+        false,
+        Align::Center,
+        R,
+        R + 14,
+        p.muted,
+        date_line,
+    );
     let pulse = if elapsed_ms == u64::MAX {
         0.9
     } else {
@@ -521,7 +648,7 @@ fn draw_lock(
 
 fn draw_status_bar(f: &mut Frame, p: &Palette) {
     #[cfg(not(feature = "std"))]
-use micromath::F32Ext as _;
+    use micromath::F32Ext as _;
     for deg in [-12.0f32, -4.0, 4.0, 12.0] {
         let a = deg * core::f32::consts::PI / 180.0;
         let x = CENTER + (210.0 * a.sin()) as i32;
@@ -532,7 +659,16 @@ use micromath::F32Ext as _;
 }
 
 fn draw_header(f: &mut Frame, p: &Palette, title: &str) {
-    txt(f, Face::Large, true, Align::Center, CENTER, 114, p.gold, title);
+    txt(
+        f,
+        Face::Large,
+        true,
+        Align::Center,
+        CENTER,
+        114,
+        p.gold,
+        title,
+    );
 }
 
 fn draw_badge(f: &mut Frame, x: i32, y: i32, r: u32, slug: &str) {
@@ -541,11 +677,23 @@ fn draw_badge(f: &mut Frame, x: i32, y: i32, r: u32, slug: &str) {
     let mut buf = [0u8; 4];
     let init = badge_letters(slug, &mut buf);
     let face = if r <= 22 { Face::Large } else { Face::Xl };
-    txt(f, face, true, Align::Center, x, y + (r as i32) * 32 / 100, brand_color(slug), init);
+    txt(
+        f,
+        face,
+        true,
+        Align::Center,
+        x,
+        y + (r as i32) * 32 / 100,
+        brand_color(slug),
+        init,
+    );
 }
 
 fn draw_mic(f: &mut Frame, p: &Palette, muted: bool, elapsed_ms: u64) {
-    let (x, y) = (CENTER, 432);
+    draw_mic_at(f, p, muted, elapsed_ms, CENTER, 432);
+}
+
+fn draw_mic_at(f: &mut Frame, p: &Palette, muted: bool, elapsed_ms: u64, x: i32, y: i32) {
     let t = elapsed_ms as f32;
     for i in 0..5 {
         // fases simétricas (|i-2|): la onda siempre se ve centrada
@@ -556,7 +704,16 @@ fn draw_mic(f: &mut Frame, p: &Palette, muted: bool, elapsed_ms: u64) {
             (3.0 + 3.0 * (t / 280.0 + d as f32 * 0.8).sin()).max(2.0) as i32
         };
         let bx = x - 11 + i * 5;
-        rrect(f, bx, y - h / 2, 2, h as u32, 1, if muted { p.muted } else { p.gold }, None);
+        rrect(
+            f,
+            bx,
+            y - h / 2,
+            2,
+            h as u32,
+            1,
+            if muted { p.muted } else { p.gold },
+            None,
+        );
     }
     if muted {
         circle_edge(f, x, y, 7, ALERT_RED, 2);
@@ -567,33 +724,31 @@ fn draw_mic(f: &mut Frame, p: &Palette, muted: bool, elapsed_ms: u64) {
     }
 }
 
-// ── chat de burbujas (pantalla principal) ──────────────────────────────
-// La pantalla del dispositivo ES la conversación: lo que dijiste, el
-// proceso del agente (pasos con check/activo/pendiente) y su respuesta.
-// Sin mascota: el foco es legible y simple para usuarios finales.
+// ── drawer lateral de historial de chat (desliza de derecha a izquierda) ─
+// Una lámina que entra desde la derecha mostrando TODOS los turnos de la
+// cuenta, scrolleable verticalmente. Barra inferior solo con X para cerrar.
 
-const CHAT_LEFT: i32 = 34;
-const CHAT_RIGHT: i32 = 432;
-const CHAT_TOP: i32 = 112;
-const CHAT_BOTTOM: i32 = 376;
-const CHAT_STEP_H: i32 = 15;
+const DRAWER_W: i32 = 300;
+const DRAWER_LIST_TOP: i32 = 136;
+const DRAWER_LIST_BOT: i32 = 340;
 const CHAT_LINE_H: i32 = 17;
 
-const CHAT_STEPS: [&str; 3] = [
-    "Entendiendo tu mensaje",
-    "Revisando lo necesario",
-    "Preparando tu respuesta",
-];
-
-/// Burbuja del usuario (derecha, oro). Devuelve su alto.
-fn draw_user_bubble(f: &mut Frame, p: &Palette, text: &str, y: i32) -> i32 {
-    let max_w = 286;
-    let lines = text::wrap_count(Face::Mid, text, max_w - 24, 2).max(1);
+/// Burbuja de usuario dentro del drawer (derecha, oro).
+fn drawer_user_bubble(
+    f: &mut Frame,
+    p: &Palette,
+    text: &str,
+    x_rel: i32,
+    y: i32,
+    width: i32,
+) -> i32 {
+    let max_w = (width - 36).min(400);
+    let lines = text::wrap_count(Face::Mid, text, max_w - 24, 4).max(1);
     let tw = text::text_width(Face::Mid, text) + 24;
-    let w = tw.clamp(150, max_w);
+    let w = tw.clamp(120, max_w);
     let h = 16 + lines as i32 * CHAT_LINE_H;
-    let x = CHAT_RIGHT - w;
-    rrect(f, x, y, w as u32, h as u32, 16, p.gold, None);
+    let x = x_rel + width - w - 14;
+    rrect(f, x, y, w as u32, h as u32, 14, p.gold, None);
     text::wrap_lines_at(
         f,
         Face::Mid,
@@ -602,139 +757,783 @@ fn draw_user_bubble(f: &mut Frame, p: &Palette, text: &str, y: i32) -> i32 {
         x + w - 12,
         y + 20,
         CHAT_LINE_H,
-        2,
+        lines as usize,
         w - 24,
         Align::Right,
     );
     h
 }
 
-/// Un paso del proceso: ✓ hecho · ● activo (pulso) · ○ pendiente.
-fn draw_chat_step(
+/// Burbuja de agente dentro del drawer (izquierda, tile).
+fn drawer_agent_bubble(
     f: &mut Frame,
     p: &Palette,
-    x: i32,
-    bl: i32,
-    active: i32,
-    idx: usize,
-    label: &str,
-    elapsed_ms: u64,
-) {
-    let cy = bl - 4;
-    let is_active = active == idx as i32;
-    let done = active < 0 || active > idx as i32;
-    if done {
-        Line::new(Point::new(x - 3, cy + 1), Point::new(x + 1, cy + 5))
-            .into_styled(PrimitiveStyle::with_stroke(p.green, 2))
-            .draw(f)
-            .ok();
-        Line::new(Point::new(x + 1, cy + 5), Point::new(x + 8, cy - 4))
-            .into_styled(PrimitiveStyle::with_stroke(p.green, 2))
-            .draw(f)
-            .ok();
-    } else if is_active {
-        let pulse = 3 + ((elapsed_ms / 350) % 2) as u32;
-        circle_fill(f, x + 1, cy + 1, pulse, p.gold);
-    } else {
-        circle_edge(f, x + 1, cy + 1, 3, p.faint, 1);
-    }
-    let mut buf = [0u8; 64];
-    let shown = if is_active {
-        let dots = match (elapsed_ms / 400) % 3 {
-            0 => "",
-            1 => ".",
-            _ => "..",
-        };
-        snip_append(label, dots, &mut buf)
-    } else {
-        label
-    };
+    x_rel: i32,
+    y: i32,
+    reply: &str,
+    width: i32,
+) -> i32 {
+    let max_w = (width - 36).min(400);
+    let lines = text::wrap_count(Face::Mid, reply, max_w - 24, 6).max(1);
+    let tw = text::text_width(Face::Mid, reply) + 24;
+    let w = tw.clamp(140, max_w);
+    let h = 16 + 20 + lines as i32 * CHAT_LINE_H + 8;
+    let x = x_rel + 14;
+    rrect(
+        f,
+        x,
+        y,
+        w as u32,
+        h as u32,
+        14,
+        p.tile,
+        Some((p.tile_edge, 1)),
+    );
     txt(
         f,
-        Face::Small,
-        is_active,
+        Face::Tiny,
+        true,
         Align::Left,
-        x + 20,
-        bl,
-        if is_active { p.text } else { p.muted },
-        shown,
+        x + 12,
+        y + 18,
+        p.gold,
+        "AGENTE",
+    );
+    text::wrap_lines_at(
+        f,
+        Face::Mid,
+        p.text,
+        reply,
+        x + 12,
+        y + 38,
+        CHAT_LINE_H,
+        lines as usize,
+        w - 24,
+        Align::Left,
+    );
+    h
+}
+
+/// Drawer lateral: entra desde la derecha (`chat_drawer_anim` 0..100) y
+/// se cierra deslizándose de vuelta. Muestra todo el historial scrolleable.
+fn draw_chat_drawer(f: &mut Frame, p: &Palette, os: &OsState, v: &ViewState) {
+    let anim = v.chat_drawer_anim.min(100);
+    let drawer_w = (DRAWER_W as f32 * anim as f32 / 100.0) as i32;
+    let x0 = 466 - drawer_w; // 466 = cerrado (fuera) · 166 = abierto
+    f.dx = x0;
+    f.clip_x = Some((x0, 466));
+
+    // Fondo de la lámina.
+    rrect(f, 0, 0, drawer_w as u32, 466, 30, p.bg, None);
+
+    // Historial scrolleable verticalmente.
+    f.clip_y = Some((DRAWER_LIST_TOP, DRAWER_LIST_BOT));
+    if os.chat.is_empty() {
+        txt(
+            f,
+            Face::Small,
+            false,
+            Align::Center,
+            DRAWER_W / 2,
+            230,
+            p.muted,
+            "Sin mensajes todavía",
+        );
+    } else {
+        let mut y = DRAWER_LIST_TOP - v.chat_drawer_scroll as i32;
+        for turn in os.chat {
+            let uh = drawer_user_bubble(f, p, turn.text, 0, y, DRAWER_W);
+            let ah = drawer_agent_bubble(f, p, 0, y + uh + 10, turn.reply, DRAWER_W);
+            let block = uh + 10 + ah + 14;
+            if y + block < DRAWER_LIST_TOP {
+                y += block;
+                continue;
+            }
+            if y > DRAWER_LIST_BOT {
+                break;
+            }
+            y += block;
+        }
+    }
+    f.clip_y = None;
+
+    // Barra inferior: solo X para cerrar el drawer.
+    icons::x_mark(f, p.gold, DRAWER_W / 2, 420, 14);
+
+    f.dx = 0;
+    f.clip_x = None;
+}
+
+/// Hoja completa del historial: entra desde la derecha y cubre el AMOLED.
+/// El progreso 0..100 viene del panel.
+const CHAT_FULL_TOP: i32 = 48;
+const CHAT_FULL_BOT: i32 = 418;
+const CHAT_FULL_LINE_H: i32 = 15;
+const CHAT_FULL_TEXT_W: i32 = 240;
+const CHAT_FULL_CARD_W: i32 = 266;
+const CHAT_FULL_TEXT_INSET: i32 = 12;
+const CHAT_FULL_SCREEN_GAP: i32 = 10;
+const CHAT_FULL_MAX_LINES: usize = 64;
+const CHAT_BUBBLE_PAD_Y: i32 = 12;
+const CHAT_ARTIFACT_GAP: i32 = 3;
+const CHAT_ARTIFACT_H: i32 = 25;
+const CHAT_TABLE_COLS: usize = 6;
+const CHAT_TABLE_ROW_GAP: i32 = 6;
+
+/// Raíz cuadrada entera, suficiente para calcular el ancho visible del círculo.
+fn chat_full_isqrt(n: u32) -> i32 {
+    let mut lo = 0u32;
+    let mut hi = CLIP_R as u32;
+    while lo < hi {
+        let mid = (lo + hi + 1) / 2;
+        if mid * mid <= n {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    lo as i32
+}
+
+/// Las respuestas usan una columna central segura. El mensaje del usuario
+/// conserva un ancho compacto y queda alineado a la derecha de esa columna.
+fn chat_full_bubble_geometry(width: i32, user: bool) -> (i32, i32) {
+    let width = width.clamp(112, CHAT_FULL_CARD_W);
+    let column_x = (PX - CHAT_FULL_CARD_W) / 2;
+    let x = if user {
+        column_x + CHAT_FULL_CARD_W - width
+    } else {
+        column_x
+    };
+    (x, width)
+}
+
+fn chat_full_draw_bubble(
+    f: &mut Frame,
+    x: i32,
+    y: i32,
+    width: i32,
+    h: i32,
+    fill: Rgb888,
+    edge: Option<Rgb888>,
+) {
+    rrect(
+        f,
+        x,
+        y,
+        width.max(1) as u32,
+        h.max(1) as u32,
+        16,
+        fill,
+        edge.map(|c| (c, 1)),
     );
 }
 
-/// Burbuja del agente: rótulo + proceso del turno (+ respuesta al final).
-/// `active`: -1 = todo hecho (respuesta lista) · 0..2 = paso en curso.
-fn draw_agent_bubble(
+/// Caja tipográfica interior al card y al área donde la pantalla circular
+/// conserva suficiente ancho para leer.
+fn chat_full_text_bounds(y: i32, bubble_x: i32, bubble_w: i32) -> (i32, i32) {
+    let safe_y = y.clamp(
+        CHAT_FULL_TOP + CHAT_BUBBLE_PAD_Y,
+        CHAT_FULL_BOT - CHAT_BUBBLE_PAD_Y,
+    );
+    let dy = (safe_y - CENTER).abs().min(CLIP_R);
+    let remaining = (CLIP_R * CLIP_R - dy * dy) as u32;
+    let half = chat_full_isqrt(remaining);
+    let bubble_right = bubble_x + bubble_w - 1;
+    let left = (CENTER - half + CHAT_FULL_SCREEN_GAP).max(bubble_x + CHAT_FULL_TEXT_INSET);
+    let right = (CENTER + half - CHAT_FULL_SCREEN_GAP)
+        .min(bubble_right - CHAT_FULL_TEXT_INSET)
+        .min(PX - bubble_x - 1 - CHAT_FULL_TEXT_INSET);
+    (left, right)
+}
+
+fn chat_full_agent_geometry(y: i32, bubble_x: i32, bubble_w: i32) -> (i32, i32) {
+    let (left, right) = chat_full_text_bounds(y, bubble_x, bubble_w);
+    (left, (right - left).min(CHAT_FULL_TEXT_W))
+}
+
+fn chat_full_user_geometry(y: i32, bubble_x: i32, bubble_w: i32) -> (i32, i32) {
+    let (left, right) = chat_full_text_bounds(y, bubble_x, bubble_w);
+    (right, (right - left).min(CHAT_FULL_TEXT_W))
+}
+
+fn chat_table_cells<'a>(line: &'a str, cells: &mut [&'a str; CHAT_TABLE_COLS]) -> usize {
+    let line = line.trim();
+    if !line.contains('|') {
+        return 0;
+    }
+    let line = line.strip_prefix('|').unwrap_or(line);
+    let line = line.strip_suffix('|').unwrap_or(line);
+    let mut count = 0;
+    for cell in line.split('|').take(CHAT_TABLE_COLS) {
+        cells[count] = cell.trim();
+        count += 1;
+    }
+    count
+}
+
+fn chat_table_separator(line: &str) -> bool {
+    let line = line.trim();
+    line.contains('-')
+        && line
+            .chars()
+            .all(|ch| matches!(ch, '|' | '-' | ':' | ' ') || ch == '\t')
+}
+
+fn chat_list_text(line: &str) -> Option<&str> {
+    let line = line.trim_start();
+    for marker in ["- ", "* ", "+ "] {
+        if let Some(text) = line.strip_prefix(marker) {
+            return Some(text);
+        }
+    }
+    let digits = line.bytes().take_while(u8::is_ascii_digit).count();
+    if digits > 0
+        && line
+            .as_bytes()
+            .get(digits)
+            .is_some_and(|b| *b == b'.' || *b == b')')
+    {
+        return line.get(digits + 2..);
+    }
+    None
+}
+
+fn chat_heading_text(line: &str) -> Option<&str> {
+    let trimmed = line.trim_start();
+    let hashes = trimmed.bytes().take_while(|b| *b == b'#').count();
+    if (1..=4).contains(&hashes) && trimmed.as_bytes().get(hashes) == Some(&b' ') {
+        Some(trimmed.get(hashes + 1..).unwrap_or(""))
+    } else {
+        None
+    }
+}
+
+fn chat_clean_inline<'a>(line: &str, output: &'a mut [u8; 512]) -> &'a str {
+    let mut length = 0;
+    let mut chars = line.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '*' && chars.peek() == Some(&'*') {
+            chars.next();
+            continue;
+        }
+        if ch == '`' {
+            continue;
+        }
+        let mut encoded = [0u8; 4];
+        let bytes = ch.encode_utf8(&mut encoded).as_bytes();
+        if length + bytes.len() > output.len() {
+            break;
+        }
+        output[length..length + bytes.len()].copy_from_slice(bytes);
+        length += bytes.len();
+    }
+    core::str::from_utf8(&output[..length]).unwrap_or("")
+}
+
+fn chat_full_user_width(text: &str) -> i32 {
+    let content_w = text
+        .lines()
+        .map(|line| text::text_width(Face::Small, line))
+        .max()
+        .unwrap_or(0)
+        + CHAT_FULL_TEXT_INSET * 2;
+    content_w.clamp(112, CHAT_FULL_CARD_W)
+}
+
+fn chat_table_row_height(
+    cells: &[&str; CHAT_TABLE_COLS],
+    head: &[&str; CHAT_TABLE_COLS],
+    columns: usize,
+    width: i32,
+) -> i32 {
+    let columns = columns.max(1).min(CHAT_TABLE_COLS);
+    let field_w = (width - 24).max(1);
+    let mut height = 16;
+    for col in 0..columns {
+        let mut label_buf = [0u8; 512];
+        let label = chat_clean_inline(head[col], &mut label_buf);
+        let label_lines = text::wrap_chat_count(Face::Tiny, label, field_w, 8).max(1);
+        let mut value_buf = [0u8; 512];
+        let value = chat_clean_inline(cells[col], &mut value_buf);
+        let value_lines = text::wrap_chat_count(Face::Small, value, field_w, 8).max(1);
+        height += label_lines as i32 * 12 + value_lines as i32 * CHAT_FULL_LINE_H + 4;
+    }
+    height.max(48)
+}
+
+fn chat_table_layout<'a>(
+    mut lines: core::iter::Peekable<core::str::Lines<'a>>,
+    head: &[&str; CHAT_TABLE_COLS],
+    columns: usize,
+    width: i32,
+) -> (usize, i32) {
+    let mut rows = 0;
+    let mut height = 0;
+    while lines
+        .peek()
+        .is_some_and(|line| line.trim_start().starts_with('|') && !chat_table_separator(line))
+    {
+        let line = lines.next().unwrap_or("");
+        let mut cells = [""; CHAT_TABLE_COLS];
+        chat_table_cells(line, &mut cells);
+        height += chat_table_row_height(&cells, head, columns, width) + CHAT_TABLE_ROW_GAP;
+        rows += 1;
+    }
+    (rows, height)
+}
+
+fn chat_full_user_lines(text: &str) -> usize {
+    text::wrap_chat_count(Face::Small, text, CHAT_FULL_TEXT_W, CHAT_FULL_MAX_LINES).max(1)
+}
+
+fn chat_full_agent_content_height(reply: &str) -> i32 {
+    let mut height = 0;
+    let mut lines = reply.lines().peekable();
+    while let Some(line) = lines.next() {
+        let mut head = [""; CHAT_TABLE_COLS];
+        let columns = chat_table_cells(line, &mut head);
+        if columns > 0
+            && lines
+                .peek()
+                .is_some_and(|separator| chat_table_separator(separator))
+        {
+            lines.next();
+            let (rows, rows_h) = chat_table_layout(lines.clone(), &head, columns, CHAT_FULL_TEXT_W);
+            for _ in 0..rows {
+                lines.next();
+            }
+            height += if rows == 0 { 32 } else { 18 + rows_h };
+        } else if line.trim().is_empty() {
+            height += 4;
+        } else if let Some(title) = chat_heading_text(line) {
+            let mut clean_buf = [0u8; 512];
+            let title = chat_clean_inline(title, &mut clean_buf);
+            let count = text::wrap_chat_count(Face::SmallB, title, CHAT_FULL_TEXT_W, 4).max(1);
+            height += count as i32 * 16 + 4;
+        } else if let Some(item) = chat_list_text(line) {
+            let mut clean_buf = [0u8; 512];
+            let item = chat_clean_inline(item, &mut clean_buf);
+            let count = text::wrap_chat_count(
+                Face::Small,
+                item,
+                CHAT_FULL_TEXT_W - 14,
+                CHAT_FULL_MAX_LINES,
+            )
+            .max(1);
+            height += count as i32 * CHAT_FULL_LINE_H + 4;
+        } else {
+            let mut clean_buf = [0u8; 512];
+            let line = chat_clean_inline(line, &mut clean_buf);
+            let count =
+                text::wrap_chat_count(Face::Small, line, CHAT_FULL_TEXT_W, CHAT_FULL_MAX_LINES)
+                    .max(1);
+            height += count as i32 * CHAT_FULL_LINE_H + 4;
+        }
+    }
+    height.max(CHAT_FULL_LINE_H)
+}
+
+fn chat_full_user_height(text: &str) -> i32 {
+    CHAT_BUBBLE_PAD_Y * 2 + chat_full_user_lines(text) as i32 * CHAT_FULL_LINE_H
+}
+
+fn chat_full_agent_height(turn: &ChatTurn<'_>) -> i32 {
+    CHAT_BUBBLE_PAD_Y * 2
+        + chat_full_agent_content_height(turn.reply)
+        + if turn.artifact.is_some() {
+            CHAT_ARTIFACT_GAP + CHAT_ARTIFACT_H
+        } else {
+            0
+        }
+}
+
+fn chat_full_block_height(turn: &ChatTurn<'_>) -> i32 {
+    chat_full_user_height(turn.text) + 8 + chat_full_agent_height(turn) + 12
+}
+
+fn chat_full_content_height(chat: &[ChatTurn<'_>]) -> i32 {
+    let total: i32 = chat.iter().map(chat_full_block_height).sum();
+    if chat.is_empty() {
+        total
+    } else {
+        total.saturating_sub(12)
+    }
+}
+
+/// Scroll exacto de la hoja completa, calculado con la misma tipografía y
+/// reglas de ajuste que usa el dibujo.
+pub fn chat_full_scroll_max(chat: &[ChatTurn<'_>]) -> u32 {
+    let content_h = chat_full_content_height(chat);
+    content_h
+        .saturating_sub(CHAT_FULL_BOT - CHAT_FULL_TOP)
+        .max(0) as u32
+}
+
+/// Devuelve el turno cuyo acceso de artifact recibió el toque.
+pub fn chat_full_artifact_hit(
+    chat: &[ChatTurn<'_>],
+    scroll: u32,
+    px: f32,
+    py: f32,
+) -> Option<usize> {
+    if py < CHAT_FULL_TOP as f32 || py > CHAT_FULL_BOT as f32 {
+        return None;
+    }
+    let content_h = chat_full_content_height(chat);
+    let visible_h = CHAT_FULL_BOT - CHAT_FULL_TOP;
+    let scroll = scroll.min(chat_full_scroll_max(chat)) as i32;
+    let mut y = if content_h < visible_h {
+        CHAT_FULL_TOP + (visible_h - content_h) / 2
+    } else {
+        CHAT_FULL_TOP - scroll
+    };
+    let (bubble_x, bubble_w) = chat_full_bubble_geometry(CHAT_FULL_CARD_W, false);
+    for (index, turn) in chat.iter().enumerate() {
+        let user_h = chat_full_user_height(turn.text);
+        if turn.artifact.is_some() {
+            let artifact_y = y
+                + user_h
+                + 8
+                + CHAT_BUBBLE_PAD_Y
+                + chat_full_agent_content_height(turn.reply)
+                + CHAT_ARTIFACT_GAP;
+            let rect = crate::hit::Rect {
+                x: bubble_x + 12,
+                y: artifact_y,
+                w: bubble_w - 24,
+                h: CHAT_ARTIFACT_H,
+            };
+            if crate::hit::in_rect(px, py, rect) {
+                return Some(index);
+            }
+        }
+        y += chat_full_block_height(turn);
+    }
+    None
+}
+
+fn chat_full_table_record(
     f: &mut Frame,
     p: &Palette,
+    cells: &[&str; CHAT_TABLE_COLS],
+    head: &[&str; CHAT_TABLE_COLS],
+    columns: usize,
+    x: i32,
     y: i32,
-    active: i32,
-    reply: Option<&str>,
-    elapsed_ms: u64,
-) -> i32 {
-    let x = CHAT_LEFT;
-    let mut w = 220;
-    for s in CHAT_STEPS.iter() {
-        w = w.max(text::text_width(Face::Small, s) + 44);
-    }
-    if let Some(r) = reply {
-        w = w.max((text::text_width(Face::Mid, r) + 24).min(330));
-    }
-    let w = w.clamp(220, 330);
-    let inner = w - 24;
-    // alto: rótulo(20) + pasos(3×15) + [divisor + respuesta] + colchón
-    let (lines, h) = match reply {
-        None => (0usize, 38 + 2 * CHAT_STEP_H + 3 + 10),
-        Some(r) => {
-            let first_bl = y + 97;
-            let max_lines = ((((CHAT_BOTTOM - first_bl) / CHAT_LINE_H) + 1).clamp(1, 4)) as usize;
-            let n = text::wrap_count(Face::Mid, r, inner, max_lines).max(1);
-            (n, 97 + (n as i32 - 1) * CHAT_LINE_H + 3 + 10)
-        }
-    };
-    rrect(f, x, y, w as u32, h as u32, 16, p.tile, Some((p.tile_edge, 1)));
-    txt(f, Face::Tiny, true, Align::Left, x + 12, y + 18, p.gold, "AGENTE");
-    for (i, label) in CHAT_STEPS.iter().enumerate() {
-        let bl = y + 38 + i as i32 * CHAT_STEP_H;
-        draw_chat_step(f, p, x + 12, bl, active, i, label, elapsed_ms);
-    }
-    if let Some(r) = reply {
-        let dy = y + 78;
-        Line::new(Point::new(x + 12, dy), Point::new(x + w - 12, dy))
-            .into_styled(PrimitiveStyle::with_stroke(p.hairline, 1))
+    width: i32,
+    height: i32,
+) {
+    let columns = columns.max(1).min(CHAT_TABLE_COLS);
+    rrect(
+        f,
+        x,
+        y,
+        width.max(1) as u32,
+        height.max(1) as u32,
+        9,
+        p.bg,
+        Some((p.tile_edge, 1)),
+    );
+    let content_x = x + 10;
+    let content_w = width - 20;
+    let mut field_y = y + 8;
+    for col in 0..columns {
+        let mut label_buf = [0u8; 512];
+        let label = chat_clean_inline(head[col], &mut label_buf);
+        let label_lines = text::wrap_chat_count(Face::Tiny, label, content_w, 8).max(1);
+        let label_geometry = |_| (content_x, content_w);
+        text::wrap_chat_lines_at(
+            f,
+            Face::Tiny,
+            p.gold,
+            label,
+            field_y + 10,
+            12,
+            label_lines,
+            Align::Left,
+            label_geometry,
+        );
+        field_y += label_lines as i32 * 12;
+
+        let mut value_buf = [0u8; 512];
+        let value = chat_clean_inline(cells[col], &mut value_buf);
+        let value_lines = text::wrap_chat_count(Face::Small, value, content_w, 8).max(1);
+        let value_geometry = |_| (content_x, content_w);
+        text::wrap_chat_lines_at(
+            f,
+            Face::Small,
+            p.text,
+            value,
+            field_y + 12,
+            CHAT_FULL_LINE_H,
+            value_lines,
+            Align::Left,
+            value_geometry,
+        );
+        field_y += value_lines as i32 * CHAT_FULL_LINE_H + 4;
+        if col + 1 < columns {
+            Line::new(
+                Point::new(content_x, field_y - 2),
+                Point::new(x + width - 10, field_y - 2),
+            )
+            .into_styled(PrimitiveStyle::with_stroke(p.tile_edge, 1))
             .draw(f)
             .ok();
-        text::wrap_lines_at(
+        }
+    }
+}
+
+fn chat_full_draw_table<'a, F>(
+    f: &mut Frame,
+    p: &Palette,
+    head: &[&str; CHAT_TABLE_COLS],
+    columns: usize,
+    lines: &mut core::iter::Peekable<core::str::Lines<'a>>,
+    y: i32,
+    geometry: F,
+) -> i32
+where
+    F: Fn(i32) -> (i32, i32),
+{
+    let (x, width) = geometry(y + 14);
+    let width = width.max(1);
+    let (rows, rows_height) = chat_table_layout(lines.clone(), head, columns, width);
+    if rows == 0 {
+        rrect(f, x, y, width as u32, 32, 9, p.bg, Some((p.tile_edge, 1)));
+        txt(
             f,
-            Face::Mid,
-            p.text,
-            r,
-            x + 12,
-            y + 97,
-            CHAT_LINE_H,
-            lines,
-            inner,
+            Face::Tiny,
+            false,
             Align::Left,
+            x + 10,
+            y + 20,
+            p.muted,
+            "Sin registros",
+        );
+        return 32;
+    }
+    txt(
+        f,
+        Face::Tiny,
+        true,
+        Align::Left,
+        x + 4,
+        y + 12,
+        p.gold,
+        "RESULTADOS",
+    );
+    let mut row_y = y + 18;
+    for _ in 0..rows {
+        let Some(line) = lines.next() else { break };
+        let mut cells = [""; CHAT_TABLE_COLS];
+        chat_table_cells(line, &mut cells);
+        let row_height = chat_table_row_height(&cells, head, columns, width);
+        chat_full_table_record(f, p, &cells, head, columns, x, row_y, width, row_height);
+        row_y += row_height + CHAT_TABLE_ROW_GAP;
+    }
+    18 + rows_height
+}
+
+fn chat_full_user_bubble(f: &mut Frame, p: &Palette, text: &str, y: i32) -> i32 {
+    let lines = chat_full_user_lines(text);
+    let h = CHAT_BUBBLE_PAD_Y * 2 + lines as i32 * CHAT_FULL_LINE_H;
+    let width = chat_full_user_width(text);
+    let (x, width) = chat_full_bubble_geometry(width, true);
+    chat_full_draw_bubble(f, x, y, width, h, p.gold, None);
+    let geometry = |line_y| chat_full_user_geometry(line_y, x, width);
+    text::wrap_chat_lines_at(
+        f,
+        Face::Small,
+        p.on_gold,
+        text,
+        y + CHAT_BUBBLE_PAD_Y,
+        CHAT_FULL_LINE_H,
+        lines,
+        Align::Right,
+        geometry,
+    );
+    h
+}
+
+fn chat_full_agent_bubble(f: &mut Frame, p: &Palette, turn: &ChatTurn<'_>, y: i32) -> i32 {
+    let reply = turn.reply;
+    let content_h = chat_full_agent_content_height(reply);
+    let h = chat_full_agent_height(turn);
+    let (x, width) = chat_full_bubble_geometry(CHAT_FULL_CARD_W, false);
+    chat_full_draw_bubble(f, x, y, width, h, p.tile, Some(p.tile_edge));
+    let geometry = |line_y| chat_full_agent_geometry(line_y, x, width);
+    let mut cursor_y = y + CHAT_BUBBLE_PAD_Y;
+    let mut lines = reply.lines().peekable();
+    while let Some(line) = lines.next() {
+        let mut head = [""; CHAT_TABLE_COLS];
+        let columns = chat_table_cells(line, &mut head);
+        if columns > 0
+            && lines
+                .peek()
+                .is_some_and(|separator| chat_table_separator(separator))
+        {
+            lines.next();
+            cursor_y += chat_full_draw_table(f, p, &head, columns, &mut lines, cursor_y, &geometry);
+        } else if line.trim().is_empty() {
+            cursor_y += 4;
+        } else if let Some(title) = chat_heading_text(line) {
+            let mut clean_buf = [0u8; 512];
+            let title = chat_clean_inline(title, &mut clean_buf);
+            let count = text::wrap_chat_count(Face::SmallB, title, CHAT_FULL_TEXT_W, 4).max(1);
+            text::wrap_chat_lines_at(
+                f,
+                Face::SmallB,
+                p.gold,
+                title,
+                cursor_y + 13,
+                16,
+                count,
+                Align::Left,
+                &geometry,
+            );
+            cursor_y += count as i32 * 16 + 4;
+        } else if let Some(item) = chat_list_text(line) {
+            let mut clean_buf = [0u8; 512];
+            let item = chat_clean_inline(item, &mut clean_buf);
+            let list_geometry = |line_y| {
+                let (x, width) = geometry(line_y);
+                (x + 14, width - 14)
+            };
+            let count = text::wrap_chat_count(
+                Face::Small,
+                item,
+                CHAT_FULL_TEXT_W - 14,
+                CHAT_FULL_MAX_LINES,
+            )
+            .max(1);
+            let (bullet_x, _) = geometry(cursor_y + 9);
+            circle_fill(f, bullet_x + 3, cursor_y + 8, 2, p.gold);
+            text::wrap_chat_lines_at(
+                f,
+                Face::Small,
+                p.text,
+                item,
+                cursor_y + 12,
+                CHAT_FULL_LINE_H,
+                count,
+                Align::Left,
+                list_geometry,
+            );
+            cursor_y += count as i32 * CHAT_FULL_LINE_H + 4;
+        } else {
+            let mut clean_buf = [0u8; 512];
+            let clean_line = chat_clean_inline(line, &mut clean_buf);
+            let count = text::wrap_chat_count(
+                Face::Small,
+                clean_line,
+                CHAT_FULL_TEXT_W,
+                CHAT_FULL_MAX_LINES,
+            )
+            .max(1);
+            text::wrap_chat_lines_at(
+                f,
+                Face::Small,
+                p.text,
+                clean_line,
+                cursor_y + 12,
+                CHAT_FULL_LINE_H,
+                count,
+                Align::Left,
+                &geometry,
+            );
+            cursor_y += count as i32 * CHAT_FULL_LINE_H + 4;
+        }
+    }
+    if let Some(artifact) = turn.artifact {
+        let chip_y = y + CHAT_BUBBLE_PAD_Y + content_h + CHAT_ARTIFACT_GAP;
+        rrect(
+            f,
+            x + 12,
+            chip_y,
+            (width - 24) as u32,
+            CHAT_ARTIFACT_H as u32,
+            8,
+            p.bg,
+            Some((p.tile_edge, 1)),
+        );
+        let mut title_buf = [0u8; 512];
+        let title = chat_clean_inline(artifact.title, &mut title_buf);
+        txt(
+            f,
+            Face::Tiny,
+            true,
+            Align::Left,
+            x + 22,
+            chip_y + 16,
+            p.text,
+            title,
+        );
+        txt(
+            f,
+            Face::Tiny,
+            true,
+            Align::Right,
+            x + width - 22,
+            chip_y + 16,
+            p.gold,
+            "VER",
         );
     }
     h
 }
 
-/// Burbuja de mensaje simple del agente (rótulo + cuerpo + nota).
-fn draw_agent_message(f: &mut Frame, p: &Palette, y: i32, body: &str, hint: &str) -> i32 {
-    let x = CHAT_LEFT;
-    let bw = text::text_width(Face::Mid, body) + 24;
-    let hw = text::text_width(Face::Small, hint) + 24;
-    let w = bw.max(hw).clamp(200, 330);
-    let inner = w - 24;
-    let blines = text::wrap_count(Face::Mid, body, inner, 2).max(1);
-    let hlines = text::wrap_count(Face::Small, hint, inner, 2).max(1);
-    let h = 16 + blines as i32 * CHAT_LINE_H + 6 + hlines as i32 * 15 + 8;
-    rrect(f, x, y, w as u32, h as u32, 16, p.tile, Some((p.tile_edge, 1)));
-    txt(f, Face::Tiny, true, Align::Left, x + 12, y + 16, p.gold, "AGENTE");
-    text::wrap_lines_at(f, Face::Mid, p.text, body, x + 12, y + 36, CHAT_LINE_H, 2, inner, Align::Left);
-    let hbl = y + 36 + blines as i32 * CHAT_LINE_H + 8;
-    text::wrap_lines_at(f, Face::Small, p.muted, hint, x + 12, hbl, 15, 2, inner, Align::Left);
-    h
+fn draw_chat_full(f: &mut Frame, p: &Palette, os: &OsState, v: &ViewState) {
+    let progress = v.chat_anim.min(100) as i32;
+    let offset = 466 - (466 * progress / 100);
+    f.dx = offset;
+    f.clip_x = Some((0, 466));
+
+    rrect(f, 0, 0, 466, 466, 0, p.bg, None);
+    f.clip_y = Some((CHAT_FULL_TOP, CHAT_FULL_BOT));
+    if os.chat.is_empty() {
+        txt(
+            f,
+            Face::Small,
+            false,
+            Align::Center,
+            CENTER,
+            220,
+            p.muted,
+            "Sin mensajes todavía",
+        );
+    } else {
+        let max_scroll = chat_full_scroll_max(os.chat);
+        let scroll = v.chat_scroll.min(max_scroll) as i32;
+        let content_h = chat_full_content_height(os.chat);
+        let visible_h = CHAT_FULL_BOT - CHAT_FULL_TOP;
+        let mut y = if content_h < visible_h {
+            CHAT_FULL_TOP + (visible_h - content_h) / 2
+        } else {
+            CHAT_FULL_TOP - scroll
+        };
+        for (index, turn) in os.chat.iter().enumerate() {
+            let uh = chat_full_user_height(turn.text);
+            let ah = chat_full_agent_height(turn);
+            let block = uh + 8 + ah + if index + 1 < os.chat.len() { 12 } else { 0 };
+            if y + block < CHAT_FULL_TOP {
+                y += block;
+                continue;
+            }
+            if y > CHAT_FULL_BOT {
+                break;
+            }
+            chat_full_user_bubble(f, p, turn.text, y);
+            chat_full_agent_bubble(f, p, turn, y + uh + 8);
+            y += block;
+        }
+    }
+    f.clip_y = Some((0, 466));
+    // El historial no muestra controles inferiores; se cierra con el gesto
+    // desde el borde izquierdo hacia la derecha.
+    f.dx = 0;
+    f.clip_x = None;
+    f.clip_y = None;
 }
 
 // ── pantallas online ───────────────────────────────────────────────────
@@ -752,42 +1551,16 @@ fn draw_home(f: &mut Frame, p: &Palette, os: &OsState, v: &ViewState, hour: u8, 
     cbuf[3..5].copy_from_slice(ms.as_bytes());
     let clock = core::str::from_utf8(&cbuf[..5]).unwrap_or("--:--");
     txt(f, Face::Xl, true, Align::Center, CENTER, 78, p.text, clock);
-    txt(f, Face::Small, false, Align::Center, CENTER, 96, p.muted, os.clock.date_line);
-    // chat: solo mensajes REALES del usuario y del agente (sin saludos:
-    // la conversación arranca con tu primer mensaje)
-    let y = CHAT_TOP;
-    match v.chat_status {
-        2 => {
-            let user = if v.chat_heard.is_empty() { "(voz)" } else { v.chat_heard };
-            let uy = draw_user_bubble(f, p, user, y);
-            let active = if v.chat_elapsed_ms < 3000 {
-                0
-            } else if v.chat_elapsed_ms < 9000 {
-                1
-            } else {
-                2
-            };
-            draw_agent_bubble(f, p, y + uy + 8, active, None, v.elapsed_ms);
-        }
-        4 if !v.chat_heard.is_empty() => {
-            // solo si hubo turno: sin turno no tiene sentido un error
-            // permanente en la pantalla principal
-            let y2 = y + draw_user_bubble(f, p, v.chat_heard, y) + 8;
-            let _ = draw_agent_message(
-                f,
-                p,
-                y2,
-                "No pude completar la respuesta.",
-                "Inténtalo de nuevo en unos segundos.",
-            );
-        }
-        _ => {
-            if let Some(r) = os.last_reply {
-                let uy = draw_user_bubble(f, p, r.text, y);
-                draw_agent_bubble(f, p, y + uy + 8, -1, Some(r.reply), v.elapsed_ms);
-            }
-        }
-    }
+    txt(
+        f,
+        Face::Small,
+        false,
+        Align::Center,
+        CENTER,
+        96,
+        p.muted,
+        os.clock.date_line,
+    );
     // dock curvo con blur: píldora esmerilada + 3 iconos pequeños
     draw_dock(f, p);
     // apps izq (rejilla 2x2 sobre la curva)
@@ -868,7 +1641,16 @@ fn draw_appdetail(f: &mut Frame, p: &Palette, os: &OsState) {
     let Some(a) = app else {
         draw_status_bar(f, p);
         draw_header(f, p, "< dapp");
-        txt(f, Face::Mid, false, Align::Center, CENTER, CENTER + 10, p.muted, "(dapp no instalada)");
+        txt(
+            f,
+            Face::Mid,
+            false,
+            Align::Center,
+            CENTER,
+            CENTER + 10,
+            p.muted,
+            "(dapp no instalada)",
+        );
         return;
     };
     draw_status_bar(f, p);
@@ -877,36 +1659,89 @@ fn draw_appdetail(f: &mut Frame, p: &Palette, os: &OsState) {
     draw_header(f, p, snip_append("< ", snip(a.slug, &mut sg, 16), &mut hb));
     draw_badge(f, CENTER, CENTER - 28, 34, a.slug);
     let mut nb = [0u8; 96];
-    txt(f, Face::Large, true, Align::Center, CENTER, CENTER + 34, p.text, snip(a.name, &mut nb, 20));
+    txt(
+        f,
+        Face::Large,
+        true,
+        Align::Center,
+        CENTER,
+        CENTER + 34,
+        p.text,
+        snip(a.name, &mut nb, 20),
+    );
     // punto verde + estado (centrado como grupo)
     let sw = text::text_width(Face::Mid, a.status);
     let dot_x = CENTER - sw / 2 - 12;
     circle_fill(f, dot_x, CENTER + 58 - 5, 4, p.green);
-    txt(f, Face::Mid, false, Align::Center, CENTER + 8, CENTER + 58, p.green, a.status);
+    txt(
+        f,
+        Face::Mid,
+        false,
+        Align::Center,
+        CENTER + 8,
+        CENTER + 58,
+        p.green,
+        a.status,
+    );
     let mut cb = [0u8; 32];
     let n = fmt_u32(a.tools_count, &mut cb);
     let mut lb = [0u8; 96];
-    txt(f, Face::Mid, false, Align::Center, CENTER, CENTER + 80, p.muted, snip_append3(n, " tools para el agente", "", &mut lb));
-    txt(f, Face::Mid, false, Align::Center, CENTER, CENTER + 100, p.muted, "cada uso paga su peaje x402");
+    txt(
+        f,
+        Face::Mid,
+        false,
+        Align::Center,
+        CENTER,
+        CENTER + 80,
+        p.muted,
+        snip_append3(n, " tools para el agente", "", &mut lb),
+    );
+    txt(
+        f,
+        Face::Mid,
+        false,
+        Align::Center,
+        CENTER,
+        CENTER + 100,
+        p.muted,
+        "cada uso paga su peaje x402",
+    );
 }
 
 fn solana_mark(f: &mut Frame, c: Rgb888, x: i32, y: i32) {
     for i in 0..3 {
         let by = y + i * 7;
-        Triangle::new(Point::new(x, by), Point::new(x + 18, by), Point::new(x + 14, by + 4))
-            .into_styled(PrimitiveStyle::with_fill(c))
-            .draw(f)
-            .ok();
-        Triangle::new(Point::new(x, by), Point::new(x + 14, by + 4), Point::new(x - 4, by + 4))
-            .into_styled(PrimitiveStyle::with_fill(c))
-            .draw(f)
-            .ok();
+        Triangle::new(
+            Point::new(x, by),
+            Point::new(x + 18, by),
+            Point::new(x + 14, by + 4),
+        )
+        .into_styled(PrimitiveStyle::with_fill(c))
+        .draw(f)
+        .ok();
+        Triangle::new(
+            Point::new(x, by),
+            Point::new(x + 14, by + 4),
+            Point::new(x - 4, by + 4),
+        )
+        .into_styled(PrimitiveStyle::with_fill(c))
+        .draw(f)
+        .ok();
     }
 }
 
 fn banco_button(f: &mut Frame, p: &Palette, x: i32, label: &str) {
     rrect(f, x, 250, 150, 56, 14, p.gold, None);
-    txt(f, Face::Base, true, Align::Center, x + 75, 250 + 35, p.on_gold, label);
+    txt(
+        f,
+        Face::Base,
+        true,
+        Align::Center,
+        x + 75,
+        250 + 35,
+        p.on_gold,
+        label,
+    );
 }
 
 fn banco_pills(f: &mut Frame, p: &Palette, a: &str, b: &str, first_active: bool) {
@@ -957,8 +1792,26 @@ fn draw_nfc_view(f: &mut Frame, p: &Palette, line1: &str, line2: &str) {
         .ok();
     }
     circle_fill(f, CENTER, 280, 5, p.gold);
-    txt(f, Face::Mid, true, Align::Center, CENTER, 352, p.text, line1);
-    txt(f, Face::Small, false, Align::Center, CENTER, 374, p.muted, line2);
+    txt(
+        f,
+        Face::Mid,
+        true,
+        Align::Center,
+        CENTER,
+        352,
+        p.text,
+        line1,
+    );
+    txt(
+        f,
+        Face::Small,
+        false,
+        Align::Center,
+        CENTER,
+        374,
+        p.muted,
+        line2,
+    );
 }
 
 fn draw_settings(f: &mut Frame, p: &Palette, os: &OsState, v: &ViewState) {
@@ -988,7 +1841,16 @@ fn draw_settings(f: &mut Frame, p: &Palette, os: &OsState, v: &ViewState) {
         let y = 140 + i as i32 * 44 + 26;
         if label == "Bloquear" {
             icons::lock(f, p, CENTER - 128, y - 5, 18);
-            txt(f, Face::Mid, true, Align::Left, CENTER - 112, y, p.gold, "Bloquear");
+            txt(
+                f,
+                Face::Mid,
+                true,
+                Align::Left,
+                CENTER - 112,
+                y,
+                p.gold,
+                "Bloquear",
+            );
         } else {
             let mut lb = [0u8; 48];
             let lab = snip(label, &mut lb, 22);
@@ -1005,7 +1867,16 @@ fn draw_settings(f: &mut Frame, p: &Palette, os: &OsState, v: &ViewState) {
         }
         if !value.is_empty() {
             let mut tb = [0u8; 48];
-            txt(f, Face::Small, false, Align::Right, CENTER + 138, y, p.muted, snip(value, &mut tb, 22));
+            txt(
+                f,
+                Face::Small,
+                false,
+                Align::Right,
+                CENTER + 138,
+                y,
+                p.muted,
+                snip(value, &mut tb, 22),
+            );
         }
         Rectangle::new(Point::new(CENTER - 138, y + 10), Size::new(276, 1))
             .into_styled(PrimitiveStyle::with_fill(p.hairline))
@@ -1024,8 +1895,26 @@ fn draw_providers(f: &mut Frame, p: &Palette, os: &OsState, v: &ViewState) {
         }
     }
     if n == 0 {
-        txt(f, Face::Mid, false, Align::Center, CENTER, CENTER + 4, p.muted, "sin keys en tu cuenta");
-        txt(f, Face::Mid, false, Align::Center, CENTER, CENTER + 28, p.muted, "cargalas en Modelos");
+        txt(
+            f,
+            Face::Mid,
+            false,
+            Align::Center,
+            CENTER,
+            CENTER + 4,
+            p.muted,
+            "sin keys en tu cuenta",
+        );
+        txt(
+            f,
+            Face::Mid,
+            false,
+            Align::Center,
+            CENTER,
+            CENTER + 28,
+            p.muted,
+            "cargalas en Modelos",
+        );
         return;
     }
     let o = (v.scroll_providers as usize).min(n.saturating_sub(crate::hit::LIST_PAGE as usize));
@@ -1033,7 +1922,13 @@ fn draw_providers(f: &mut Frame, p: &Palette, os: &OsState, v: &ViewState) {
         let pr = &os.llm_providers[idx[k]];
         let y = 148 + i as i32 * 58;
         let active = pr.is_active;
-        circle_fill(f, CENTER - 118, y + 26, 16, if active { p.gold } else { p.dot });
+        circle_fill(
+            f,
+            CENTER - 118,
+            y + 26,
+            16,
+            if active { p.gold } else { p.dot },
+        );
         if !active {
             circle_edge(f, CENTER - 118, y + 26, 16, brand_color(pr.provider), 2);
         }
@@ -1045,11 +1940,24 @@ fn draw_providers(f: &mut Frame, p: &Palette, os: &OsState, v: &ViewState) {
             Align::Center,
             CENTER - 118,
             y + 31,
-            if active { p.on_gold } else { brand_color(pr.provider) },
+            if active {
+                p.on_gold
+            } else {
+                brand_color(pr.provider)
+            },
             badge_letters(pr.provider, &mut ib),
         );
         let mut nb = [0u8; 96];
-        txt(f, Face::Base, true, Align::Left, CENTER - 92, y + 22, p.text, snip(pr.provider, &mut nb, 16));
+        txt(
+            f,
+            Face::Base,
+            true,
+            Align::Left,
+            CENTER - 92,
+            y + 22,
+            p.text,
+            snip(pr.provider, &mut nb, 16),
+        );
         let mut cb = [0u8; 32];
         let c = fmt_u32(pr.models.len() as u32, &mut cb);
         let mut lb = [0u8; 96];
@@ -1076,18 +1984,52 @@ fn draw_models(f: &mut Frame, p: &Palette, os: &OsState, v: &ViewState) {
         }
     }
     let Some(row) = active else {
-        txt(f, Face::Mid, false, Align::Center, CENTER, CENTER + 10, p.muted, "elige un proveedor primero");
+        txt(
+            f,
+            Face::Mid,
+            false,
+            Align::Center,
+            CENTER,
+            CENTER + 10,
+            p.muted,
+            "elige un proveedor primero",
+        );
         return;
     };
     if row.models.is_empty() {
-        txt(f, Face::Mid, false, Align::Center, CENTER, CENTER + 10, p.muted, "sin modelos listados");
+        txt(
+            f,
+            Face::Mid,
+            false,
+            Align::Center,
+            CENTER,
+            CENTER + 10,
+            p.muted,
+            "sin modelos listados",
+        );
         return;
     }
-    let o = (v.scroll_models as usize).min(row.models.len().saturating_sub(crate::hit::LIST_PAGE as usize));
-    for (i, m) in row.models.iter().skip(o).take(crate::hit::LIST_PAGE as usize).enumerate() {
+    let o = (v.scroll_models as usize).min(
+        row.models
+            .len()
+            .saturating_sub(crate::hit::LIST_PAGE as usize),
+    );
+    for (i, m) in row
+        .models
+        .iter()
+        .skip(o)
+        .take(crate::hit::LIST_PAGE as usize)
+        .enumerate()
+    {
         let y = 148 + i as i32 * 58;
         let cur = *m == row.default_model;
-        circle_fill(f, CENTER - 118, y + 26, 10, if cur { p.green } else { p.dot });
+        circle_fill(
+            f,
+            CENTER - 118,
+            y + 26,
+            10,
+            if cur { p.green } else { p.dot },
+        );
         if !cur {
             circle_edge(f, CENTER - 118, y + 26, 10, p.dot_edge, 2);
         }
@@ -1104,23 +2046,66 @@ fn draw_models(f: &mut Frame, p: &Palette, os: &OsState, v: &ViewState) {
             snip(short, &mut sb, 24),
         );
         let mut fb = [0u8; 96];
-        txt(f, Face::Tiny, false, Align::Left, CENTER - 92, y + 42, p.faint, snip(m, &mut fb, 30));
+        txt(
+            f,
+            Face::Tiny,
+            false,
+            Align::Left,
+            CENTER - 92,
+            y + 42,
+            p.faint,
+            snip(m, &mut fb, 30),
+        );
     }
     scroll_hints(f, p, row.models.len(), o, 140, 384);
 }
 
 fn draw_apps_list(f: &mut Frame, p: &Palette, os: &OsState, v: &ViewState) {
     if os.apps.is_empty() {
-        txt(f, Face::Mid, false, Align::Center, CENTER, CENTER + 10, p.muted, "(sin dapps instaladas)");
-        txt(f, Face::Mid, false, Align::Center, CENTER, CENTER + 34, p.muted, "nomikos apps add <slug>");
+        txt(
+            f,
+            Face::Mid,
+            false,
+            Align::Center,
+            CENTER,
+            CENTER + 10,
+            p.muted,
+            "(sin dapps instaladas)",
+        );
+        txt(
+            f,
+            Face::Mid,
+            false,
+            Align::Center,
+            CENTER,
+            CENTER + 34,
+            p.muted,
+            "nomikos apps add <slug>",
+        );
         return;
     }
-    let o = (v.scroll_apps as usize).min(os.apps.len().saturating_sub(crate::hit::LIST_PAGE as usize));
-    for (i, a) in os.apps.iter().skip(o).take(crate::hit::LIST_PAGE as usize).enumerate() {
+    let o =
+        (v.scroll_apps as usize).min(os.apps.len().saturating_sub(crate::hit::LIST_PAGE as usize));
+    for (i, a) in os
+        .apps
+        .iter()
+        .skip(o)
+        .take(crate::hit::LIST_PAGE as usize)
+        .enumerate()
+    {
         let y = 148 + i as i32 * 66;
         draw_badge(f, CENTER - 118, y + 29, 22, a.slug);
         let mut nb = [0u8; 96];
-        txt(f, Face::Base, true, Align::Left, CENTER - 88, y + 22, p.text, snip(a.name, &mut nb, 18));
+        txt(
+            f,
+            Face::Base,
+            true,
+            Align::Left,
+            CENTER - 88,
+            y + 22,
+            p.text,
+            snip(a.name, &mut nb, 18),
+        );
         let mut cb = [0u8; 32];
         let c = fmt_u32(a.tools_count, &mut cb);
         let mut lb = [0u8; 96];
@@ -1171,14 +2156,41 @@ fn draw_shade(f: &mut Frame, p: &Palette, os: &OsState, v: &ViewState, hour: u8,
     circle_edge(f, 318, y0 + 66, 13, p.tile_edge, 1);
     icons::gear(f, p, 318, y0 + 66, 8);
     // batería
-    txt(f, Face::Small, false, Align::Left, 116, y0 + 108, p.muted, "Batería del dispositivo");
-    txt(f, Face::Small, true, Align::Right, 350, y0 + 108, p.text, "100%");
+    txt(
+        f,
+        Face::Small,
+        false,
+        Align::Left,
+        116,
+        y0 + 108,
+        p.muted,
+        "Batería del dispositivo",
+    );
+    txt(
+        f,
+        Face::Small,
+        true,
+        Align::Right,
+        350,
+        y0 + 108,
+        p.text,
+        "100%",
+    );
     rrect(f, 116, y0 + 116, 234, 8, 4, p.track, None);
     rrect(f, 116, y0 + 116, 234, 8, 4, p.green, None);
     // notificaciones (máx 4)
     let n = notif_count(os);
     if n == 0 {
-        txt(f, Face::Small, false, Align::Left, 116, y0 + 162, p.muted, "sin notificaciones");
+        txt(
+            f,
+            Face::Small,
+            false,
+            Align::Left,
+            116,
+            y0 + 162,
+            p.muted,
+            "sin notificaciones",
+        );
     } else {
         let mut nb = [0u8; 96];
         for i in 0..n.min(4) {
@@ -1186,13 +2198,40 @@ fn draw_shade(f: &mut Frame, p: &Palette, os: &OsState, v: &ViewState, hour: u8,
             if let Some((title, body)) = notif_get(os, i, &mut nb) {
                 circle_fill(f, 122, y - 4, 3, BADGE_BLUE);
                 let mut tb = [0u8; 96];
-                txt(f, Face::Small, true, Align::Left, 134, y, p.text, snip(title, &mut tb, 20));
+                txt(
+                    f,
+                    Face::Small,
+                    true,
+                    Align::Left,
+                    134,
+                    y,
+                    p.text,
+                    snip(title, &mut tb, 20),
+                );
                 let mut bb = [0u8; 96];
-                txt(f, Face::Tiny, false, Align::Left, 134, y + 15, p.muted, snip(body, &mut bb, 30));
+                txt(
+                    f,
+                    Face::Tiny,
+                    false,
+                    Align::Left,
+                    134,
+                    y + 15,
+                    p.muted,
+                    snip(body, &mut bb, 30),
+                );
             }
         }
     }
-    txt(f, Face::Tiny, false, Align::Center, CENTER, y0 + PX - 20, p.faint, "desliza ^ para cerrar");
+    txt(
+        f,
+        Face::Tiny,
+        false,
+        Align::Center,
+        CENTER,
+        y0 + PX - 20,
+        p.faint,
+        "desliza ^ para cerrar",
+    );
 }
 
 /// Oscurece todo el frame (velo del shade, sin blur: portable).
@@ -1252,11 +2291,22 @@ pub fn draw(
                             draw_models(f, p, os, v);
                         }
                     }
+                    if v.chat_full || v.chat_anim > 0 {
+                        // El historial usa la misma superficie clara que el
+                        // panel contiguo, aunque el home del OS esté en dark.
+                        draw_chat_full(f, &LIGHT, os, v);
+                    }
                     if v.shade_p > 0 {
                         // velo progresivo + lámina (TS: blur+velo; aquí velo: portable)
                         let dim = 100u8.saturating_sub((v.shade_p as u16 * 18 / 100) as u8);
                         dim_frame(f, dim);
                         draw_shade(f, p, os, v, hour, minute);
+                    }
+                    // Drawer lateral de historial de chat (derecha → izquierda).
+                    if !(v.chat_full || v.chat_anim > 0)
+                        && (v.chat_drawer || v.chat_drawer_anim > 0)
+                    {
+                        draw_chat_drawer(f, p, os, v);
                     }
                 }
             }
@@ -1270,8 +2320,26 @@ fn draw_banco(f: &mut Frame, p: &Palette, os: &OsState, v: &ViewState) {
     draw_header(f, p, "< banco");
     let w = &os.wallet;
     let Some(pk) = w.pubkey else {
-        txt(f, Face::Mid, false, Align::Center, CENTER, CENTER - 20, p.muted, "sin wallet dPaaS");
-        txt(f, Face::Mid, false, Align::Center, CENTER, CENTER + 2, p.muted, "configurala en Wallet-Red");
+        txt(
+            f,
+            Face::Mid,
+            false,
+            Align::Center,
+            CENTER,
+            CENTER - 20,
+            p.muted,
+            "sin wallet dPaaS",
+        );
+        txt(
+            f,
+            Face::Mid,
+            false,
+            Align::Center,
+            CENTER,
+            CENTER + 2,
+            p.muted,
+            "configurala en Wallet-Red",
+        );
         return;
     };
     match v.banco_tab {
@@ -1313,7 +2381,16 @@ fn draw_banco(f: &mut Frame, p: &Palette, os: &OsState, v: &ViewState) {
             // etiqueta Solana
             rrect(f, 158, 206, 150, 26, 13, p.dot, Some((p.tile_edge, 1)));
             solana_mark(f, p.text, 198, 212);
-            txt(f, Face::Small, true, Align::Left, 226, 224, p.text, "SOLANA");
+            txt(
+                f,
+                Face::Small,
+                true,
+                Align::Left,
+                226,
+                224,
+                p.text,
+                "SOLANA",
+            );
             banco_button(f, p, 73, "Enviar");
             banco_button(f, p, 243, "Recibir");
         }
@@ -1322,12 +2399,30 @@ fn draw_banco(f: &mut Frame, p: &Palette, os: &OsState, v: &ViewState) {
 
 fn draw_qr_card(f: &mut Frame, p: &Palette, os: &OsState, pk: &str) {
     let (Some(qr), net) = (os.qr, os.wallet.network) else {
-        txt(f, Face::Small, false, Align::Center, CENTER, 290, p.muted, "QR no disponible");
+        txt(
+            f,
+            Face::Small,
+            false,
+            Align::Center,
+            CENTER,
+            290,
+            p.muted,
+            "QR no disponible",
+        );
         return;
     };
     let n = qr.width as i32;
     if n <= 0 || n > 64 {
-        txt(f, Face::Small, false, Align::Center, CENTER, 290, p.muted, "QR no disponible");
+        txt(
+            f,
+            Face::Small,
+            false,
+            Align::Center,
+            CENTER,
+            290,
+            p.muted,
+            "QR no disponible",
+        );
         return;
     }
     let s = 6;
@@ -1335,50 +2430,109 @@ fn draw_qr_card(f: &mut Frame, p: &Palette, os: &OsState, pk: &str) {
     let size = n * s + qz * 2;
     let x = CENTER - size / 2;
     let y = 182;
-    rrect(f, x, y, size as u32, size as u32, 16, Rgb888::WHITE, Some((p.tile_edge, 1)));
+    rrect(
+        f,
+        x,
+        y,
+        size as u32,
+        size as u32,
+        16,
+        Rgb888::WHITE,
+        Some((p.tile_edge, 1)),
+    );
     for r in 0..n {
         for c in 0..n {
             let bit = qr.bits.get((r * n + c) as usize).copied().unwrap_or(0);
             if bit != 0 {
-                Rectangle::new(Point::new(x + qz + c * s, y + qz + r * s), Size::new(s as u32, s as u32))
-                    .into_styled(PrimitiveStyle::with_fill(Rgb888::BLACK))
-                    .draw(f)
-                    .ok();
+                Rectangle::new(
+                    Point::new(x + qz + c * s, y + qz + r * s),
+                    Size::new(s as u32, s as u32),
+                )
+                .into_styled(PrimitiveStyle::with_fill(Rgb888::BLACK))
+                .draw(f)
+                .ok();
             }
         }
     }
     let mut kb = [0u8; 96];
     let short = short_key(pk, &mut kb);
     let mut lb = [0u8; 96];
-    txt(f, Face::Tiny, false, Align::Center, CENTER, y + size + 20, p.muted, snip_append3(net, " · ", short, &mut lb));
+    txt(
+        f,
+        Face::Tiny,
+        false,
+        Align::Center,
+        CENTER,
+        y + size + 20,
+        p.muted,
+        snip_append3(net, " · ", short, &mut lb),
+    );
 }
-
 
 fn draw_manual_view(f: &mut Frame, p: &Palette, send_to: &str) {
     rrect(f, 53, 190, 360, 70, 12, p.dot, Some((p.tile_edge, 1)));
     let addr = send_to.trim();
     if addr.is_empty() {
-        txt(f, Face::Small, false, Align::Center, CENTER, 230, p.muted, "sin dirección");
+        txt(
+            f,
+            Face::Small,
+            false,
+            Align::Center,
+            CENTER,
+            230,
+            p.muted,
+            "sin dirección",
+        );
     } else {
         let mut b1 = [0u8; 96];
-        txt(f, Face::Tiny, false, Align::Left, 69, 218, p.text, snip(addr, &mut b1, 30));
+        txt(
+            f,
+            Face::Tiny,
+            false,
+            Align::Left,
+            69,
+            218,
+            p.text,
+            snip(addr, &mut b1, 30),
+        );
         if addr.len() > 30 {
-            let rest = addr.char_indices().nth(30).map(|(i, _)| &addr[i..]).unwrap_or("");
+            let rest = addr
+                .char_indices()
+                .nth(30)
+                .map(|(i, _)| &addr[i..])
+                .unwrap_or("");
             let mut b2 = [0u8; 96];
-            txt(f, Face::Tiny, false, Align::Left, 69, 236, p.text, snip(rest, &mut b2, 30));
+            txt(
+                f,
+                Face::Tiny,
+                false,
+                Align::Left,
+                69,
+                236,
+                p.text,
+                snip(rest, &mut b2, 30),
+            );
         }
     }
-    txt(f, Face::Tiny, false, Align::Center, CENTER, 290, p.muted, "escríbela en el panel");
+    txt(
+        f,
+        Face::Tiny,
+        false,
+        Align::Center,
+        CENTER,
+        290,
+        p.muted,
+        "escríbela en el panel",
+    );
 }
-
 
 // ── tests de render (humo: dibuja sin pánico + píxeles cuerdos) ───────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::palette::{DARK, LIGHT};
     use crate::frame::LEN;
+    use crate::palette::{DARK, LIGHT};
     use crate::state::*;
 
     fn os_home() -> OsState<'static> {
@@ -1389,6 +2543,18 @@ mod tests {
             tools_count: 4,
         }];
         static M1: [&'static str; 2] = ["z-ai/glm-5.3", "meta/llama-x"];
+        static CHAT: [ChatTurn<'static>; 2] = [
+            ChatTurn {
+                text: "hola",
+                reply: "respuesta del agente",
+                artifact: None,
+            },
+            ChatTurn {
+                text: "otra pregunta",
+                reply: "segunda respuesta con detalle",
+                artifact: None,
+            },
+        ];
         static PROVS: [LlmProvider<'static>; 1] = [LlmProvider {
             provider: "nvidia-nim",
             models: &M1,
@@ -1420,15 +2586,29 @@ mod tests {
                 lamports: 1000,
                 has: true,
             },
-            last_reply: Some(LastReply { text: "hola", reply: "respuesta del agente" }),
+            last_reply: Some(LastReply {
+                text: "hola",
+                reply: "respuesta del agente",
+            }),
+            chat: &CHAT,
             qr: None,
-            clock: Clock { hour: 1, minute: 29, date_line: "mar 27 oct" },
+            clock: Clock {
+                hour: 1,
+                minute: 29,
+                date_line: "mar 27 oct",
+            },
         }
     }
 
     fn render(os: Option<&OsState>, v: &ViewState, ms: u64) -> Vec<u8> {
         let mut buf = vec![0u8; LEN];
-        let mut f = Frame { buf: &mut buf };
+        let mut f = Frame {
+            buf: &mut buf,
+            dx: 0,
+            dy: 0,
+            clip_x: None,
+            clip_y: None,
+        };
         let p = if v.light { &LIGHT } else { &DARK };
         draw(&mut f, p, os, v, 1, 29, "mar 27 oct", ms);
         buf
@@ -1439,7 +2619,9 @@ mod tests {
     }
 
     fn count_color(buf: &[u8], r: u8, g: u8, b: u8) -> usize {
-        buf.chunks_exact(4).filter(|p| p[3] != 0 && p[0] == r && p[1] == g && p[2] == b).count()
+        buf.chunks_exact(4)
+            .filter(|p| p[3] != 0 && p[0] == r && p[1] == g && p[2] == b)
+            .count()
     }
 
     #[test]
@@ -1490,38 +2672,6 @@ mod tests {
         let o = (40 * 466 + 233) * 4;
         assert!(bufl[o] > 200, "fondo claro esperado");
         assert!(buf[o] < 60, "fondo oscuro esperado");
-    }
-
-    #[test]
-    fn chat_states_render() {
-        // todos los estados del turno dibujan sin pánico y llenan pantalla
-        let os = os_home();
-        for status in 0u8..=4 {
-            let v = ViewState {
-                chat_status: status,
-                chat_heard: "dame el estado de salud de la api",
-                chat_elapsed_ms: 5_000,
-                ..Default::default()
-            };
-            let buf = render(Some(&os), &v, 1_200);
-            assert!(
-                count_opaque(&buf) > 100_000,
-                "pocos píxeles con chat_status={status}"
-            );
-        }
-        // respuestas largas: se recortan sin pánico (wrap con tope)
-        let mut os_long = os_home();
-        os_long.last_reply = Some(LastReply {
-            text: "una pregunta bastante larga del usuario para envolver dos lineas",
-            reply: "una respuesta muy larga que se recorta a lo que cabe en la burbuja del agente sin desbordar la pantalla del dispositivo",
-        });
-        let v = ViewState::default();
-        let buf = render(Some(&os_long), &v, 1_200);
-        assert!(count_opaque(&buf) > 100_000);
-        // welcome (sin reply) también dibuja
-        let mut os_w = os_home();
-        os_w.last_reply = None;
-        let _ = render(Some(&os_w), &v, 1_200);
     }
 
     #[test]

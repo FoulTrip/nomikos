@@ -108,3 +108,107 @@ export function useBankSendTo(): string {
     () => "",
   );
 }
+
+// ── Chat del dispositivo (hoja del historial en el AMOLED) ─────────────
+// El visor 3D no puede escribir directo en el Canvas: el input vive en
+// HTML bajo el dispositivo y este store lo comparte con DeviceScreen.
+let deviceChatDraft = "";
+let deviceChatCompose = false;
+let deviceChatFocusNonce = 0;
+
+export function setDeviceChatDraft(v: string): void {
+  if (deviceChatDraft === v) return;
+  deviceChatDraft = v;
+  emit();
+}
+
+export function setDeviceChatCompose(v: boolean): void {
+  if (deviceChatCompose === v) return;
+  deviceChatCompose = v;
+  emit();
+}
+
+export function requestDeviceChatFocus(): void {
+  deviceChatFocusNonce += 1;
+  emit();
+}
+
+export function useDeviceChatDraft(): string {
+  return useSyncExternalStore(
+    subscribe,
+    () => deviceChatDraft,
+    () => "",
+  );
+}
+
+export function useDeviceChatCompose(): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => deviceChatCompose,
+    () => false,
+  );
+}
+
+export function useDeviceChatFocusNonce(): number {
+  return useSyncExternalStore(
+    subscribe,
+    () => deviceChatFocusNonce,
+    () => 0,
+  );
+}
+
+// ── Hoja del chat abierta (para mostrar el input HTML fuera del Canvas)
+let deviceChatFull = false;
+
+export function setDeviceChatFull(v: boolean): void {
+  if (deviceChatFull === v) return;
+  deviceChatFull = v;
+  emit();
+}
+
+export function useDeviceChatFull(): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => deviceChatFull,
+    () => false,
+  );
+}
+
+// ── Drawer lateral de historial de chat (desliza de derecha a izquierda)
+let deviceChatDrawer = false;
+let deviceChatDrawerAnim = 0;
+let deviceChatDrawerScroll = 0;
+
+export function setDeviceChatDrawer(v: boolean): void {
+  if (deviceChatDrawer === v) return;
+  deviceChatDrawer = v;
+  emit();
+}
+
+export function useDeviceChatDrawer(): boolean {
+  return useSyncExternalStore(subscribe, () => deviceChatDrawer, () => false);
+}
+
+export function setDeviceChatDrawerAnim(v: number): void {
+  if (deviceChatDrawerAnim === v) return;
+  deviceChatDrawerAnim = v;
+  emit();
+}
+
+export function useDeviceChatDrawerAnim(): number {
+  return useSyncExternalStore(subscribe, () => deviceChatDrawerAnim, () => 0);
+}
+
+export function setDeviceChatDrawerScroll(v: number): void {
+  if (deviceChatDrawerScroll === v) return;
+  deviceChatDrawerScroll = v;
+  emit();
+}
+
+export function useDeviceChatDrawerScroll(): number {
+  return useSyncExternalStore(
+    subscribe,
+    () => deviceChatDrawerScroll,
+    () => 0,
+  );
+}

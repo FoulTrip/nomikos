@@ -29,6 +29,13 @@ import Modal from "./ModalShell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -40,6 +47,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { useSandbox } from "@/lib/viewer/sandbox";
 
 interface FleetDevice {
   id: string;
@@ -52,6 +60,7 @@ interface FleetDevice {
   daily_limit_lamports: number | null;
   tx_limit_lamports: number | null;
   created_at: number;
+  execution_environment: "sandbox" | "production";
 }
 
 /** Catálogo de placas soportadas por el instalador. */
@@ -83,11 +92,17 @@ function timeAgo(ts: number | null, t: (key: string, values?: Record<string, str
 export default function FleetModal({ onClose }: { onClose: () => void }) {
   const t = useTranslations("fleet");
   const tc = useTranslations("common");
+  const sandbox = useSandbox();
   const [tab, setTab] = useState<Tab>("fleet");
 
   // ── Mi flota ──
   const [devices, setDevices] = useState<FleetDevice[] | null>(null);
   const [fleetError, setFleetError] = useState<string | null>(null);
+  const visibleDevices = devices?.filter((device) =>
+    sandbox
+      ? device.execution_environment === "sandbox"
+      : device.execution_environment === "production",
+  ) ?? null;
 
   const loadFleet = useCallback(async () => {
     setFleetError(null);
@@ -286,230 +301,287 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
     <Modal
       title={
         <>
-          <Radio className="size-5 text-primary" />{t("title")}</>
+          <Radio className="size-5 text-primary" />
+          {t("title")}
+          <Badge variant={sandbox ? "secondary" : "outline"}>
+            {sandbox ? t("sandboxMode") : t("productionMode")}
+          </Badge>
+        </>
       }
       onClose={onClose}
     >
-      <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="gap-4">
+      <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="gap-3">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="fleet">{t("tabFleet")}</TabsTrigger>
           <TabsTrigger value="pair">{t("tabPair")}</TabsTrigger>
           <TabsTrigger value="install">{t("tabInstall")}</TabsTrigger>
         </TabsList>
 
-        {/* ───────────────────────── Mi flota ───────────────────────── */}
-        <TabsContent value="fleet" className="grid gap-2">
-          {!devices && !fleetError && (
-            <p className="flex items-center gap-2 text-sm text-muted-foreground">
-              <LoaderCircle className="size-4 animate-spin" />{t("loading")}</p>
-          )}
-          {devices?.length === 0 && (
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              {t("empty")}
-            </p>
-          )}
-          {devices?.map((d) => (
-            <div key={d.id} className="flex flex-col gap-1 rounded-xl border p-3">
-              <header className="flex items-center gap-2 text-[13px]">
-                <b className="font-semibold">{d.name}</b>
-                <span
-                  className={cn(
-                    "size-2 shrink-0 rounded-full",
-                    d.online
-                      ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]"
-                      : "bg-muted-foreground/40",
-                  )}
-                />
-                <Badge variant="outline" className="ml-auto text-[10px] text-primary">
-                  {d.board}
-                </Badge>
-              </header>
-              <small className="text-xs text-muted-foreground">
-                {d.online ? t("onlineAt", { ago: timeAgo(d.last_seen_at, t) }) : t("seenAt", { ago: timeAgo(d.last_seen_at, t) })}
-                {d.agent_version ? ` · ${d.agent_version}` : ""}
-              </small>
-              {(d.daily_limit_lamports != null || d.tx_limit_lamports != null) && (
-                <code className="w-fit rounded-md border bg-muted px-2 py-0.5 font-mono text-[11px] text-primary">
-                  {t("limits", { daily: d.daily_limit_lamports ?? "—", tx: d.tx_limit_lamports ?? "—" })}
-                </code>
+        <TabsContent value="fleet" className="mt-0">
+          <Card className="gap-0 py-0 shadow-none">
+            <CardHeader className="gap-1 px-4 py-3">
+              <CardTitle className="flex items-center justify-between gap-2 text-sm">
+                {t("tabFleet")}
+                {visibleDevices && (
+                  <Badge variant="outline">{visibleDevices.length}</Badge>
+                )}
+              </CardTitle>
+              <CardDescription>
+                {sandbox ? t("sandboxScope") : t("productionScope")}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-2 px-4 pb-4">
+              <div className="flex justify-end">
+                <Button type="button" variant="outline" size="sm" onClick={loadFleet}>
+                  <RefreshCw />
+                  {t("refresh")}
+                </Button>
+              </div>
+              {!devices && !fleetError && (
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <LoaderCircle className="size-4 animate-spin" />
+                  {t("loading")}
+                </p>
               )}
-            </div>
-          ))}
-          {fleetError && (
-            <Alert variant="destructive">
-              <TriangleAlert />
-              <AlertDescription>{fleetError}</AlertDescription>
-            </Alert>
-          )}
-          <footer className="flex justify-end">
-            <Button type="button" variant="ghost" size="sm" onClick={loadFleet}>
-              <RefreshCw />{t("refresh")}</Button>
-          </footer>
+              {visibleDevices?.length === 0 && (
+                <p className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+                  {sandbox ? t("emptySandbox") : t("emptyProduction")}
+                </p>
+              )}
+              {visibleDevices?.map((device) => (
+                <Card key={device.id} className="gap-0 py-0 shadow-none">
+                  <CardContent className="grid gap-2 p-3">
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="grid min-w-0 gap-1">
+                        <CardTitle className="truncate text-sm">{device.name}</CardTitle>
+                        <CardDescription>
+                          {device.board}
+                          {device.agent_version ? ` · ${device.agent_version}` : ""}
+                        </CardDescription>
+                      </div>
+                      <Badge
+                        variant={device.online ? "default" : "secondary"}
+                        className="shrink-0"
+                      >
+                        {device.online ? t("online") : t("offline")}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {device.online
+                        ? t("onlineAt", { ago: timeAgo(device.last_seen_at, t) })
+                        : t("seenAt", { ago: timeAgo(device.last_seen_at, t) })}
+                    </p>
+                    {(device.daily_limit_lamports != null || device.tx_limit_lamports != null) && (
+                      <Badge variant="outline" className="w-fit font-mono text-[11px]">
+                        {t("limits", {
+                          daily: device.daily_limit_lamports ?? "—",
+                          tx: device.tx_limit_lamports ?? "—",
+                        })}
+                      </Badge>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+              {fleetError && (
+                <Alert variant="destructive">
+                  <TriangleAlert />
+                  <AlertDescription>{fleetError}</AlertDescription>
+                </Alert>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
-        {/* ───────────────────────── Emparejar ───────────────────────── */}
-        <TabsContent value="pair" className="grid gap-3">
-          <section className="grid gap-2">
-            <Label htmlFor="fleet-claim">{t("pairLabel")}</Label>
-            <Input
-              id="fleet-claim"
-              value={claimCode}
-              onChange={(e) => setClaimCode(e.target.value.toUpperCase())}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") doClaim(claimCode);
-              }}
-              placeholder={t("pairPh")}
-              maxLength={8}
-              className="font-mono tracking-widest"
-            />
-            <small className="text-xs leading-relaxed text-muted-foreground">
-              {t("pairHint")}
-            </small>
-          </section>
-          {claimedDev && (
-            <p className="flex items-start gap-2 text-[13px] text-emerald-400">
-              <CircleCheck className="mt-0.5 size-4 shrink-0" />
-              {t("claimed", { name: claimedDev.name })}
-            </p>
-          )}
-          {claimError && (
-            <Alert variant="destructive">
-              <TriangleAlert />
-              <AlertDescription>{claimError}</AlertDescription>
-            </Alert>
-          )}
-          <footer className="flex justify-end">
-            <Button
-              type="button"
-              onClick={() => doClaim(claimCode)}
-              disabled={claiming || claimCode.trim().length < 8}
-            >
-              {claiming && <LoaderCircle className="animate-spin" />}
-              {claiming ? t("claiming") : t("pair")}
-            </Button>
-          </footer>
+        <TabsContent value="pair" className="mt-0">
+          <Card className="gap-0 py-0 shadow-none">
+            <CardHeader className="gap-1 px-4 py-3">
+              <CardTitle className="text-sm">{t("tabPair")}</CardTitle>
+              <CardDescription>{t("pairHint")}</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 px-4 pb-4">
+              <div className="grid gap-2">
+                <Label htmlFor="fleet-claim">{t("pairLabel")}</Label>
+                <Input
+                  id="fleet-claim"
+                  value={claimCode}
+                  onChange={(event) => setClaimCode(event.target.value.toUpperCase())}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") doClaim(claimCode);
+                  }}
+                  placeholder={t("pairPh")}
+                  maxLength={8}
+                  className="font-mono tracking-widest"
+                />
+              </div>
+              {claimedDev && (
+                <div className="flex items-center gap-2 text-sm text-emerald-700">
+                  <CircleCheck className="size-4 shrink-0" />
+                  <span className="min-w-0 flex-1">
+                    {t("claimed", { name: claimedDev.name })}
+                  </span>
+                  <Badge variant="outline">
+                    {claimedDev.execution_environment === "sandbox"
+                      ? t("sandboxMode")
+                      : t("productionMode")}
+                  </Badge>
+                </div>
+              )}
+              {claimError && (
+                <Alert variant="destructive">
+                  <TriangleAlert />
+                  <AlertDescription>{claimError}</AlertDescription>
+                </Alert>
+              )}
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  onClick={() => doClaim(claimCode)}
+                  disabled={claiming || claimCode.trim().length < 8}
+                >
+                  {claiming && <LoaderCircle className="animate-spin" />}
+                  {claiming ? t("claiming") : t("pair")}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
-        {/* ───────────────────────── Instalador ───────────────────────── */}
-        <TabsContent value="install" className="grid gap-4">
-          <section className="grid gap-2">
-            <h4 className="text-xs font-medium text-muted-foreground">{t("stepBoard")}</h4>
-            <Select value={boardId} onValueChange={setBoardId}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {BOARDS.map((b) => (
-                  <SelectItem key={b.id} value={b.id}>
-                    {b.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {board.kind === "sbc" && (
-              <small className="text-xs leading-relaxed text-muted-foreground">
-                {t("sbcNote")}
-              </small>
-            )}
-          </section>
+        <TabsContent value="install" className="mt-0 grid gap-3">
+          <Card className="gap-0 py-0 shadow-none">
+            <CardHeader className="gap-1 px-4 py-3">
+              <CardTitle className="text-sm">{t("stepBoard")}</CardTitle>
+              {board.kind === "sbc" && (
+                <CardDescription>{t("sbcNote")}</CardDescription>
+              )}
+            </CardHeader>
+            <CardContent className="px-4 pb-4">
+              <Select value={boardId} onValueChange={setBoardId}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="theme-light bg-white text-[#343433]">
+                  {BOARDS.map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </CardContent>
+          </Card>
 
           {board.kind === "mcu" && (
             <>
-              <section className="grid gap-2">
-                <h4 className="text-xs font-medium text-muted-foreground">{t("stepFlash")}</h4>
-                {manifestState === "checking" && (
-                  <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <LoaderCircle className="size-3.5 animate-spin" />{t("checking")}</p>
-                )}
-                {manifestState === "available" && (
-                  <div
-                    ref={() => loadEspWebTools()}
-                    dangerouslySetInnerHTML={{
-                      __html: `<esp-web-install-button manifest="/installer/manifests/${boardId}.json"></esp-web-install-button>`,
-                    }}
-                  />
-                )}
-                {manifestState === "pending" && (
-                  <p className="text-xs leading-relaxed text-muted-foreground">
-                    {t("pendingA")} <code className="text-primary">/installer/manifests/{boardId}.json</code>.
-                    {t("pendingB")}
-                  </p>
-                )}
-              </section>
-
-              <section className="grid gap-2">
-                <h4 className="text-xs font-medium text-muted-foreground">{t("stepConsole")}</h4>
-                {!serialOpen ? (
-                  <Button
-                    type="button"
-                    onClick={connectSerial}
-                    disabled={!serialSupported}
-                    className="w-fit"
-                  >
-                    <Usb />{t("connectUsb")}</Button>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={disconnectSerial}
-                    className="w-fit border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                  >
-                    <Unplug />
-                    {t("disconnect")} {portLabel ? `(${portLabel})` : ""}
-                  </Button>
-                )}
-                {!serialSupported && (
-                  <p className="text-xs text-muted-foreground">{t("serialRequired")}</p>
-                )}
-                {serialError && (
-                  <Alert variant="destructive">
-                    <TriangleAlert />
-                    <AlertDescription>{serialError}</AlertDescription>
-                  </Alert>
-                )}
-
-                <pre
-                  ref={consoleRef}
-                  className="thin-scroll h-44 overflow-y-auto rounded-lg border bg-black/60 p-2.5 font-mono text-[11.5px] leading-relaxed break-all whitespace-pre-wrap text-[#9fd6b8]"
-                >
-                  {lines.length === 0
-                    ? t("consoleWaiting")
-                    : lines.map((l, i) => (
-                        <span key={i}>
-                          {l.text}
-                          {l.code && (
-                            <button
-                              type="button"
-                              className="ml-2 inline-block cursor-pointer rounded-md border border-primary bg-primary/15 px-2 text-[10.5px] text-primary"
-                              onClick={() => {
-                                setClaimCode(l.code!);
-                                setTab("pair");
-                              }}
-                            >
-                              {t("useAsCode", { code: l.code! })}
-                            </button>
-                          )}
-                          {"\n"}
-                        </span>
-                      ))}
-                </pre>
-
-                {serialOpen && (
-                  <div className="flex gap-2">
-                    <Input
-                      value={tx}
-                      onChange={(e) => setTx(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") sendSerial();
+              <Card className="gap-0 py-0 shadow-none">
+                <CardHeader className="gap-1 px-4 py-3">
+                  <CardTitle className="text-sm">{t("stepFlash")}</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-2 px-4 pb-4">
+                  {manifestState === "checking" && (
+                    <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <LoaderCircle className="size-4 animate-spin" />
+                      {t("checking")}
+                    </p>
+                  )}
+                  {manifestState === "available" && (
+                    <div
+                      ref={() => loadEspWebTools()}
+                      dangerouslySetInnerHTML={{
+                        __html: `<esp-web-install-button manifest="/installer/manifests/${boardId}.json"></esp-web-install-button>`,
                       }}
-                      placeholder={t("sendPh")}
-                      className="flex-1"
                     />
-                    <Button type="button" variant="ghost" onClick={sendSerial}>
-                      <Send />{t("send")}</Button>
-                  </div>
-                )}
-              </section>
+                  )}
+                  {manifestState === "pending" && (
+                    <CardDescription className="leading-relaxed">
+                      {t("pendingA")} <code className="text-primary">/installer/manifests/{boardId}.json</code>. {t("pendingB")}
+                    </CardDescription>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="gap-0 py-0 shadow-none">
+                <CardHeader className="gap-1 px-4 py-3">
+                  <CardTitle className="text-sm">{t("stepConsole")}</CardTitle>
+                  <CardDescription>
+                    {serialOpen
+                      ? portLabel ?? t("serialPort")
+                      : serialSupported
+                        ? t("serialHint")
+                        : t("serialRequired")}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-2 px-4 pb-4">
+                  {!serialOpen ? (
+                    <Button
+                      type="button"
+                      onClick={connectSerial}
+                      disabled={!serialSupported}
+                      className="w-fit"
+                    >
+                      <Usb />
+                      {t("connectUsb")}
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={disconnectSerial}
+                      className="w-fit border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      <Unplug />
+                      {t("disconnect")}
+                    </Button>
+                  )}
+                  {serialError && (
+                    <Alert variant="destructive">
+                      <TriangleAlert />
+                      <AlertDescription>{serialError}</AlertDescription>
+                    </Alert>
+                  )}
+                  <pre
+                    ref={consoleRef}
+                    className="thin-scroll h-44 overflow-y-auto rounded-lg border bg-black/60 p-2.5 font-mono text-[11.5px] leading-relaxed break-all whitespace-pre-wrap text-[#9fd6b8]"
+                  >
+                    {lines.length === 0
+                      ? t("consoleWaiting")
+                      : lines.map((line, index) => (
+                          <span key={index}>
+                            {line.text}
+                            {line.code && (
+                              <button
+                                type="button"
+                                className="ml-2 inline-block cursor-pointer rounded-md border border-primary bg-primary/15 px-2 text-[10.5px] text-primary"
+                                onClick={() => {
+                                  setClaimCode(line.code!);
+                                  setTab("pair");
+                                }}
+                              >
+                                {t("useAsCode", { code: line.code! })}
+                              </button>
+                            )}
+                            {"\n"}
+                          </span>
+                        ))}
+                  </pre>
+                  {serialOpen && (
+                    <div className="flex gap-2">
+                      <Input
+                        value={tx}
+                        onChange={(event) => setTx(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") sendSerial();
+                        }}
+                        placeholder={t("sendPh")}
+                        className="min-w-0 flex-1"
+                      />
+                      <Button type="button" variant="outline" onClick={sendSerial}>
+                        <Send />
+                        {t("send")}
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </>
           )}
         </TabsContent>

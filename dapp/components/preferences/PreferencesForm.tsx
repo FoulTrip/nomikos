@@ -11,6 +11,12 @@ import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { Check, CircleCheck, LoaderCircle, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -25,32 +31,23 @@ import {
   type Preferences,
 } from "@/app/actions/preferences";
 import { COUNTRY_CODES, countryName } from "@/lib/countries";
-import { cn } from "@/lib/utils";
 
 function Section({
   title,
-  className,
-  plain = false,
   children,
 }: {
   title: string;
-  className?: string;
-  plain?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <section
-      className={cn(
-        "rounded-[32px] border border-[#EDEDED] bg-white p-7 shadow-[0_3px_16px_rgba(0,0,0,0.06)]",
-        plain && "rounded-none border-0 bg-transparent px-0 shadow-none",
-        className,
-      )}
-    >
-      <h2 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-        {title}
-      </h2>
-      <div className="mt-4 grid gap-4">{children}</div>
-    </section>
+    <Card className="gap-3 p-4">
+      <CardHeader className="p-0">
+        <CardTitle className="text-xs tracking-wide text-muted-foreground uppercase">
+          {title}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4 p-0">{children}</CardContent>
+    </Card>
   );
 }
 
@@ -61,12 +58,14 @@ export default function PreferencesForm({ initial }: { initial: Preferences }) {
   const [displayName, setDisplayName] = useState(initial.display_name ?? "");
   const [lang, setLang] = useState<"es" | "en">(initial.locale);
   const [country, setCountry] = useState(initial.country ?? "");
+  const [currency, setCurrency] = useState<"USD" | "COP">(initial.currency);
   // Última versión guardada: el CTA vive de la diferencia contra esta base,
   // así desaparece al guardar en vez de quedar comparando props viejos.
   const [baseline, setBaseline] = useState({
     display_name: initial.display_name ?? "",
     locale: initial.locale,
     country: initial.country ?? "",
+    currency: initial.currency,
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -75,7 +74,8 @@ export default function PreferencesForm({ initial }: { initial: Preferences }) {
   const dirty =
     displayName.trim() !== baseline.display_name ||
     lang !== baseline.locale ||
-    (country || "") !== baseline.country;
+    (country || "") !== baseline.country ||
+    currency !== baseline.currency;
 
   async function onSave(e: React.FormEvent) {
     e.preventDefault();
@@ -86,6 +86,7 @@ export default function PreferencesForm({ initial }: { initial: Preferences }) {
       display_name: displayName,
       locale: lang,
       country: country || null,
+      currency,
     });
     setSaving(false);
     if (!res.ok || !res.preferences) {
@@ -97,10 +98,12 @@ export default function PreferencesForm({ initial }: { initial: Preferences }) {
       display_name: p.display_name ?? "",
       locale: p.locale,
       country: p.country ?? "",
+      currency: p.currency,
     };
     setDisplayName(next.display_name);
     setLang(p.locale);
     setCountry(next.country);
+    setCurrency(next.currency);
     setBaseline(next);
     setSaved(true);
     if (p.locale !== locale) router.refresh();
@@ -109,9 +112,13 @@ export default function PreferencesForm({ initial }: { initial: Preferences }) {
   return (
     <form
       onSubmit={onSave}
-      className="grid gap-4 lg:grid-cols-5 lg:items-start"
+      className="mx-auto grid w-full max-w-5xl gap-6 md:grid-cols-2 md:items-start"
     >
-      <Section title={t("account")} plain className="lg:col-span-3">
+      <header className="grid content-start gap-1 md:col-span-2">
+        <h1 className="text-2xl font-bold">{t("title")}</h1>
+      </header>
+
+      <div className="grid gap-4">
         <div className="grid gap-2">
           <Label>{t("email")}</Label>
           <Input
@@ -131,33 +138,53 @@ export default function PreferencesForm({ initial }: { initial: Preferences }) {
             className="h-12 rounded-2xl"
           />
         </div>
-      </Section>
+        {dirty && (
+          <div className="flex justify-end pt-1">
+            <Button
+              type="submit"
+              disabled={saving}
+              className="lift h-12 rounded-full px-7 text-[15px]"
+            >
+              {saving && <LoaderCircle className="animate-spin" />}
+              {saving ? t("saving") : t("save")}
+            </Button>
+          </div>
+        )}
+        {error && (
+          <p role="alert" className="flex items-center gap-2 text-sm text-destructive">
+            <TriangleAlert className="size-4 shrink-0" />
+            {error}
+          </p>
+        )}
+        {saved && (
+          <p className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
+            <CircleCheck className="size-4 shrink-0" />
+            {t("saved")}
+          </p>
+        )}
+      </div>
 
-      <div className="grid gap-4 lg:col-span-2">
+      <div className="grid gap-4">
         <Section title={t("language")}>
           {/* Conmutador English | Español — igual que el de la landing */}
-          <div className="flex w-fit items-center gap-0.5 rounded-full bg-[#F6F4EF] p-1">
+          <div className="flex w-fit flex-wrap items-center gap-2">
             {(
               [
                 { code: "es", label: "Español" },
                 { code: "en", label: "English" },
               ] as const
             ).map((l) => (
-              <button
+              <Button
                 key={l.code}
                 type="button"
                 onClick={() => setLang(l.code)}
                 aria-pressed={lang === l.code}
-                className={cn(
-                  "flex cursor-pointer items-center gap-1.5 rounded-full px-5 py-2 text-sm font-medium transition-colors",
-                  lang === l.code
-                    ? "bg-[#171717] text-white shadow-sm"
-                    : "text-[#848281] hover:text-[#121212]",
-                )}
+                variant={lang === l.code ? "default" : "outline"}
+                className="h-10 rounded-full px-5"
               >
                 {lang === l.code && <Check className="size-3.5" />}
                 {l.label}
-              </button>
+              </Button>
             ))}
           </div>
         </Section>
@@ -180,36 +207,23 @@ export default function PreferencesForm({ initial }: { initial: Preferences }) {
             </SelectContent>
           </Select>
         </Section>
+
+        <Section title={t("currency")}>
+          <Select
+            value={currency}
+            onValueChange={(value) => setCurrency(value as "USD" | "COP")}
+          >
+            <SelectTrigger className="h-12 w-full rounded-2xl">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="USD">{t("currencyUSD")}</SelectItem>
+              <SelectItem value="COP">{t("currencyCOP")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </Section>
       </div>
 
-      {error && (
-        <p
-          role="alert"
-          className="flex items-center gap-2 text-sm text-destructive lg:col-span-5"
-        >
-          <TriangleAlert className="size-4" />
-          {error}
-        </p>
-      )}
-      {saved && (
-        <p className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400 lg:col-span-5">
-          <CircleCheck className="size-4" />
-          {t("saved")}
-        </p>
-      )}
-
-      {dirty && (
-        <div className="flex items-center justify-end gap-3 lg:col-span-5">
-          <Button
-            type="submit"
-            disabled={saving}
-            className="lift h-12 rounded-full px-7 text-[15px]"
-          >
-            {saving && <LoaderCircle className="animate-spin" />}
-            {saving ? t("saving") : t("save")}
-          </Button>
-        </div>
-      )}
     </form>
   );
 }

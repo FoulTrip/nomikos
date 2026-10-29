@@ -3,7 +3,10 @@
 
 use crate::db::now_ms;
 use crate::error::{AppError, AppResult};
-use crate::modules::{accounts, app, apps, calls, device, devices, faucet, mcp, simulation, solana, verify, voice, x402};
+use crate::modules::{
+    accounts, app, apps, calls, device, devices, faucet, mcp, simulation, solana, usage, verify,
+    voice, x402,
+};
 use crate::state::SharedState;
 use axum::extract::State;
 use axum::response::IntoResponse;
@@ -66,18 +69,12 @@ pub fn router(state: SharedState) -> Router {
             get(faucet::faucet_status_handler).post(faucet::faucet_drip_handler),
         )
         // [ Simulador NomikOS — el OS simulado con progreso por cuenta ]
-        .route(
-            "/api/accounts/me/simulation",
-            get(simulation::get_handler),
-        )
+        .route("/api/accounts/me/simulation", get(simulation::get_handler))
         .route(
             "/api/accounts/me/simulation/step",
             post(simulation::step_handler),
         )
-        .route(
-            "/api/accounts/me/context",
-            get(accounts::context_handler),
-        )
+        .route("/api/accounts/me/context", get(accounts::context_handler))
         .route(
             "/api/accounts/me/preferences",
             get(accounts::get_preferences_handler).put(accounts::put_preferences_handler),
@@ -106,7 +103,10 @@ pub fn router(state: SharedState) -> Router {
         .route("/api/devices/token", post(devices::device_token_handler))
         .route("/api/devices", get(devices::list_fleet_handler))
         .route("/api/devices/me", get(devices::me_handler))
-        .route("/api/devices/me/heartbeat", post(devices::heartbeat_handler))
+        .route(
+            "/api/devices/me/heartbeat",
+            post(devices::heartbeat_handler),
+        )
         // [ Dispositivo: elegir proveedor/modelo LLM de SU cuenta (sin secretos) ]
         .route("/api/devices/me/llm", get(devices::me_llm_handler))
         .route(
@@ -150,9 +150,14 @@ pub fn router(state: SharedState) -> Router {
             get(x402::me_x402_invoices_handler),
         )
         .route(
-            "/api/accounts/me/x402/pay",
-            post(x402::me_x402_pay_handler),
+            "/api/accounts/me/tool-usage",
+            get(x402::me_app_tool_usage_handler),
         )
+        .route(
+            "/api/accounts/me/llm-usage",
+            get(usage::me_llm_usage_handler).post(usage::record_llm_usage_handler),
+        )
+        .route("/api/accounts/me/x402/pay", post(x402::me_x402_pay_handler))
         .route(
             "/api/accounts/me/x402/pay-invoice",
             post(x402::me_x402_pay_invoice_handler),
@@ -160,19 +165,43 @@ pub fn router(state: SharedState) -> Router {
         // [ Verificador legal S2 — workshop (casos nativos dpaas/call) ]
         .route("/api/legal/runs", post(verify::create_run_handler))
         .route("/api/legal/runs/{id}", get(verify::get_run_handler))
-        .route("/api/legal/runs/{id}/turns", post(verify::append_turn_handler))
+        .route(
+            "/api/legal/runs/{id}/turns",
+            post(verify::append_turn_handler),
+        )
         .route("/api/legal/runs/{id}/submit", post(verify::submit_handler))
         .route("/api/legal/runs/{id}/stream", get(verify::stream_handler))
-        .route("/api/legal/runs/{id}/checklist", get(verify::checklist_handler))
-        .route("/api/legal/runs/{id}/events", get(verify::list_events_handler))
-        .route("/api/legal/runs/{id}/escalate", post(verify::escalate_handler))
-        .route("/api/legal/runs/{id}/signoff", post(verify::signoff_handler))
+        .route(
+            "/api/legal/runs/{id}/checklist",
+            get(verify::checklist_handler),
+        )
+        .route(
+            "/api/legal/runs/{id}/events",
+            get(verify::list_events_handler),
+        )
+        .route(
+            "/api/legal/runs/{id}/escalate",
+            post(verify::escalate_handler),
+        )
+        .route(
+            "/api/legal/runs/{id}/signoff",
+            post(verify::signoff_handler),
+        )
         .route("/api/legal/runs/{id}/world", post(verify::world_handler))
-        .route("/api/legal/cases/{id}/docs", get(verify::list_case_docs_handler))
-        .route("/api/legal/cases/{id}/docs/{name}", get(verify::get_case_doc_handler))
+        .route(
+            "/api/legal/cases/{id}/docs",
+            get(verify::list_case_docs_handler),
+        )
+        .route(
+            "/api/legal/cases/{id}/docs/{name}",
+            get(verify::get_case_doc_handler),
+        )
         // Fase 3 — gateway 402 reactivo sobre X402_PROTECTED_PATHS
         // (matching exacto de path; el resto de la API pasa sin peaje).
-        .layer(axum::middleware::from_fn_with_state(state.clone(), x402::x402_gate))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            x402::x402_gate,
+        ))
         .with_state(state)
 }
 
@@ -331,7 +360,9 @@ async fn solana_urls(State(state): State<SharedState>) -> impl IntoResponse {
 
 async fn agent_state(State(state): State<SharedState>) -> AppResult<impl IntoResponse> {
     let mut value = navbar_value(&state).await?;
-    let obj = value.as_object_mut().ok_or_else(|| AppError::internal("navbar: objeto"))?;
+    let obj = value
+        .as_object_mut()
+        .ok_or_else(|| AppError::internal("navbar: objeto"))?;
 
     obj.insert("device_full".into(), device::device_value(&state).await?);
     obj.insert("ficha_tecnica".into(), device::specs_value(&state).await?);
@@ -340,7 +371,11 @@ async fn agent_state(State(state): State<SharedState>) -> AppResult<impl IntoRes
     obj.insert("medusa_mcp".into(), mcp::summary_value(&state, false).await);
     obj.insert(
         "modules".into(),
-        modules_value(&state).await?.get("modules").cloned().unwrap_or(json!([])),
+        modules_value(&state)
+            .await?
+            .get("modules")
+            .cloned()
+            .unwrap_or(json!([])),
     );
     obj.insert(
         "agent".into(),
@@ -378,7 +413,11 @@ async fn agent_call(
     State(state): State<SharedState>,
     Json(call): Json<AgentCall>,
 ) -> AppResult<impl IntoResponse> {
-    let args = if call.args.is_null() { json!({}) } else { call.args.clone() };
+    let args = if call.args.is_null() {
+        json!({})
+    } else {
+        call.args.clone()
+    };
 
     let result = match call.tool.as_str() {
         "navbar_status" => navbar_value(&state).await?,
@@ -420,7 +459,10 @@ async fn agent_call(
         "pay_toll" => {
             let to = arg_str(&args, "to")?;
             let lamports = arg_i64(&args, "lamports")?;
-            let memo = args.get("memo").and_then(|v| v.as_str()).map(str::to_string);
+            let memo = args
+                .get("memo")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
             x402::pay_value(&state, x402::PayBody { to, lamports, memo }, "system").await?
         }
         other => {
@@ -436,7 +478,9 @@ async fn agent_call(
         }
     };
 
-    Ok(Json(json!({ "ok": true, "tool": call.tool, "result": result })))
+    Ok(Json(
+        json!({ "ok": true, "tool": call.tool, "result": result }),
+    ))
 }
 
 async fn agent_tools(State(state): State<SharedState>) -> impl IntoResponse {

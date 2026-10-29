@@ -24,11 +24,12 @@ use crate::error::{AppError, AppResult};
 use crate::modules::accounts::master_key_of;
 use crate::modules::devices::resolve_identity;
 use crate::state::SharedState;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use rusqlite::params;
+use serde::Deserialize;
 use serde_json::{json, Value};
 
 const APP_COLS: &str =
@@ -94,9 +95,29 @@ pub fn all(state: &SharedState) -> Vec<AppRow> {
     state
         .db
         .with(|c| {
-            let mut stmt =
-                c.prepare(&format!("SELECT {APP_COLS} FROM apps ORDER BY slug"))?;
+            let mut stmt = c.prepare(&format!("SELECT {APP_COLS} FROM apps ORDER BY slug"))?;
             let rows = stmt.query_map([], row_to_app)?;
+            Ok(rows.collect::<Result<Vec<_>, _>>()?)
+        })
+        .unwrap_or_default()
+}
+
+/// Busca por slug, nombre o descripción directamente en el catálogo global.
+pub fn search(state: &SharedState, query: &str) -> Vec<AppRow> {
+    if query.is_empty() {
+        return all(state);
+    }
+    state
+        .db
+        .with(|c| {
+            let mut stmt = c.prepare(&format!(
+                "SELECT {APP_COLS} FROM apps \
+                 WHERE instr(lower(slug), lower(?1)) > 0 \
+                    OR instr(lower(name), lower(?1)) > 0 \
+                    OR instr(lower(COALESCE(description,'')), lower(?1)) > 0 \
+                 ORDER BY slug"
+            ))?;
+            let rows = stmt.query_map(params![query], row_to_app)?;
             Ok(rows.collect::<Result<Vec<_>, _>>()?)
         })
         .unwrap_or_default()
@@ -124,12 +145,16 @@ pub fn load_registry(state: &SharedState) {
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
             continue;
         }
-        let Ok(raw) = std::fs::read_to_string(&path) else { continue };
+        let Ok(raw) = std::fs::read_to_string(&path) else {
+            continue;
+        };
         let Ok(man) = serde_json::from_str::<Value>(&raw) else {
             tracing::warn!("apps: manifiesto inválido {}", path.display());
             continue;
         };
-        let Some(slug) = man["slug"].as_str().map(str::to_string) else { continue };
+        let Some(slug) = man["slug"].as_str().map(str::to_string) else {
+            continue;
+        };
         let name = man["name"].as_str().unwrap_or(&slug).to_string();
         let description = man["description"].as_str().unwrap_or("").to_string();
         let version = man["version"].as_str().unwrap_or("").to_string();
@@ -217,8 +242,16 @@ async fn run_install(state: SharedState, slug: String) {
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok());
     let Some(res) = parsed else {
-        set_status(&state, &slug, "failed", None, None,
-            Some(&format!("{log}\n(el instalador no dejó resultado en {result_file})")));
+        set_status(
+            &state,
+            &slug,
+            "failed",
+            None,
+            None,
+            Some(&format!(
+                "{log}\n(el instalador no dejó resultado en {result_file})"
+            )),
+        );
         return;
     };
     let base_url = res["base_url"].as_str().unwrap_or_default().to_string();
@@ -238,7 +271,14 @@ async fn run_install(state: SharedState, slug: String) {
         set_status(&state, &slug, "failed", None, None, Some(&log));
         return;
     }
-    set_status(&state, &slug, "installed", Some(&base_url), sealed.as_deref(), Some(&log));
+    set_status(
+        &state,
+        &slug,
+        "installed",
+        Some(&base_url),
+        sealed.as_deref(),
+        Some(&log),
+    );
     tracing::info!("apps: {slug} INSTALADA en {base_url} — tools al MCP manager");
 }
 
@@ -302,11 +342,30 @@ fn app_value(state: &SharedState, r: &AppRow, with_log: bool) -> Value {
 
 /// GET /api/apps — catálogo público: lo leen la placa (pantalla), el
 /// panel y el MCP manager del orquestador.
-pub async fn list_handler(State(state): State<SharedState>) -> AppResult<Response> {
-    let apps: Vec<Value> = all(&state).iter().map(|r| app_value(&state, r, false)).collect();
+#[derive(Deserialize, Default)]
+pub struct ListAppsQuery {
+    q: Option<String>,
+}
+
+pub async fn list_handler(
+    State(state): State<SharedState>,
+    Query(query): Query<ListAppsQuery>,
+) -> AppResult<Response> {
+    let query: String = query
+        .q
+        .unwrap_or_default()
+        .trim()
+        .chars()
+        .take(128)
+        .collect();
+    let apps: Vec<Value> = search(&state, &query)
+        .iter()
+        .map(|r| app_value(&state, r, false))
+        .collect();
     Ok(Json(json!({
         "ok": true,
         "apps": apps,
+        "query": query,
         "how": "POST /api/apps/{slug}/install (con Bearer de cuenta o dispositivo)",
     }))
     .into_response())
@@ -317,8 +376,9 @@ pub async fn get_handler(
     State(state): State<SharedState>,
     Path(slug): Path<String>,
 ) -> AppResult<Response> {
-    let row = by_slug(&state, &slug)
-        .ok_or_else(|| AppError::not_found(format!("app «{slug}» no está en el registro del worker")))?;
+    let row = by_slug(&state, &slug).ok_or_else(|| {
+        AppError::not_found(format!("app «{slug}» no está en el registro del worker"))
+    })?;
     Ok(Json(json!({ "ok": true, "app": app_value(&state, &row, true) })).into_response())
 }
 
@@ -331,18 +391,25 @@ pub async fn install_handler(
     Path(slug): Path<String>,
 ) -> AppResult<Response> {
     // identidad: la cuenta del agente o el propio dispositivo de la flota
-    resolve_identity(&state, &headers)?
-        .ok_or_else(|| AppError::unauthorized("instala con el Bearer de tu cuenta o de tu dispositivo"))?;
+    resolve_identity(&state, &headers)?.ok_or_else(|| {
+        AppError::unauthorized("instala con el Bearer de tu cuenta o de tu dispositivo")
+    })?;
 
-    let row = by_slug(&state, &slug)
-        .ok_or_else(|| AppError::not_found(format!("app «{slug}» no está en el registro del worker")))?;
+    let row = by_slug(&state, &slug).ok_or_else(|| {
+        AppError::not_found(format!("app «{slug}» no está en el registro del worker"))
+    })?;
 
     if row.status == "installing" {
-        return Err(AppError::conflict("instalación en curso — sondea GET /api/apps/{slug}"));
+        return Err(AppError::conflict(
+            "instalación en curso — sondea GET /api/apps/{slug}",
+        ));
     }
 
     set_status(&state, &slug, "installing", None, None, Some("iniciando…"));
-    tracing::info!("apps: instalando {slug} (script: {})", state.cfg.app_install_script);
+    tracing::info!(
+        "apps: instalando {slug} (script: {})",
+        state.cfg.app_install_script
+    );
     tokio::spawn(run_install(state.clone(), slug.clone()));
 
     Ok(Json(json!({
@@ -383,7 +450,9 @@ fn render(tpl: &str, args: &Value) -> String {
 pub fn installed_tools_value(state: &SharedState) -> Vec<Value> {
     let mut out = Vec::new();
     for row in all(state).into_iter().filter(|r| r.status == "installed") {
-        let Ok(tools) = serde_json::from_str::<Vec<Value>>(&row.tools) else { continue };
+        let Ok(tools) = serde_json::from_str::<Vec<Value>>(&row.tools) else {
+            continue;
+        };
         for t in tools {
             let props = t["parameters"]["properties"].clone();
             let required = t["parameters"]["required"].clone();
@@ -408,7 +477,9 @@ pub async fn call_dynamic_tool(
     args: &Value,
 ) -> Option<AppResult<Value>> {
     for row in all(state).into_iter().filter(|r| r.status == "installed") {
-        let Ok(tools) = serde_json::from_str::<Vec<Value>>(&row.tools) else { continue };
+        let Ok(tools) = serde_json::from_str::<Vec<Value>>(&row.tools) else {
+            continue;
+        };
         for spec in tools {
             if spec["name"].as_str() != Some(tool) {
                 continue;

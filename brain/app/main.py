@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from .config import settings
 from .context import AccountContext, bearer_from_headers, fetch_account_context
 from .llm import LLMNotConfigured, run_agent
+from .usage import persist_llm_usage
 from .shields import GuardVerdict, run_llama_guard
 from .tools import TOOLS
 from . import legal as legal_gate
@@ -58,6 +59,7 @@ class AgenticResponse(BaseModel):
     model: str = ""
     iterations: int = 0
     verification: dict = {}
+    artifacts: list[dict] = []
 
 
 def _verdict_dict(v: GuardVerdict) -> dict:
@@ -119,6 +121,10 @@ async def agentic_gateway(req: AgenticRequest, request: Request) -> AgenticRespo
             {"ok": False, "code": "LLM_NOT_CONFIGURED", "error": str(e)},
             status_code=400,
         )
+
+    # Cada completion puede consumir tokens, aunque una tool falle luego, la
+    # respuesta sea retenida por un shield o el turno termine sin respuesta.
+    await persist_llm_usage(ctx, run.model, run.usage_events)
 
     if not run.reply:
         log.error("run_agent sin respuesta: %s", run.error)
@@ -206,6 +212,7 @@ async def agentic_gateway(req: AgenticRequest, request: Request) -> AgenticRespo
         model=run.model,
         iterations=run.iterations,
         verification=verification,
+        artifacts=run.artifacts[:3],
     )
 
 

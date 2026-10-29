@@ -15,6 +15,7 @@ export interface Preferences {
   display_name: string | null;
   locale: "es" | "en";
   country: string | null;
+  currency: "USD" | "COP";
 }
 
 interface PrefsState {
@@ -45,11 +46,15 @@ async function apiPrefs(
 function asPrefs(data: unknown): Preferences | null {
   const p = (data as { preferences?: Partial<Preferences> })?.preferences;
   if (!p || typeof p.email !== "string") return null;
+  const country = typeof p.country === "string" && p.country ? p.country : null;
   return {
     email: p.email,
     display_name: p.display_name ?? null,
     locale: p.locale === "en" ? "en" : "es",
-    country: typeof p.country === "string" && p.country ? p.country : null,
+    country,
+    currency: p.currency === "COP" || p.currency === "USD"
+      ? p.currency
+      : country === "CO" ? "COP" : "USD",
   };
 }
 
@@ -66,6 +71,7 @@ export async function savePreferencesAction(input: {
   locale?: string;
   country?: string | null;
   display_name?: string | null;
+  currency?: "USD" | "COP";
 }): Promise<PrefsState> {
   const session = await auth();
   if (!session?.accessToken) return { ok: false, error: "auth" };

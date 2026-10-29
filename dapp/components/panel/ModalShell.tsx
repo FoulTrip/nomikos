@@ -1,62 +1,59 @@
 "use client";
+
+import { useEffect, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
-/** ModalShell — overlay + tarjeta de los modales del panel del dapp (estilo shadcn). */
-import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 import { X } from "lucide-react";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { setModalOpen } from "@/lib/viewer/view";
 
+/** Contenedor shadcn compartido por Wallet, Modelos, Servicios y Flota. */
 export default function Modal({
   title,
   onClose,
   children,
 }: {
-  title: React.ReactNode;
+  title: ReactNode;
   onClose: () => void;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
-  // Portal a body: los modales se montan dentro del <header>, que lleva
-  // backdrop-blur — y backdrop-filter crea un containing block que rompe
-  // `fixed` (el inset-0 se resolvía contra el header y el modal salía
-  // arriba del todo). El guard mounted evita mismatch de hidratación.
-  const [mounted, setMounted] = useState(false);
   const t = useTranslations("panel.modal");
-  useEffect(() => setMounted(true), []);
+
   useEffect(() => {
     setModalOpen(true);
     return () => setModalOpen(false);
   }, []);
-  if (!mounted) return null;
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#343433]/40 p-5"
-      onClick={onClose}
-    >
-      <div
-        className="thin-scroll flex max-h-[86vh] w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-xl border bg-card p-6 shadow-lg"
-        role="dialog"
-        aria-modal="true"
-        onClick={(e) => e.stopPropagation()}
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        showCloseButton={false}
+        className="theme-light thin-scroll flex max-h-[86vh] w-[calc(100vw-3rem)] max-w-lg flex-col gap-4 overflow-y-auto rounded-xl border-border bg-white p-6 text-[#343433] shadow-lg sm:w-full"
       >
-        <header className="flex items-center justify-between gap-4 border-b pb-3">
-          <div className="flex items-center gap-2 text-base font-semibold">
+        <DialogHeader className="flex flex-row items-center justify-between gap-4 border-b pb-3 text-left">
+          <DialogTitle className="flex items-center gap-2 text-base font-semibold">
             {title}
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onClose}
-            aria-label={t("close")}
-            className="size-8 shrink-0"
-          >
-            <X />
-          </Button>
-        </header>
+          </DialogTitle>
+          <DialogClose asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={t("close")}
+              className="size-8 shrink-0"
+            >
+              <X />
+            </Button>
+          </DialogClose>
+        </DialogHeader>
         {children}
-      </div>
-    </div>,
-    document.body,
+      </DialogContent>
+    </Dialog>
   );
 }

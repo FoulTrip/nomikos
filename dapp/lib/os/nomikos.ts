@@ -56,6 +56,28 @@ export interface SimChatTurn {
   text: string;
   reply: string;
   ts: number;
+  artifacts?: SimChatArtifact[];
+}
+
+export interface SimChatArtifactItem {
+  id: string;
+  title: string;
+  description?: string;
+  price?: string;
+  currency?: string;
+  image_data?: string;
+}
+
+export interface SimChatArtifact {
+  type: "catalog" | string;
+  title: string;
+  app: string;
+  tool: string;
+  page: number;
+  total_pages: number;
+  total_items: number;
+  payment_status: string;
+  items: SimChatArtifactItem[];
 }
 
 export interface SimEvent {

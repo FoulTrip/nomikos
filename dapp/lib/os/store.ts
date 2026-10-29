@@ -5,7 +5,7 @@ import type { OSState, OSMessage, DeviceApp, AIMode } from "@/lib/os/types";
 export type { OSState, OSMessage, DeviceApp, AIMode } from "@/lib/os/types";
 
 export interface AIClientConfig {
-  provider: "nvidia" | "meta" | "custom";
+  provider: string; // ABIERTO: cualquier proveedor OpenAI-compatible
   baseUrl: string;
   model: string;
   apiKey: string;

@@ -27,6 +27,26 @@ pub fn osui_width() -> u32 {
     crate::PX as u32
 }
 
+/// Máximo de scroll del historial calculado con el layout real del renderer.
+#[wasm_bindgen]
+pub fn osui_chat_scroll_max(state_json: &str) -> u32 {
+    let sv: Value = serde_json::from_str(state_json).unwrap_or(Value::Null);
+    let owned_chat = parse_chat(&sv);
+    let chat: Vec<ChatTurn> = owned_chat
+        .iter()
+        .map(|turn| ChatTurn {
+            text: &turn.text,
+            reply: &turn.reply,
+            artifact: turn.artifact.as_ref().map(|artifact| ChatArtifact {
+                title: &artifact.title,
+                app: &artifact.app,
+                item_count: artifact.item_count,
+            }),
+        })
+        .collect();
+    draw::chat_full_scroll_max(&chat)
+}
+
 // ── mapeo JSON → prestado (owners viven en el llamador) ─────────────────
 
 fn get<'a>(v: &'a Value, k: &str) -> &'a Value {
@@ -79,6 +99,45 @@ struct OReply {
     reply: String,
 }
 
+/// Un turno del historial de chat (lo mantiene el api por cuenta).
+struct OChat {
+    text: String,
+    reply: String,
+    artifact: Option<OArtifact>,
+}
+
+struct OArtifact {
+    title: String,
+    app: String,
+    item_count: u32,
+}
+
+fn parse_chat(v: &Value) -> Vec<OChat> {
+    get(v, "chat")
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .map(|t| OChat {
+            text: sn(t, "text").to_string(),
+            reply: sn(t, "reply").to_string(),
+            artifact: get(t, "artifacts")
+                .as_array()
+                .and_then(|items| items.first())
+                .map(|artifact| OArtifact {
+                    title: sn(artifact, "title").to_string(),
+                    app: sn(artifact, "app").to_string(),
+                    item_count: get(artifact, "items")
+                        .as_array()
+                        .map(|items| items.len() as u32)
+                        .unwrap_or_else(|| {
+                            un(artifact, "item_count").max(un(artifact, "total_items"))
+                        }),
+                }),
+        })
+        .collect()
+}
+
 fn parse_apps(v: &Value) -> Vec<OApp> {
     get(v, "apps")
         .as_array()
@@ -120,7 +179,10 @@ fn parse_providers(v: &Value) -> Vec<OProv> {
 fn parse_wallet(v: &Value) -> OWallet {
     let w = get(v, "agent_wallet");
     OWallet {
-        pubkey: w.get("wallet_pubkey").and_then(|x| x.as_str()).map(str::to_string),
+        pubkey: w
+            .get("wallet_pubkey")
+            .and_then(|x| x.as_str())
+            .map(str::to_string),
         network: sn(w, "network").to_string(),
         balance: w.get("balance_lamports").and_then(|x| x.as_i64()),
     }
@@ -168,23 +230,32 @@ fn parse_stage(v: &Value) -> Stage {
     }
 }
 
-fn parse_view(
-    v: &Value,
-) -> (
-    u32,
-    u32,
-    u32,
-    bool,
-    u8,
-    bool,
-    u8,
-    bool,
-    bool,
-    String,
-    u8,
-    u64,
-    String,
-) {
+/// Vista parseada del JSON que manda el visor.
+struct ViewParsed {
+    scroll_apps: u32,
+    scroll_providers: u32,
+    scroll_models: u32,
+    light: bool,
+    shade_p: u8,
+    mic_muted: bool,
+    banco_tab: u8,
+    banco_recv_nfc: bool,
+    banco_send_manual: bool,
+    send_to: String,
+    chat_status: u8,
+    chat_elapsed_ms: u64,
+    chat_heard: String,
+    chat_full: bool,
+    chat_anim: u8,
+    chat_scroll: u32,
+    chat_compose: bool,
+    chat_draft: String,
+    chat_drawer: bool,
+    chat_drawer_anim: u8,
+    chat_drawer_scroll: u32,
+}
+
+fn parse_view(v: &Value) -> ViewParsed {
     let sc = get(v, "scroll");
     let b = get(v, "banco");
     let chat = get(v, "chat");
@@ -195,25 +266,33 @@ fn parse_view(
         "error" => 4,
         _ => 0,
     };
-    (
-        un(sc, "apps"),
-        un(sc, "providers"),
-        un(sc, "models"),
-        sn(v, "theme") == "light",
-        un(v, "shadeP").min(100) as u8,
-        bn(v, "micMuted", false),
-        match sn(b, "tab") {
+    ViewParsed {
+        scroll_apps: un(sc, "apps"),
+        scroll_providers: un(sc, "providers"),
+        scroll_models: un(sc, "models"),
+        light: sn(v, "theme") == "light",
+        shade_p: un(v, "shadeP").min(100) as u8,
+        mic_muted: bn(v, "micMuted", false),
+        banco_tab: match sn(b, "tab") {
             "receive" => 1,
             "send" => 2,
             _ => 0,
         },
-        sn(b, "recv") == "nfc",
-        sn(b, "send") == "manual",
-        sn(v, "sendTo").to_string(),
+        banco_recv_nfc: sn(b, "recv") == "nfc",
+        banco_send_manual: sn(b, "send") == "manual",
+        send_to: sn(v, "sendTo").to_string(),
         chat_status,
-        chat.get("elapsed_ms").and_then(|x| x.as_u64()).unwrap_or(0),
-        sn(chat, "heard").to_string(),
-    )
+        chat_elapsed_ms: chat.get("elapsed_ms").and_then(|x| x.as_u64()).unwrap_or(0),
+        chat_heard: sn(chat, "heard").to_string(),
+        chat_full: bn(v, "chatFull", false),
+        chat_anim: un(v, "chatAnim").min(100) as u8,
+        chat_scroll: un(v, "chatScroll"),
+        chat_compose: bn(v, "chatCompose", false),
+        chat_draft: sn(v, "chatDraft").to_string(),
+        chat_drawer: bn(v, "chatDrawer", false),
+        chat_drawer_anim: un(v, "chatDrawerAnim").min(100) as u8,
+        chat_drawer_scroll: un(v, "chatDrawerScroll"),
+    }
 }
 
 /// QR → bits row-major (1 = oscuro). None si falla.
@@ -240,11 +319,16 @@ pub fn osui_render(
     date_line: &str,
 ) -> Vec<u8> {
     let mut buf = vec![0u8; LEN];
-    let mut fb = Frame { buf: &mut buf };
+    let mut fb = Frame {
+        buf: &mut buf,
+        dx: 0,
+        dy: 0,
+        clip_x: None,
+        clip_y: None,
+    };
     let sv: Value = serde_json::from_str(state_json).unwrap_or(Value::Null);
     let vv: Value = serde_json::from_str(view_json).unwrap_or(Value::Null);
-    let (sa, sp, sm, light, shade_p, mic_muted, btab, brecv, bsend, send_to, chat_status, chat_elapsed_ms, chat_heard) =
-        parse_view(&vv);
+    let pv = parse_view(&vv);
 
     // Owners (viven hasta el fin del render).
     let oapps = parse_apps(&sv);
@@ -252,6 +336,7 @@ pub fn osui_render(
     let owallet = parse_wallet(&sv);
     let ox402 = parse_x402(&sv);
     let oreply = parse_reply(&sv);
+    let ochat = parse_chat(&sv);
     let device_id = sn(&sv, "device_id").to_string();
     let claim_code = sn(&sv, "claim_code").to_string();
     let detail_app = sn(&sv, "detail_app").to_string();
@@ -270,7 +355,10 @@ pub fn osui_render(
             tools_count: a.tools_count,
         })
         .collect();
-    let model_lists: Vec<Vec<&str>> = oprovs.iter().map(|p| p.models.iter().map(|m| m.as_str()).collect()).collect();
+    let model_lists: Vec<Vec<&str>> = oprovs
+        .iter()
+        .map(|p| p.models.iter().map(|m| m.as_str()).collect())
+        .collect();
     let sim_provs: Vec<LlmProvider> = oprovs
         .iter()
         .zip(model_lists.iter())
@@ -282,9 +370,23 @@ pub fn osui_render(
             is_active: p.is_active,
         })
         .collect();
+    let sim_chat: Vec<ChatTurn> = ochat
+        .iter()
+        .map(|t| ChatTurn {
+            text: &t.text,
+            reply: &t.reply,
+            artifact: t.artifact.as_ref().map(|artifact| ChatArtifact {
+                title: &artifact.title,
+                app: &artifact.app,
+                item_count: artifact.item_count,
+            }),
+        })
+        .collect();
 
     // QR solo si la vista lo pide (banco › recibir › QR).
     let screen = parse_screen(&sv);
+    let btab = pv.banco_tab;
+    let brecv = pv.banco_recv_nfc;
     let mut qr_bits_vec: Vec<u8> = Vec::new();
     let mut qr_width = 0u32;
     if screen == Screen::Banco && btab == 1 && !brecv {
@@ -298,7 +400,10 @@ pub fn osui_render(
         }
     }
     let qr = if qr_width > 0 {
-        Some(Qr { width: qr_width, bits: &qr_bits_vec })
+        Some(Qr {
+            width: qr_width,
+            bits: &qr_bits_vec,
+        })
     } else {
         None
     };
@@ -327,28 +432,53 @@ pub fn osui_render(
             lamports: ox402.lamports,
             has: ox402.has,
         },
-        last_reply: oreply.as_ref().map(|r| LastReply { text: &r.text, reply: &r.reply }),
+        last_reply: oreply.as_ref().map(|r| LastReply {
+            text: &r.text,
+            reply: &r.reply,
+        }),
+        chat: &sim_chat,
         qr,
-        clock: Clock { hour, minute, date_line: &date_owned },
+        clock: Clock {
+            hour,
+            minute,
+            date_line: &date_owned,
+        },
     };
     let view = ViewState {
-        scroll_apps: sa,
-        scroll_providers: sp,
-        scroll_models: sm,
-        light,
-        shade_p,
-        mic_muted,
-        banco_tab: btab,
-        banco_recv_nfc: brecv,
-        banco_send_manual: bsend,
-        send_to: &send_to,
-        chat_status,
-        chat_heard: &chat_heard,
-        chat_elapsed_ms,
+        scroll_apps: pv.scroll_apps,
+        scroll_providers: pv.scroll_providers,
+        scroll_models: pv.scroll_models,
+        light: pv.light,
+        shade_p: pv.shade_p,
+        mic_muted: pv.mic_muted,
+        banco_tab: pv.banco_tab,
+        banco_recv_nfc: pv.banco_recv_nfc,
+        banco_send_manual: pv.banco_send_manual,
+        send_to: &pv.send_to,
+        chat_status: pv.chat_status,
+        chat_heard: &pv.chat_heard,
+        chat_elapsed_ms: pv.chat_elapsed_ms,
+        chat_full: pv.chat_full,
+        chat_anim: pv.chat_anim,
+        chat_scroll: pv.chat_scroll,
+        chat_compose: pv.chat_compose,
+        chat_draft: &pv.chat_draft,
+        chat_drawer: pv.chat_drawer,
+        chat_drawer_anim: pv.chat_drawer_anim,
+        chat_drawer_scroll: pv.chat_drawer_scroll,
         elapsed_ms,
     };
     let some_os = if sv.is_null() { None } else { Some(&os) };
-    draw::draw(&mut fb, if light { &LIGHT } else { &DARK }, some_os, &view, hour, minute, date_line, elapsed_ms);
+    draw::draw(
+        &mut fb,
+        if pv.light { &LIGHT } else { &DARK },
+        some_os,
+        &view,
+        hour,
+        minute,
+        date_line,
+        elapsed_ms,
+    );
     buf
 }
 
@@ -376,10 +506,18 @@ fn hit_to_string(h: Hit, sv: &Value) -> String {
         Hit::BankNfc => "local:bank-nfc".into(),
         Hit::BankSendNfc => "local:bank-send-nfc".into(),
         Hit::BankSendManual => "local:bank-send-manual".into(),
-        Hit::App(i) => get(get(sv, "apps").as_array().and_then(|a| a.get(i)).unwrap_or(&Value::Null), "slug")
-            .as_str()
-            .map(|s| format!("app:{s}"))
-            .unwrap_or_default(),
+        Hit::ChatDrawerClose => "local:chat-drawer-close".into(),
+        Hit::ChatArtifact(i) => format!("local:chat-artifact:{i}"),
+        Hit::App(i) => get(
+            get(sv, "apps")
+                .as_array()
+                .and_then(|a| a.get(i))
+                .unwrap_or(&Value::Null),
+            "slug",
+        )
+        .as_str()
+        .map(|s| format!("app:{s}"))
+        .unwrap_or_default(),
         Hit::ProviderIdx(i) => get(&get(sv, "llm"), "providers")
             .as_array()
             .and_then(|a| a.get(i))
@@ -389,7 +527,12 @@ fn hit_to_string(h: Hit, sv: &Value) -> String {
             .unwrap_or_default(),
         Hit::ModelIdx(i) => {
             let provs = get(&get(sv, "llm"), "providers");
-            let active = provs.as_array().cloned().unwrap_or_default().into_iter().find(|p| bn(p, "is_active", false));
+            let active = provs
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .find(|p| bn(p, "is_active", false));
             active
                 .and_then(|p| p.get("models").and_then(|m| m.as_array()).cloned())
                 .and_then(|m| m.get(i).and_then(|s| s.as_str()).map(str::to_string))
@@ -417,7 +560,10 @@ pub fn osui_hit(state_json: &str, view_json: &str, px: f32, py: f32) -> String {
             tools_count: a.tools_count,
         })
         .collect();
-    let model_lists: Vec<Vec<&str>> = oprovs.iter().map(|p| p.models.iter().map(|m| m.as_str()).collect()).collect();
+    let model_lists: Vec<Vec<&str>> = oprovs
+        .iter()
+        .map(|p| p.models.iter().map(|m| m.as_str()).collect())
+        .collect();
     let sim_provs: Vec<LlmProvider> = oprovs
         .iter()
         .zip(model_lists.iter())
@@ -429,12 +575,31 @@ pub fn osui_hit(state_json: &str, view_json: &str, px: f32, py: f32) -> String {
             is_active: p.is_active,
         })
         .collect();
-    let (sa, sp, sm, light, shade_p, mic_muted, btab, brecv, bsend, send_to, chat_status, chat_elapsed_ms, chat_heard) =
-        parse_view(&vv);
-    let _ = (light, mic_muted, send_to, chat_status, chat_heard, chat_elapsed_ms);
-    if shade_p > 50 {
+    let pv = parse_view(&vv);
+    let _ = (
+        pv.light,
+        pv.mic_muted,
+        pv.send_to,
+        pv.chat_status,
+        pv.chat_heard,
+        pv.chat_elapsed_ms,
+    );
+    if pv.shade_p > 50 {
         return hit_to_string(hit::shade_hit(px, py), &sv);
     }
+    let ochat = parse_chat(&sv);
+    let sim_chat: Vec<ChatTurn> = ochat
+        .iter()
+        .map(|t| ChatTurn {
+            text: &t.text,
+            reply: &t.reply,
+            artifact: t.artifact.as_ref().map(|artifact| ChatArtifact {
+                title: &artifact.title,
+                app: &artifact.app,
+                item_count: artifact.item_count,
+            }),
+        })
+        .collect();
     let os = OsState {
         stage: parse_stage(&sv),
         screen: parse_screen(&sv),
@@ -450,23 +615,32 @@ pub fn osui_hit(state_json: &str, view_json: &str, px: f32, py: f32) -> String {
         wallet: Wallet::default(),
         last_x402: LastX402::default(),
         last_reply: None,
+        chat: &sim_chat,
         qr: None,
         clock: Clock::default(),
     };
     let view = ViewState {
-        scroll_apps: sa,
-        scroll_providers: sp,
-        scroll_models: sm,
+        scroll_apps: pv.scroll_apps,
+        scroll_providers: pv.scroll_providers,
+        scroll_models: pv.scroll_models,
         light: false,
         shade_p: 0,
         mic_muted: false,
-        banco_tab: btab,
-        banco_recv_nfc: brecv,
-        banco_send_manual: bsend,
+        banco_tab: pv.banco_tab,
+        banco_recv_nfc: pv.banco_recv_nfc,
+        banco_send_manual: pv.banco_send_manual,
         send_to: "",
         chat_status: 0,
         chat_heard: "",
         chat_elapsed_ms: 0,
+        chat_full: pv.chat_full,
+        chat_anim: pv.chat_anim,
+        chat_scroll: pv.chat_scroll,
+        chat_compose: pv.chat_compose,
+        chat_draft: "",
+        chat_drawer: pv.chat_drawer,
+        chat_drawer_anim: pv.chat_drawer_anim,
+        chat_drawer_scroll: pv.chat_drawer_scroll,
         elapsed_ms: 0,
     };
     hit_to_string(hit::hit_test(&os, &view, px, py), &sv)

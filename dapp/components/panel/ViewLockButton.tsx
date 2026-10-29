@@ -11,17 +11,18 @@ export default function ViewLockButton() {
   const locked = useViewLocked();
   const sandbox = useSandbox();
   if (!sandbox) return null;
+  const label = locked ? t("release") : t("engage");
   return (
     <Button
       type="button"
-      size="sm"
+      size="icon"
       variant={locked ? "default" : "secondary"}
       onClick={() => setViewLocked(!locked)}
-      title={t("title")}
-      className="w-full"
+      title={label}
+      aria-label={label}
+      className="size-9 rounded-full border border-[#EDEDED] shadow-[0_3px_16px_rgba(0,0,0,0.06)]"
     >
       {locked ? <Unlock /> : <Crosshair />}
-      {locked ? t("release") : t("engage")}
     </Button>
   );
 }

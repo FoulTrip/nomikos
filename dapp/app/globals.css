@@ -141,6 +141,30 @@ input, select, textarea {
   background: #d8ecfc;
   color: #008cff;
 }
+
+@keyframes chat-screen-enter-right {
+  from {
+    clip-path: inset(0 0 0 100% round 32px);
+    opacity: 0.65;
+    transform: translateX(12px);
+  }
+  to {
+    clip-path: inset(0 0 0 0 round 32px);
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.chat-screen-enter-right {
+  animation: chat-screen-enter-right 280ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-screen-enter-right {
+    animation-duration: 1ms;
+  }
+}
+
 .landing h1,
 .landing h2 {
   letter-spacing: -0.03em;

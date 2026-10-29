@@ -72,6 +72,9 @@ export const InvoiceSchema = z.object({
   status: z.enum(['pending', 'verifying', 'settled', 'failed']),
   account_id: z.string(),
   consumed_at: z.number().int().nullable(),
+  device_id: z.string().nullable(),
+  execution_environment: z.enum(['production', 'sandbox']),
+  network: z.enum(['local', 'devnet', 'testnet', 'mainnet']),
   pay_hint: z.string(),
 });
 

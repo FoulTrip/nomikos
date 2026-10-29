@@ -66,7 +66,7 @@ async def refresh() -> None:
                 ).strip(),
                 parameters=spec.get("parameters")
                 or {"type": "object", "properties": {}, "required": []},
-                handler=_make_handler(slug, spec.get("call") or {}),
+                handler=_make_handler(slug, name, spec.get("call") or {}),
             )
     TOOLS.update(dynamic)
     _cache["dynamic"] = dynamic
@@ -87,7 +87,7 @@ def _render(tpl: str, args: dict[str, Any]) -> str:
     return out
 
 
-def _make_handler(slug: str, call: dict[str, Any]):
+def _make_handler(slug: str, tool_name: str, call: dict[str, Any]):
     """Handler de la tool dinámica → app_request peajizado (la cuenta paga)."""
     method = call.get("method", "GET")
     path_tpl = call.get("path", "/")
@@ -108,7 +108,7 @@ def _make_handler(slug: str, call: dict[str, Any]):
         return await _call_api(
             "/app/request",
             method="POST",
-            body={"app": slug, "path": path, "method": method, "body": body},
+            body={"app": slug, "path": path, "method": method, "body": body, "tool_name": tool_name},
             ctx=ctx,
             events=ev,
         )

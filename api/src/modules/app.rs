@@ -29,6 +29,8 @@ use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
+use base64::Engine as _;
+use reqwest::Url;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -56,12 +58,19 @@ pub fn resolve_target(state: &SharedState, app: Option<&str>) -> AppResult<AppTa
             .clone()
             .filter(|u| !u.is_empty())
             .ok_or_else(|| AppError::unavailable(format!("app «{}» sin base_url", row.slug)))?;
-        Ok(AppTarget { slug: row.slug.clone(), base_url, row: Some(row) })
+        Ok(AppTarget {
+            slug: row.slug.clone(),
+            base_url,
+            row: Some(row),
+        })
     };
 
     if let Some(slug) = app.map(str::trim).filter(|s| !s.is_empty()) {
-        let row = apps::by_slug(state, slug)
-            .ok_or_else(|| AppError::not_found(format!("app «{slug}» no está en el registro (GET /api/apps)")))?;
+        let row = apps::by_slug(state, slug).ok_or_else(|| {
+            AppError::not_found(format!(
+                "app «{slug}» no está en el registro (GET /api/apps)"
+            ))
+        })?;
         if row.status != "installed" {
             return Err(AppError::bad_request(format!(
                 "app «{slug}» está «{}» — POST /api/apps/{slug}/install primero",
@@ -89,7 +98,9 @@ async fn app_auth_token(state: &SharedState, target: &AppTarget) -> Option<Strin
         (
             auth.get("token").and_then(|v| v.as_str()).map(String::from),
             auth.get("email").and_then(|v| v.as_str()).map(String::from),
-            auth.get("password").and_then(|v| v.as_str()).map(String::from),
+            auth.get("password")
+                .and_then(|v| v.as_str())
+                .map(String::from),
         )
     } else {
         (
@@ -127,7 +138,10 @@ async fn app_auth_token(state: &SharedState, target: &AppTarget) -> Option<Strin
     }
     let body: Value = login.json().await.ok()?;
     let tok = body.get("token")?.as_str()?.to_string();
-    let exp = body.get("exp").and_then(|v| v.as_i64()).unwrap_or(now + 3_600_000);
+    let exp = body
+        .get("exp")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(now + 3_600_000);
     if let Ok(mut guard) = APP_JWTS.lock() {
         guard
             .get_or_insert_with(HashMap::new)
@@ -181,7 +195,10 @@ async fn fetch(
     let url = format!("{base}{path}");
     let mut call = state
         .http
-        .request(reqwest::Method::from_bytes(method.as_bytes()).unwrap(), &url)
+        .request(
+            reqwest::Method::from_bytes(method.as_bytes()).unwrap(),
+            &url,
+        )
         .timeout(Duration::from_secs(15));
     if let Some(tok) = app_auth_token(state, target).await {
         call = call.bearer_auth(tok);
@@ -198,6 +215,141 @@ async fn fetch(
     Ok((status, body))
 }
 
+const ARTIFACT_IMAGE_LIMIT: usize = 4;
+const ARTIFACT_IMAGE_BYTES: usize = 48 * 1024;
+
+fn collect_artifact_image_urls(value: &Value, in_media: bool, out: &mut Vec<String>) {
+    match value {
+        Value::Object(map) => {
+            let media_record = map.contains_key("filename") || map.contains_key("mimeType");
+            for (key, child) in map {
+                let media_field = matches!(
+                    key.as_str(),
+                    "image" | "photo" | "thumbnail" | "featuredImage" | "cover" | "media"
+                );
+                let direct_url = matches!(
+                    key.as_str(),
+                    "image_url" | "imageUrl" | "thumbnail_url" | "thumbnailUrl"
+                );
+                if ((in_media || media_record) && matches!(key.as_str(), "url" | "src"))
+                    || direct_url
+                {
+                    if let Some(url) = child.as_str().filter(|url| !url.is_empty()) {
+                        if !out.iter().any(|existing| existing == url) {
+                            out.push(url.to_string());
+                        }
+                    }
+                } else {
+                    collect_artifact_image_urls(
+                        child,
+                        in_media || media_field || media_record,
+                        out,
+                    );
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                collect_artifact_image_urls(item, in_media, out);
+            }
+        }
+        Value::String(url) if in_media && url.starts_with('/') => {
+            if !out.iter().any(|existing| existing == url) {
+                out.push(url.clone());
+            }
+        }
+        _ => {}
+    }
+}
+
+fn same_app_origin(base: &Url, candidate: &Url) -> bool {
+    base.scheme() == candidate.scheme()
+        && base.host_str() == candidate.host_str()
+        && base.port_or_known_default() == candidate.port_or_known_default()
+}
+
+/// Copia imágenes pequeñas desde el host de la app para que CanvasTexture
+/// pueda dibujarlas sin depender de CORS del Payload CMS.
+async fn artifact_media(
+    state: &SharedState,
+    target: &AppTarget,
+    app_body: &Value,
+) -> serde_json::Map<String, Value> {
+    let mut urls = Vec::new();
+    collect_artifact_image_urls(app_body, false, &mut urls);
+    let Ok(base) = Url::parse(&host_url(&target.base_url)) else {
+        return serde_json::Map::new();
+    };
+    let Ok(client) = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+    else {
+        return serde_json::Map::new();
+    };
+    let token = app_auth_token(state, target).await;
+    let mut media = serde_json::Map::new();
+
+    for raw in urls.into_iter().take(ARTIFACT_IMAGE_LIMIT) {
+        let Ok(url) = base.join(&raw) else { continue };
+        if !same_app_origin(&base, &url) || !url.username().is_empty() || url.password().is_some() {
+            continue;
+        }
+        let mut request = client.get(url.clone()).timeout(Duration::from_secs(8));
+        if let Some(token) = token.as_deref() {
+            request = request.bearer_auth(token);
+        }
+        let Ok(mut response) = request.send().await else {
+            continue;
+        };
+        if !response.status().is_success() {
+            continue;
+        }
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("")
+            .split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase();
+        if !matches!(
+            content_type.as_str(),
+            "image/jpeg" | "image/png" | "image/webp" | "image/gif" | "image/avif"
+        ) {
+            continue;
+        }
+        let mut bytes = Vec::with_capacity(ARTIFACT_IMAGE_BYTES);
+        let mut oversized = false;
+        loop {
+            match response.chunk().await {
+                Ok(Some(chunk)) => {
+                    if bytes.len() + chunk.len() > ARTIFACT_IMAGE_BYTES {
+                        oversized = true;
+                        break;
+                    }
+                    bytes.extend_from_slice(&chunk);
+                }
+                Ok(None) => break,
+                Err(_) => {
+                    oversized = true;
+                    break;
+                }
+            }
+        }
+        if oversized || bytes.is_empty() {
+            continue;
+        }
+        let data_uri = format!(
+            "data:{content_type};base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        );
+        media.insert(raw, Value::String(data_uri));
+    }
+    media
+}
+
 #[derive(Deserialize)]
 pub struct AppRequestBody {
     /// Slug de la app destino (dapps/registry). Opcional: la primera
@@ -211,6 +363,10 @@ pub struct AppRequestBody {
     method: String,
     /// Cuerpo JSON para POST/PUT.
     body: Option<Value>,
+    /// Nombre exacto de la tool del catálogo MCP. Las llamadas genéricas
+    /// quedan marcadas como `app_request`.
+    #[serde(default)]
+    tool_name: Option<String>,
 }
 
 fn default_method() -> String {
@@ -227,11 +383,15 @@ pub async fn app_request_handler(
     // path seguro: dentro de la app, sin escapes
     let path = req.path.trim().to_string();
     if !path.starts_with('/') || path.contains("..") || path.contains("://") {
-        return Err(AppError::bad_request("path inválido: debe ser una ruta interna de la app (/…)"));
+        return Err(AppError::bad_request(
+            "path inválido: debe ser una ruta interna de la app (/…)",
+        ));
     }
     let method = req.method.trim().to_uppercase();
     if !["GET", "POST", "PUT", "PATCH", "DELETE"].contains(&method.as_str()) {
-        return Err(AppError::bad_request("method inválido: GET | POST | PUT | PATCH | DELETE"));
+        return Err(AppError::bad_request(
+            "method inválido: GET | POST | PUT | PATCH | DELETE",
+        ));
     }
 
     // identidad: cuenta (o dispositivo → peaje atribuible a la placa)
@@ -260,19 +420,45 @@ pub async fn app_request_handler(
         if let Err(e) = consume_access(&state, invoice_id) {
             return Ok(e);
         }
+        let artifact_media = artifact_media(&state, &target, &app_body).await;
+        let invoice = crate::modules::x402::invoice_for_app_usage(&state, invoice_id);
+        if let Some((account_id, device_id, execution_environment, network)) = invoice {
+            let tool_name = req
+                .tool_name
+                .as_deref()
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .unwrap_or("app_request");
+            state.db.with(|c| {
+                c.execute(
+                    "INSERT INTO app_tool_calls (id, account_id, app_slug, tool_name, method, path, \
+                     status_code, invoice_id, execution_environment, network, device_id, created_at) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                    rusqlite::params![
+                        crate::db::new_id("toolcall"), account_id, target.slug, tool_name,
+                        method, path, status, invoice_id, execution_environment, network,
+                        device_id, crate::db::now_ms()
+                    ],
+                )?;
+                Ok(())
+            })?;
+        }
         tracing::info!(
             "app-request {method} {path} → {status} (peaje {invoice_id} consumido, app {}, cuenta {account})",
             target.slug
         );
-        return Ok(Json(json!({
+        let mut response_body = json!({
             "ok": status < 500,
             "app": target.slug,
             "status": status,
             "result": app_body,
             "invoice_id": invoice_id,
             "resource": resource,
-        }))
-        .into_response());
+        });
+        if !artifact_media.is_empty() {
+            response_body["artifact_media"] = Value::Object(artifact_media);
+        }
+        return Ok(Json(response_body).into_response());
     }
 
     // ── sin X-Payment: peaje nuevo de esta petición → 402 ──
@@ -284,7 +470,10 @@ pub async fn app_request_handler(
         device.as_deref(),
     )
     .await?;
-    tracing::info!("app-request peaje emitido: {resource} (app {}, cuenta {account})", target.slug);
+    tracing::info!(
+        "app-request peaje emitido: {resource} (app {}, cuenta {account})",
+        target.slug
+    );
     Ok((
         StatusCode::PAYMENT_REQUIRED,
         Json(json!({
