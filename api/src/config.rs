@@ -2,16 +2,21 @@
 
 use std::collections::BTreeMap;
 
-/// Lee `.env` del directorio actual. Las claves ya presentes en el
-/// entorno NO se sobreescriben (mismo criterio que dotenv).
+/// Lee el `.env` del directorio actual o el `.env` central de la raíz.
+/// Las claves ya presentes en el entorno NO se sobreescriben.
 fn load_dotenv() {
-    let Ok(content) = std::fs::read_to_string(".env") else { return };
+    let content = std::fs::read_to_string(".env").or_else(|_| std::fs::read_to_string("../.env"));
+    let Ok(content) = content else {
+        return;
+    };
     for line in content.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let Some((k, v)) = line.split_once('=') else { continue };
+        let Some((k, v)) = line.split_once('=') else {
+            continue;
+        };
         let key = k.trim();
         let mut value = v.trim().to_string();
         if value.len() >= 2 && value.starts_with('"') && value.ends_with('"') {
@@ -176,10 +181,22 @@ impl Config {
         load_dotenv();
 
         let solana_urls: BTreeMap<String, String> = [
-            ("local", env_str("SOLANA_LOCAL_URL", "http://localhost:8899")),
-            ("devnet", env_str("SOLANA_DEVNET_URL", "https://api.devnet.solana.com")),
-            ("testnet", env_str("SOLANA_TESTNET_URL", "https://api.testnet.solana.com")),
-            ("mainnet", env_str("SOLANA_MAINNET_URL", "https://api.mainnet.solana.com")),
+            (
+                "local",
+                env_str("SOLANA_LOCAL_URL", "http://localhost:8899"),
+            ),
+            (
+                "devnet",
+                env_str("SOLANA_DEVNET_URL", "https://api.devnet.solana.com"),
+            ),
+            (
+                "testnet",
+                env_str("SOLANA_TESTNET_URL", "https://api.testnet.solana.com"),
+            ),
+            (
+                "mainnet",
+                env_str("SOLANA_MAINNET_URL", "https://api.mainnet.solana.com"),
+            ),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_string(), v.trim_end_matches('/').to_string()))
@@ -193,11 +210,17 @@ impl Config {
             env_opt("R2_BUCKET"),
         ) {
             (Some(account_id), Some(access_key_id), Some(secret_access_key), Some(bucket)) => {
-                let api_token =
-                    env_opt("R2_API_TOKEN").or_else(|| env_opt("CLOUDFLARE_API_TOKEN"));
+                let api_token = env_opt("R2_API_TOKEN").or_else(|| env_opt("CLOUDFLARE_API_TOKEN"));
                 // Región de R2 (opcional): R2_REGION="us" | "wm" | etc. Vacío = global (sin región).
                 let r2_region = env_opt("R2_REGION");
-                Some(R2Config { account_id, access_key_id, secret_access_key, bucket, r2_region, api_token })
+                Some(R2Config {
+                    account_id,
+                    access_key_id,
+                    secret_access_key,
+                    bucket,
+                    r2_region,
+                    api_token,
+                })
             }
             _ => None,
         };
@@ -239,15 +262,20 @@ impl Config {
                 .map(|p| p.trim().to_string())
                 .filter(|p| !p.is_empty())
                 .collect(),
-            x402_path_lamports: env_str("X402_PATH_LAMPORTS", "1000").parse().unwrap_or(1000),
-            x402_call_lamports: env_str("X402_CALL_LAMPORTS", "1000").parse().unwrap_or(1000),
+            x402_path_lamports: env_str("X402_PATH_LAMPORTS", "1000")
+                .parse()
+                .unwrap_or(1000),
+            x402_call_lamports: env_str("X402_CALL_LAMPORTS", "1000")
+                .parse()
+                .unwrap_or(1000),
             device_name: env_str("DEVICE_NAME", "ESP32-S3-Touch-AMOLED-1.43"),
             device_model_file: env_str(
                 "DEVICE_MODEL_FILE",
                 "../dapp/public/models/ESP32-S3-Touch-AMOLED-1.43.glb",
             ),
             r2_model_key: env_str("R2_MODEL_KEY", "models/ESP32-S3-Touch-AMOLED-1.43.glb"),
-            r2_public_base: env_opt("R2_PUBLIC_URL_BASE").map(|b| b.trim_end_matches('/').to_string()),
+            r2_public_base: env_opt("R2_PUBLIC_URL_BASE")
+                .map(|b| b.trim_end_matches('/').to_string()),
             r2,
             accounts_master_key: load_master_key(),
             verifier_enabled: env_str("VERIFIER_ENABLED", "1") == "1",
@@ -283,7 +311,9 @@ fn load_master_key() -> Option<[u8; 32]> {
     // Acepta base64 estándar o base64url (openssl usa estándar con padding).
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(trimmed)
-        .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(trimmed.trim_end_matches('=')));
+        .or_else(|_| {
+            base64::engine::general_purpose::URL_SAFE.decode(trimmed.trim_end_matches('='))
+        });
     match decoded {
         Ok(bytes) if bytes.len() == 32 => {
             let mut key = [0u8; 32];

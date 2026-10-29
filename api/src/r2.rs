@@ -105,7 +105,11 @@ impl R2 {
         let days = unix.div_euclid(86_400);
         let secs = unix.rem_euclid(86_400);
         let (year, month, day) = civil_from_days(days);
-        let (h, m, s) = ((secs / 3600) as u32, ((secs % 3600) / 60) as u32, (secs % 60) as u32);
+        let (h, m, s) = (
+            (secs / 3600) as u32,
+            ((secs % 3600) / 60) as u32,
+            (secs % 60) as u32,
+        );
         let amz_date = format!("{year:04}{month:02}{day:02}T{h:02}{m:02}{s:02}Z");
         let date_str = format!("{year:04}{month:02}{day:02}");
         let scope = format!("{date_str}/{REGION}/s3/aws4_request");
@@ -122,7 +126,10 @@ impl R2 {
         let canonical_hash = hex_string(&sha256(canonical_request.as_bytes()));
         let string_to_sign = format!("AWS4-HMAC-SHA256\n{amz_date}\n{scope}\n{canonical_hash}");
 
-        let k_date = hmac_sha256(format!("AWS4{}", self.cfg.secret_access_key).as_bytes(), date_str.as_bytes());
+        let k_date = hmac_sha256(
+            format!("AWS4{}", self.cfg.secret_access_key).as_bytes(),
+            date_str.as_bytes(),
+        );
         let k_region = hmac_sha256(&k_date, REGION.as_bytes());
         let k_service = hmac_sha256(&k_region, b"s3");
         let k_signing = hmac_sha256(&k_service, b"aws4_request");
@@ -156,7 +163,14 @@ impl R2 {
             .header(AUTHORIZATION, authz)
             .header("x-amz-date", amz_date)
             .header("x-amz-content-sha256", &payload_hash)
-            .header(CONTENT_LENGTH, if body.is_some() { body.as_deref().unwrap().len() } else { 0 });
+            .header(
+                CONTENT_LENGTH,
+                if body.is_some() {
+                    body.as_deref().unwrap().len()
+                } else {
+                    0
+                },
+            );
         if let Some(data) = body {
             req = req.body(data);
         }
@@ -209,7 +223,10 @@ impl R2 {
             return Err(format!("Cloudflare API {status}: {}", truncate(&text, 300)));
         }
         // La API devuelve JSON: { result: { data: "<base64>" }, ... }
-        let body: Value = res.json().await.map_err(|e| format!("Cloudflare API JSON: {e}"))?;
+        let body: Value = res
+            .json()
+            .await
+            .map_err(|e| format!("Cloudflare API JSON: {e}"))?;
         let data_b64 = body
             .get("result")
             .and_then(|r| r.get("data"))
@@ -237,7 +254,10 @@ mod tests {
 
     #[test]
     fn pct() {
-        assert_eq!(pct_path("models/ESP32-S3-Touch-AMOLED-1.43.glb"), "models/ESP32-S3-Touch-AMOLED-1.43.glb");
+        assert_eq!(
+            pct_path("models/ESP32-S3-Touch-AMOLED-1.43.glb"),
+            "models/ESP32-S3-Touch-AMOLED-1.43.glb"
+        );
         // '/' se preserva (keys con carpetas); espacio y '+' se escapan.
         assert_eq!(pct_path("a b/c+d"), "a%20b/c%2Bd");
     }

@@ -1,57 +1,44 @@
 #!/usr/bin/env bash
-# env-sync.sh — sincroniza el .env CENTRAL (raíz) a los .env de proyecto.
-#
-# Para cada proyecto: su <dir>/.env.example es la BASE; las claves del
-# .env central con valor NO vacío pisan la base; las claves del central
-# que el example no conoce se añaden al final en un bloque marcado (los
-# proyectos ignoran variables que no usan). Claves vacías en el central
-# → se respetan los defaults del example.
+# Compatibility name retained for `make env`: validate the single root config.
+# This script intentionally does not create service-local .env copies.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CENTRAL="$ROOT/.env"
+TEMPLATE="$ROOT/.env.example"
 
 if [ ! -f "$CENTRAL" ]; then
-  echo "env-sync: falta .env en la raíz — cp .env.example .env (y llena lo que uses)" >&2
+  echo "env: falta .env en la raíz — cp .env.example .env && make secrets" >&2
+  exit 1
+fi
+if ! bash -n "$CENTRAL"; then
+  echo "env: el .env raíz no tiene sintaxis compatible con el cargador de make up" >&2
   exit 1
 fi
 
-sync_one() {
-	local dir="$1" example="$2"
-	[ -f "$example" ] || return 0
-	local out="$dir/.env"
+missing=()
+declare -A missing_keys=()
+for template in \
+  "$TEMPLATE" \
+  "$ROOT/api/.env.example" \
+  "$ROOT/brain/.env.example" \
+  "$ROOT/dapp/.env.example" \
+  "$ROOT/dapps/payload-cms/templates/with-cloudflare-d1/.env.example"; do
+  [ -f "$template" ] || continue
+  while IFS= read -r line || [ -n "$line" ]; do
+    [[ "$line" =~ ^([A-Z][A-Z0-9_]*)= ]] || continue
+    key="${BASH_REMATCH[1]}"
+    if ! grep -qE "^${key}=" "$CENTRAL"; then
+      missing_keys["$key"]=1
+    fi
+  done < "$template"
+done
+missing=("${!missing_keys[@]}")
 
-	# 1) base = example con sustituciones del central (solo valores no vacíos)
-	awk -F= '
-		NR==FNR {
-			if ($0 ~ /^[A-Z0-9_]+=/) {
-				key = $1
-				val = substr($0, index($0, "=") + 1)
-				if (val != "") env[key] = val
-			}
-			next
-		}
-		{
-			if ($0 ~ /^[A-Z0-9_]+=/) {
-			key = $1
-			if (key in env) { print key "=" env[key]; next }
-		}
-			print
-		}
-	' "$CENTRAL" "$example" > "$out.tmp"
+if ((${#missing[@]})); then
+  printf 'env: faltan variables en .env raíz:\n' >&2
+  printf '  %s\n' "${missing[@]}" >&2
+  exit 1
+fi
 
-	# 2) (el bloque de "claves extra" se eliminó a propósito: los
-	# */.env.example de cada proyecto son EL CONTRATO — una clave nueva
-	# debe vivir ahí también. Así ningún proyecto recibe secretos que
-	# no le corresponden.)
-	mv "$out.tmp" "$out"
-	echo "  ✓ $(realpath --relative-to="$ROOT" "$out")"
-}
-
-echo "env-sync: sincronizando desde .env central:"
-sync_one "$ROOT/api" "$ROOT/api/.env.example"
-sync_one "$ROOT/brain" "$ROOT/brain/.env.example"
-sync_one "$ROOT/dapp" "$ROOT/dapp/.env.example"
-# la APP local (si está clonada): ver dapps/README.md
-sync_one "$ROOT/dapps/payload-cms/templates/with-cloudflare-d1" \
-	"$ROOT/dapps/payload-cms/templates/with-cloudflare-d1/.env.example"
+echo "env: .env raíz validado; servicios cargan esta configuración sin copias locales."

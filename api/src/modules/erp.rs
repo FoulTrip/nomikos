@@ -41,7 +41,11 @@ pub async fn sync(state: &SharedState) {
     };
 
     match state.db.upsert_service(&row) {
-        Ok(()) => tracing::debug!("{} → {}", LABEL, if running { "corriendo" } else { "detenido" }),
+        Ok(()) => tracing::debug!(
+            "{} → {}",
+            LABEL,
+            if running { "corriendo" } else { "detenido" }
+        ),
         Err(e) => tracing::warn!("sync {LABEL} db: {e}"),
     }
 }

@@ -230,6 +230,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [connected, setConnected] = useState<ConnectedWallet[] | null>(null);
+  const [connectWallet, setConnectWallet] = useState("");
   const [connectingWallet, setConnectingWallet] = useState<string | null>(null);
   const [faucetBusy, setFaucetBusy] = useState(false);
   const [faucetMsg, setFaucetMsg] = useState<string | null>(null);
@@ -594,11 +595,6 @@ function WalletModal({ onClose }: { onClose: () => void }) {
                   )}
                 </button>
               ))}
-              {wallets.length === 0 && (
-                <p className="text-xs text-muted-foreground">
-                  {t("noSubwallets")}
-                </p>
-              )}
             </CardContent>
           </Card>
 
@@ -642,70 +638,78 @@ function WalletModal({ onClose }: { onClose: () => void }) {
               <CardDescription>{t("browserHint")}</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3 px-4 pb-4">
-              <div className="flex flex-wrap gap-2">
-                {BROWSER_WALLETS.map((bw) => {
-                  // el botón queda seleccionado si ESE proveedor es el de la
-                  // wallet en uso (ej: MetaMask conectada → botón MetaMask)
-                  const isProviderActive =
-                    connected?.some((c) => c.is_active && c.provider === bw.id) ?? false;
-                  return (
-                    <Button
-                      key={bw.id}
-                      type="button"
-                      variant={isProviderActive ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => onConnect(bw.id)}
-                      disabled={connectingWallet !== null}
-                    >
-                      {connectingWallet === bw.id ? (
-                        <LoaderCircle className="animate-spin" />
-                      ) : (
-                        <bw.icon />
-                      )}
-                      {connectingWallet === bw.id ? t("connecting") : bw.label}
-                    </Button>
-                  );
-                })}
-              </div>
+              <Select
+                value={connectWallet}
+                onValueChange={(provider) => {
+                  setConnectWallet("");
+                  void onConnect(provider);
+                }}
+              >
+                <SelectTrigger className="w-full sm:w-fit" disabled={connectingWallet !== null}>
+                  {connectingWallet ? (
+                    <LoaderCircle className="animate-spin" />
+                  ) : (
+                    <Plus />
+                  )}
+                  <SelectValue placeholder={connectingWallet ? t("connecting") : t("connectBrowserWallet")} />
+                </SelectTrigger>
+                <SelectContent className="theme-light bg-white text-[#343433]">
+                  {BROWSER_WALLETS.map((bw) => (
+                    <SelectItem key={bw.id} value={bw.id}>
+                      <span className="flex items-center gap-2">
+                        <bw.icon className="size-4" />
+                        {bw.label}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               {connected && connected.length > 0 ? (
                 <div className="grid gap-2">
-                  {connected.map((cw) => (
-                    <div
-                      key={cw.id}
-                      className={cn(
-                        "flex items-center gap-3 rounded-lg border p-3",
-                        cw.is_active && "border-primary bg-primary/10",
-                      )}
-                    >
-                      <span className="flex flex-1 flex-col gap-0.5">
-                        <b className="flex items-center gap-2 text-[13px] font-semibold">
-                          {cw.label}
-                          <Badge variant="secondary" className="font-mono text-[10px]">
-                            {cw.chain}
-                          </Badge>
-                        </b>
-                        <small className="text-xs text-muted-foreground">
-                          {shortKey(cw.pubkey, t("unset"))}
-                          {cw.chain === "solana" &&
-                            ` · ${fmtSol(cw.balance_lamports)}`}
-                          {cw.chain === "evm" &&
-                            cw.is_active &&
-                            evmBalance != null &&
-                            ` · ${evmBalance}`}
-                        </small>
-                      </span>
-                      {cw.is_active ? (
-                        <Badge>{t("inUse")}</Badge>
-                      ) : (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => useWallet(cw.label)}
-                        >{t("use")}</Button>
-                      )}
-                    </div>
-                  ))}
+                  {connected.map((cw) => {
+                    const provider = BROWSER_WALLETS.find((bw) => bw.id === cw.provider);
+                    const WalletIcon = provider?.icon ?? WalletMinimal;
+                    return (
+                      <div
+                        key={cw.id}
+                        className={cn(
+                          "flex items-center gap-3 rounded-lg border p-3",
+                          cw.is_active && "border-primary bg-primary/10",
+                        )}
+                      >
+                        <span className="flex flex-1 flex-col gap-1">
+                          <span className="flex flex-wrap items-center gap-1.5">
+                            <Badge variant="secondary" className="gap-1.5 text-[10px]">
+                              <WalletIcon className="size-3" aria-hidden="true" />
+                              {provider?.label ?? cw.label}
+                            </Badge>
+                            <Badge variant="secondary" className="font-mono text-[10px]">
+                              {cw.chain}
+                            </Badge>
+                          </span>
+                          <small className="text-xs text-muted-foreground">
+                            {shortKey(cw.pubkey, t("unset"))}
+                            {cw.chain === "solana" &&
+                              ` · ${fmtSol(cw.balance_lamports)}`}
+                            {cw.chain === "evm" &&
+                              cw.is_active &&
+                              evmBalance != null &&
+                              ` · ${evmBalance}`}
+                          </small>
+                        </span>
+                        {cw.is_active ? (
+                          <Badge>{t("inUse")}</Badge>
+                        ) : (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => useWallet(cw.label)}
+                          >{t("use")}</Button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : null}
             </CardContent>

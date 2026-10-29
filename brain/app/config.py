@@ -8,7 +8,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()  # lee agent-brain/.env
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")  # único .env en la raíz
 
 
 def _bool(key: str, default: bool) -> bool:

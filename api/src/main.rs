@@ -53,29 +53,47 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(
         "[x402 Solana] red {} → {}",
         cfg.solana_network_label(),
-        cfg.solana_url().cloned().unwrap_or_else(|| "(desconocida)".into())
+        cfg.solana_url()
+            .cloned()
+            .unwrap_or_else(|| "(desconocida)".into())
     );
     match (&cfg.r2, &cfg.payer_keypair) {
         (Some(_), Some(_)) => tracing::info!("[R2] configurado · [payer] configurado"),
-        (Some(_), None) => tracing::info!("[R2] configurado · [payer] solo liquidaciones entrantes"),
-        (None, _) => tracing::info!("[R2] sin credenciales (el modelo 3D se sirve del archivo local)"),
+        (Some(_), None) => {
+            tracing::info!("[R2] configurado · [payer] solo liquidaciones entrantes")
+        }
+        (None, _) => {
+            tracing::info!("[R2] sin credenciales (el modelo 3D se sirve del archivo local)")
+        }
     }
     tracing::info!(
         "[Cuentas] master key {} · registro email+password habilitado",
-        if cfg.accounts_master_key.is_some() { "presente (secretos se cifran en reposo)" } else { "AUSENTE (pon ACCOUNTS_MASTER_KEY=openssl-rand-base64-32)" }
+        if cfg.accounts_master_key.is_some() {
+            "presente (secretos se cifran en reposo)"
+        } else {
+            "AUSENTE (pon ACCOUNTS_MASTER_KEY=openssl-rand-base64-32)"
+        }
     );
-    tracing::info!("[Medusa MCP] {} (token {})", cfg.medusa_mcp_url,
-        if cfg.medusa_mcp_token.is_some() { "configurado" } else { "ausente — OAuth interactivo requerido" });
+    tracing::info!(
+        "[Medusa MCP] {} (token {})",
+        cfg.medusa_mcp_url,
+        if cfg.medusa_mcp_token.is_some() {
+            "configurado"
+        } else {
+            "ausente — OAuth interactivo requerido"
+        }
+    );
 
     let db = db::Db::open(&cfg.db_path, &cfg.device_name)?;
     let http = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()?;
-    let r2 = cfg.r2.as_ref().map(|rc| r2::R2::new(rc.clone(), http.clone()));
-    let mcp = modules::mcp::McpClient::new(
-        cfg.medusa_mcp_url.clone(),
-        cfg.medusa_mcp_token.clone(),
-    );
+    let r2 = cfg
+        .r2
+        .as_ref()
+        .map(|rc| r2::R2::new(rc.clone(), http.clone()));
+    let mcp =
+        modules::mcp::McpClient::new(cfg.medusa_mcp_url.clone(), cfg.medusa_mcp_token.clone());
 
     // Dirección para el bind (se calcula antes de mover `cfg` al estado).
     let addr = format!("{}:{}", cfg.host, cfg.port);

@@ -28,7 +28,7 @@ P_VERIFIER_UI := 8765
 
 ## ── CONFIGURACIÓN ─────────────────────────────────────────────────────
 
-## env: sincroniza el .env central (raíz) a api/, brain/, dapp/ y la app local
+## env: valida el único .env central de la raíz; no crea copias por servicio
 env:
 	@chmod +x "$(ROOT)/scripts/env-sync.sh" 2>/dev/null || true
 	@"$(ROOT)/scripts/env-sync.sh"
@@ -75,7 +75,7 @@ install-stack:
 
 ## ── ECOSISTEMA LOCAL (la PC) ──────────────────────────────────────────
 
-## up: sincroniza .env y prende TODO (api, brain, ollama, dapp, la app local)
+## up: valida el .env raíz y prende TODO (api, brain, ollama, dapp, app local)
 up:
 	@mkdir -p "$(LOGS)"
 	@cd "$(ROOT)" && test -f .env || { echo "falta .env — cp .env.example .env && make secrets"; exit 1; }
@@ -90,23 +90,27 @@ up:
 		{ VK_ICD_FILENAMES=/dev/null OLLAMA_NUM_GPU=0 nohup ollama serve > "$(LOGS)/ollama.log" 2>&1 & echo "  ↑ ollama :$(P_OLLAMA) (CPU)"; }'
 	@# api (binario ya compilado por make install)
 	@test -x "$(ROOT)/api/target/debug/agent-os-api" || { $(MAKE) --no-print-directory install; }
-	@bash -c '(echo > /dev/tcp/localhost/$(P_API)) 2>/dev/null || \
+	@set -a; . "$(ROOT)/.env"; set +a; \
+	bash -c '(echo > /dev/tcp/localhost/$(P_API)) 2>/dev/null || \
 		{ cd "$(ROOT)/api" && nohup ./target/debug/agent-os-api > "$(LOGS)/api.log" 2>&1 & echo "  ↑ api :$(P_API)"; }'
 	@# brain (0.0.0.0 a propósito: los contenedores api/dapp lo alcanzan
 	@# por host.docker.internal, que NO es 127.0.0.1 — con localhost el
 	@# /api/voice y el proxy del panel devuelven 503. Sigue exigiendo
 	@# Bearer de cuenta: sin sesión no razona)
-	@bash -c '(echo > /dev/tcp/localhost/$(P_BRAIN)) 2>/dev/null || \
+	@set -a; . "$(ROOT)/.env"; set +a; \
+	bash -c '(echo > /dev/tcp/localhost/$(P_BRAIN)) 2>/dev/null || \
 		{ cd "$(ROOT)/brain" && nohup .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port $(P_BRAIN) > "$(LOGS)/brain.log" 2>&1 & echo "  ↑ brain :$(P_BRAIN)"; }'
 	@# llama stack: YA NO SE USA (sin backend global — cada cuenta trae sus
 	@# keys; ver Modelos del agente). Se deja el venv por si alguien
 	@# self-hostea (provider custom apuntando a su propio stack).
 	@# la app local (Payload CMS u otra; ver dapps/README.md)
-	@bash -c '[ -d "$(ROOT)/dapps/payload-cms/templates/with-cloudflare-d1" ] && \
+	@set -a; . "$(ROOT)/.env"; set +a; \
+	bash -c '[ -d "$(ROOT)/dapps/payload-cms/templates/with-cloudflare-d1" ] && \
 		{ (echo > /dev/tcp/localhost/$(P_APP)) 2>/dev/null || \
 		{ cd "$(ROOT)/dapps/payload-cms/templates/with-cloudflare-d1" && nohup pnpm dev --port $(P_APP) > "$(LOGS)/app.log" 2>&1 & echo "  ↑ app :$(P_APP)"; }; } || echo "  · app: dapps/ sin app local clonada"'
 	@# dapp (SOLO local — en la placa no existe)
-	@bash -c '(echo > /dev/tcp/localhost/$(P_DAPP)) 2>/dev/null || \
+	@set -a; . "$(ROOT)/.env"; set +a; \
+	bash -c '(echo > /dev/tcp/localhost/$(P_DAPP)) 2>/dev/null || \
 		{ cd "$(ROOT)/dapp" && nohup npm run dev > "$(LOGS)/dapp.log" 2>&1 & echo "  ↑ dapp :$(P_DAPP)"; }'
 	@echo "── esperando salud de los servicios…"
 	@bash -c 'ok=0; for p in $(P_OLLAMA) $(P_API) $(P_BRAIN) $(P_DAPP) $(P_APP); do \

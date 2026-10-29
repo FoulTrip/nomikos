@@ -325,7 +325,10 @@ pub async fn list_case_docs_handler(
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or(json!({}));
     tracing::info!("legal cases docs {} (cuenta {account})", case_id.trim());
-    Ok(Json(json!({"ok": true, "case_id": case_id.trim(), "docs": docs, "case": task})).into_response())
+    Ok(
+        Json(json!({"ok": true, "case_id": case_id.trim(), "docs": docs, "case": task}))
+            .into_response(),
+    )
 }
 
 /// GET /api/legal/cases/{id}/docs/{name} — contenido de un doc visible.
@@ -352,9 +355,15 @@ pub async fn get_case_doc_handler(
     if content.len() > 64_000 {
         return Err(AppError::bad_request("documento demasiado grande"));
     }
-    tracing::info!("legal doc {}/{} (cuenta {account})", case_id.trim(), name.trim());
-    Ok(Json(json!({"ok": true, "case_id": case_id.trim(), "name": name.trim(), "content": content}))
-        .into_response())
+    tracing::info!(
+        "legal doc {}/{} (cuenta {account})",
+        case_id.trim(),
+        name.trim()
+    );
+    Ok(Json(
+        json!({"ok": true, "case_id": case_id.trim(), "name": name.trim(), "content": content}),
+    )
+    .into_response())
 }
 
 // ---------------------------------------------------------------------------
@@ -378,7 +387,9 @@ pub async fn create_run_handler(
     let case_id = body.case_id.trim().to_string();
     let dir = case_path(&state, &case_id)?;
     if !dir.join("case.json").is_file() {
-        return Err(AppError::not_found(format!("caso «{case_id}» no encontrado")));
+        return Err(AppError::not_found(format!(
+            "caso «{case_id}» no encontrado"
+        )));
     }
     let id = new_id("run");
     let now = now_ms();
@@ -439,7 +450,9 @@ pub async fn append_turn_handler(
     }
     let role = body.role.trim().to_lowercase();
     if !["agent", "tool", "world", "human"].contains(&role.as_str()) {
-        return Err(AppError::bad_request("role inválido: agent|tool|world|human"));
+        return Err(AppError::bad_request(
+            "role inválido: agent|tool|world|human",
+        ));
     }
     // Solo api puede escribir role=world (vía /world); el agente no se auto-inyecta.
     if role == "world" {
@@ -447,7 +460,9 @@ pub async fn append_turn_handler(
     }
     let content = body.content.trim().to_string();
     if content.is_empty() || content.len() > 32_000 {
-        return Err(AppError::bad_request("content vacío o demasiado grande (máx 32k)"));
+        return Err(AppError::bad_request(
+            "content vacío o demasiado grande (máx 32k)",
+        ));
     }
     let t = append_turn(&state, &run.id, &role, &content, body.tools.as_ref())?;
     tracing::info!("legal turn {} run {} ({role})", t["idx"], run.id);
@@ -479,7 +494,9 @@ pub async fn submit_handler(
     }
     let memo = body.memorandum.trim().to_string();
     if memo.is_empty() || memo.len() > 64_000 {
-        return Err(AppError::bad_request("memorandum vacío o demasiado grande (máx 64k)"));
+        return Err(AppError::bad_request(
+            "memorandum vacío o demasiado grande (máx 64k)",
+        ));
     }
     state.db.with(|c| {
         c.execute(
@@ -488,7 +505,13 @@ pub async fn submit_handler(
         )?;
         Ok(())
     })?;
-    append_turn(&state, &run.id, "agent", &format!("SUBMIT memorándum ({} chars)", memo.len()), None)?;
+    append_turn(
+        &state,
+        &run.id,
+        "agent",
+        &format!("SUBMIT memorándum ({} chars)", memo.len()),
+        None,
+    )?;
     append_event(&state, &run.id, "submitted", &json!({"chars": memo.len()}))?;
     // Fase 2: verify_now() — motor de reglas determinista (sin LLM).
     if let Err(e) = verify_now(&state, &run.id).await {
@@ -512,9 +535,14 @@ pub async fn verify_now(state: &SharedState, run_id: &str) -> AppResult<()> {
 
     // GT dir + case_id validados (el run se creó con case validado).
     if !valid_case_id(&run.case_id) {
-        return write_fail(state, &run.id, "failed",
-            vec![json!({"id": "GT_ERROR", "missing": [], "description": "case_id inválido"})], 0.0)
-            .map(|_| ());
+        return write_fail(
+            state,
+            &run.id,
+            "failed",
+            vec![json!({"id": "GT_ERROR", "missing": [], "description": "case_id inválido"})],
+            0.0,
+        )
+        .map(|_| ());
     }
     let gt = std::path::PathBuf::from(&state.cfg.verifier_gt_dir).join(&run.case_id);
     let read_json = |name: &str| -> AppResult<Value> {
@@ -534,18 +562,48 @@ pub async fn verify_now(state: &SharedState, run_id: &str) -> AppResult<()> {
     let rules_v = read_json("rules.json").unwrap_or(json!({}));
     let expected_v = read_json("docs_expected.json").unwrap_or(json!({}));
 
-    let min_citations: usize = rules_v.get("min_citations").and_then(|v| v.as_u64()).unwrap_or(1) as usize;
-    let forbid_hallu: bool = rules_v.get("forbid_hallucinated_exhibits").and_then(|v| v.as_bool()).unwrap_or(true);
-    let req_refusal: bool = rules_v.get("require_refusal_on_missing_evidence").and_then(|v| v.as_bool()).unwrap_or(false);
-    let auto_escalate: bool = rules_v.get("auto_escalate").and_then(|v| v.as_bool()).unwrap_or(false);
-    let refusal_phrases: Vec<String> = rules_v.get("refusal_phrases")
-        .and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_str().map(|s| s.to_lowercase())).collect())
+    let min_citations: usize = rules_v
+        .get("min_citations")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(1) as usize;
+    let forbid_hallu: bool = rules_v
+        .get("forbid_hallucinated_exhibits")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let req_refusal: bool = rules_v
+        .get("require_refusal_on_missing_evidence")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let auto_escalate: bool = rules_v
+        .get("auto_escalate")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let refusal_phrases: Vec<String> = rules_v
+        .get("refusal_phrases")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(|s| s.to_lowercase()))
+                .collect()
+        })
         .unwrap_or_default();
-    let valid_docs: Vec<String> = expected_v.get("valid_docs")
-        .and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+    let valid_docs: Vec<String> = expected_v
+        .get("valid_docs")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
-    let valid_citations: Vec<String> = expected_v.get("valid_citations")
-        .and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+    let valid_citations: Vec<String> = expected_v
+        .get("valid_citations")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
 
     // Docs permitidos = valid_docs + docs inyectados por world/ (new_evidence).
@@ -563,12 +621,26 @@ pub async fn verify_now(state: &SharedState, run_id: &str) -> AppResult<()> {
     let mut missed_w = 0.0f64;
     if let Some(items) = checklist_v.as_array() {
         for it in items {
-            let id = it.get("id").and_then(|v| v.as_str()).unwrap_or("?").to_string();
-            let desc = it.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let id = it
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?")
+                .to_string();
+            let desc = it
+                .get("description")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             let w = it.get("weight").and_then(|v| v.as_f64()).unwrap_or(1.0);
             total_w += w;
-            let must: Vec<String> = it.get("must_cite").and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+            let must: Vec<String> = it
+                .get("must_cite")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
             let missing: Vec<String> = must.into_iter().filter(|c| !memo.contains(c)).collect();
             if !missing.is_empty() {
@@ -610,7 +682,10 @@ pub async fn verify_now(state: &SharedState, run_id: &str) -> AppResult<()> {
 
     // 4) Refusal: world docs no incorporados exigen frase de insuficiencia.
     if req_refusal {
-        let unincorporated: Vec<&String> = world_docs.iter().filter(|w| !memo.contains(w.as_str())).collect();
+        let unincorporated: Vec<&String> = world_docs
+            .iter()
+            .filter(|w| !memo.contains(w.as_str()))
+            .collect();
         if !unincorporated.is_empty() {
             let has_refusal = refusal_phrases.iter().any(|p| memo_lc.contains(p));
             if !has_refusal {
@@ -619,7 +694,11 @@ pub async fn verify_now(state: &SharedState, run_id: &str) -> AppResult<()> {
         }
     }
 
-    let score = if total_w > 0.0 { ((total_w - missed_w) / total_w * 100.0).round() / 100.0 } else { 1.0 };
+    let score = if total_w > 0.0 {
+        ((total_w - missed_w) / total_w * 100.0).round() / 100.0
+    } else {
+        1.0
+    };
     if omissions.is_empty() {
         write_pass(state, &run.id, score)?;
         tracing::info!("verify {} PASS score={score}", run.id);
@@ -643,7 +722,12 @@ fn world_evidence_docs(state: &SharedState, run_id: &str) -> Vec<String> {
             let mut out = Vec::new();
             for row in rows.flatten().flatten() {
                 if let Ok(v) = serde_json::from_str::<Value>(&row) {
-                    if let Some(doc) = v.get("doc").and_then(|d| d.as_str()).map(str::trim).filter(|s| !s.is_empty()) {
+                    if let Some(doc) = v
+                        .get("doc")
+                        .and_then(|d| d.as_str())
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                    {
                         // Solo nombres seguros (los inseguros se ignoran, no rompen).
                         if valid_doc_name(doc) {
                             out.push(doc.to_string());
@@ -689,7 +773,10 @@ fn extract_md_citations(text: &str) -> Vec<String> {
                 break;
             }
         }
-        let tok = text[s..e.min(text.len())].trim().trim_matches('`').to_string();
+        let tok = text[s..e.min(text.len())]
+            .trim()
+            .trim_matches('`')
+            .to_string();
         if tok.contains(".md:") && tok.len() <= 160 && !out.contains(&tok) {
             // Solo tokens cuyo doc parece nombre de fichero.
             if let Some(doc) = tok.split(':').next() {
@@ -718,11 +805,22 @@ fn write_pass(state: &SharedState, run_id: &str, score: f64) -> AppResult<()> {
         )?;
         Ok(())
     })?;
-    append_event(state, run_id, "verdict", &json!({"verdict": "pass", "score": score}))?;
+    append_event(
+        state,
+        run_id,
+        "verdict",
+        &json!({"verdict": "pass", "score": score}),
+    )?;
     Ok(())
 }
 
-fn write_fail(state: &SharedState, run_id: &str, status: &str, omissions: Vec<Value>, score: f64) -> AppResult<()> {
+fn write_fail(
+    state: &SharedState,
+    run_id: &str,
+    status: &str,
+    omissions: Vec<Value>,
+    score: f64,
+) -> AppResult<()> {
     let id = new_id("lverdict");
     let now = now_ms();
     let om_s = serde_json::to_string(&omissions).unwrap_or_else(|_| "[]".into());
@@ -738,9 +836,19 @@ fn write_fail(state: &SharedState, run_id: &str, status: &str, omissions: Vec<Va
         )?;
         Ok(())
     })?;
-    append_event(state, run_id, "verdict", &json!({"verdict": "fail", "score": score, "omissions": omissions.len()}))?;
+    append_event(
+        state,
+        run_id,
+        "verdict",
+        &json!({"verdict": "fail", "score": score, "omissions": omissions.len()}),
+    )?;
     if status == "escalated" {
-        append_event(state, run_id, "escalation", &json!({"reason": "auto: verdict fail"}))?;
+        append_event(
+            state,
+            run_id,
+            "escalation",
+            &json!({"reason": "auto: verdict fail"}),
+        )?;
     }
     Ok(())
 }
@@ -760,8 +868,10 @@ pub async fn list_events_handler(
         return Err(AppError::forbidden("run de otra cuenta"));
     }
     let since: i64 = q.get("since").and_then(|v| v.parse().ok()).unwrap_or(0);
-    Ok(Json(json!({"ok": true, "run_id": run.id, "events": list_events(&state, &run.id, since)}))
-        .into_response())
+    Ok(
+        Json(json!({"ok": true, "run_id": run.id, "events": list_events(&state, &run.id, since)}))
+            .into_response(),
+    )
 }
 
 /// GET /api/legal/runs/{id}/checklist — estado por ítem para la UI humana :8765.
@@ -786,28 +896,49 @@ pub async fn checklist_handler(
     let gt = std::path::PathBuf::from(&state.cfg.verifier_gt_dir).join(&run.case_id);
     let checklist_s = std::fs::read_to_string(gt.join("checklist.json"))
         .map_err(|_| AppError::internal("checklist no disponible"))?;
-    let checklist_v: Value =
-        serde_json::from_str(&checklist_s).map_err(|_| AppError::internal("checklist no disponible"))?;
+    let checklist_v: Value = serde_json::from_str(&checklist_s)
+        .map_err(|_| AppError::internal("checklist no disponible"))?;
     let memo = run.memorandum.clone().unwrap_or_default();
     let mut items = Vec::new();
     if let Some(arr) = checklist_v.as_array() {
         for it in arr {
-            let cid = it.get("id").and_then(|v| v.as_str()).unwrap_or("?").to_string();
-            let desc = it.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let must: Vec<String> = it.get("must_cite").and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+            let cid = it
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?")
+                .to_string();
+            let desc = it
+                .get("description")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let must: Vec<String> = it
+                .get("must_cite")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
             let (status, missing) = if memo.is_empty() {
                 ("pending", must.clone())
             } else {
-                let miss: Vec<String> = must.iter().filter(|c| !memo.contains(c.as_str())).cloned().collect();
+                let miss: Vec<String> = must
+                    .iter()
+                    .filter(|c| !memo.contains(c.as_str()))
+                    .cloned()
+                    .collect();
                 (if miss.is_empty() { "pass" } else { "missing" }, miss)
             };
             items.push(json!({"id": cid, "description": desc, "must_cite": must, "status": status, "missing": missing}));
         }
     }
     let world_docs = world_evidence_docs(&state, &run.id);
-    let world: Vec<Value> = world_docs.iter().map(|w| json!({"doc": w, "cited": memo.contains(w)})).collect();
+    let world: Vec<Value> = world_docs
+        .iter()
+        .map(|w| json!({"doc": w, "cited": memo.contains(w)}))
+        .collect();
     let last = latest_verdict(&state, &run.id);
     let (verdict, score) = last.map(|(v, _, s)| (v, s)).unwrap_or(("none".into(), 0.0));
     let can_sign = run.signed_at.is_none() && verdict == "pass";
@@ -815,7 +946,8 @@ pub async fn checklist_handler(
         "ok": true, "run_id": run.id, "status": run.status,
         "checklist": items, "world": world,
         "verdict": verdict, "score": score, "can_sign": can_sign,
-    })).into_response())
+    }))
+    .into_response())
 }
 
 /// GET /api/legal/runs/{id}/stream — SSE snapshot (Fase 1: one-shot).
@@ -898,7 +1030,9 @@ pub async fn signoff_handler(
     let (account, device) = resolve_identity(&state, &headers)?
         .ok_or_else(|| AppError::unauthorized("se requiere sesión de cuenta"))?;
     if device.is_some() {
-        return Err(AppError::forbidden("un dispositivo no puede firmar (solo cuenta humana)"));
+        return Err(AppError::forbidden(
+            "un dispositivo no puede firmar (solo cuenta humana)",
+        ));
     }
     let run = load_run(&state, id.trim())?;
     if run.account_id != account {
@@ -958,11 +1092,17 @@ pub async fn world_handler(
     ensure_enabled(&state)?;
     // Auth: Bearer cuenta humana, o VERIFIER_WORLD_TOKEN (Fase 3).
     let caller: Option<String> = resolve_identity(&state, &headers)?.map(|(a, _)| a);
-    let token_ok = state.cfg
+    let token_ok = state
+        .cfg
         .verifier_world_token
         .as_ref()
         .filter(|t| !t.is_empty())
-        .and_then(|t| headers.get("x-world-token").and_then(|v| v.to_str().ok()).map(|h| h == t))
+        .and_then(|t| {
+            headers
+                .get("x-world-token")
+                .and_then(|v| v.to_str().ok())
+                .map(|h| h == t)
+        })
         .unwrap_or(false);
     let account = match (caller, token_ok) {
         (Some(a), _) => a,
@@ -971,7 +1111,11 @@ pub async fn world_handler(
             // cargando el run primero con el id; aquí se permite pasar).
             String::new()
         }
-        _ => return Err(AppError::unauthorized("world requiere Bearer de cuenta o X-World-Token")),
+        _ => {
+            return Err(AppError::unauthorized(
+                "world requiere Bearer de cuenta o X-World-Token",
+            ))
+        }
     };
     let run = load_run(&state, id.trim())?;
     if !account.is_empty() && run.account_id != account {
@@ -988,7 +1132,9 @@ pub async fn world_handler(
     // (el agente solo ve el excerpt del evento; debe citarlo o rehusar).
     let doc = body.doc.unwrap_or_default().trim().to_string();
     if doc.is_empty() || !valid_doc_name(&doc) {
-        return Err(AppError::bad_request("doc inválido (nombre .md seguro requerido)"));
+        return Err(AppError::bad_request(
+            "doc inválido (nombre .md seguro requerido)",
+        ));
     }
     let excerpt = body.excerpt.unwrap_or_default().trim().to_string();
     if excerpt.len() > 4000 {
@@ -999,7 +1145,13 @@ pub async fn world_handler(
         "excerpt": excerpt,
         "extra": body.payload.unwrap_or(Value::Null),
     });
-    append_turn(&state, &run.id, "world", &format!("WORLD new_evidence: {}", payload), Some(&payload))?;
+    append_turn(
+        &state,
+        &run.id,
+        "world",
+        &format!("WORLD new_evidence: {}", payload),
+        Some(&payload),
+    )?;
     append_event(&state, &run.id, "new_evidence", &payload)?;
     tracing::info!("legal world {} run {}", kind, run.id);
     let run = load_run(&state, &run.id)?;

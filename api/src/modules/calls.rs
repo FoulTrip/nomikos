@@ -107,9 +107,9 @@ pub async fn create_call_handler(
         return Err(AppError::bad_request("destination vacío"));
     }
     // Identidad: cuenta (o token de dispositivo → device_id en la llamada).
-    let (account, device) = resolve_identity(&state, &headers)?
-        .ok_or_else(|| AppError::unauthorized("llama con el Bearer de tu cuenta o de tu dispositivo"))?;
-
+    let (account, device) = resolve_identity(&state, &headers)?.ok_or_else(|| {
+        AppError::unauthorized("llama con el Bearer de tu cuenta o de tu dispositivo")
+    })?;
 
     // ── Con X-Payment: consumir el minuto pagado y emitir el siguiente ──
     if let Some(invoice_id) = x_payment_of(&headers) {
@@ -185,7 +185,10 @@ pub async fn create_call_handler(
     .await?;
     tracing::info!(
         "call {id} → {destination} (cuenta {account}{}) peaje minuto 0 emitido",
-        device.as_deref().map(|d| format!(" · device {d}")).unwrap_or_default()
+        device
+            .as_deref()
+            .map(|d| format!(" · device {d}"))
+            .unwrap_or_default()
     );
     let call = call_by_id(&state, &id, &account)?;
     Ok((
@@ -276,7 +279,9 @@ pub async fn end_call_handler(
         )?)
     })?;
     if updated == 0 {
-        return Err(AppError::not_found("llamada no encontrada (o ya finalizada)"));
+        return Err(AppError::not_found(
+            "llamada no encontrada (o ya finalizada)",
+        ));
     }
     let call = call_by_id(&state, &id, &account)?;
     Ok(Json(json!({ "ok": true, "call": call })).into_response())

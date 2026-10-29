@@ -113,7 +113,7 @@ function LocaleSwitcher() {
     </LocaleLink>
   );
   return (
-    <div className="flex items-center gap-0.5 rounded-full bg-[#F6F4EF] p-1">
+    <div className="inline-flex w-fit items-center gap-0.5 rounded-full bg-[#F6F4EF] p-1">
       {opt("en", "English")}
       {opt("es", "Español")}
     </div>
@@ -150,9 +150,6 @@ function Navbar() {
           ))}
         </nav>
         <div className="flex items-center gap-2">
-          <div className="hidden sm:block">
-            <LocaleSwitcher />
-          </div>
           <Button asChild variant="ghost" className="lift hidden rounded-full sm:inline-flex">
             <Link href="/signin">{t("signin")}</Link>
           </Button>
@@ -191,9 +188,6 @@ function Navbar() {
                 <Link href="/signup">{t("signup")}</Link>
               </Button>
             </li>
-            <li className="flex justify-center pt-3 sm:hidden">
-              <LocaleSwitcher />
-            </li>
           </ul>
         </nav>
       )}
@@ -230,7 +224,6 @@ function Hero() {
               <Link href="#como-funciona">{t("how")}</Link>
             </Button>
           </div>
-          <p className="text-muted-foreground mt-4 text-sm">{t("note")}</p>
         </div>
         <div className="pop-in" style={{ animationDelay: "150ms" }}>
           <HeroArt className="mx-auto w-full max-w-[520px]" />
@@ -328,8 +321,8 @@ function ShowcaseRow({
   id?: string;
 }) {
   return (
-    <div id={id} className="grid scroll-mt-24 items-center gap-10 md:grid-cols-2">
-      <Reveal className={flip ? "md:order-2" : ""}>
+    <div id={id} className="grid grid-cols-1 scroll-mt-24 items-center gap-10 md:grid-cols-2">
+      <Reveal className={`min-w-0 ${flip ? "md:order-2" : ""}`}>
         <Eyebrow>{eyebrow}</Eyebrow>
         <h2 className="mt-3 text-3xl font-semibold md:text-[44px] md:leading-[48px]">
           {title}
@@ -343,7 +336,7 @@ function ShowcaseRow({
           ))}
         </ul>
       </Reveal>
-      <Reveal delay={120} className={flip ? "md:order-1" : ""}>
+      <Reveal delay={120} className={`min-w-0 ${flip ? "md:order-1" : ""}`}>
         {art}
       </Reveal>
     </div>

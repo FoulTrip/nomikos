@@ -63,7 +63,9 @@ pub fn resolve_identity(
         .map(str::trim)
         .filter(|t| !t.is_empty())
     else {
-        return Err(AppError::unauthorized("Authorization debe ser: Bearer <token>"));
+        return Err(AppError::unauthorized(
+            "Authorization debe ser: Bearer <token>",
+        ));
     };
     let hash = crypto::sha256_hex(token.as_bytes());
     let row: Option<(String, Option<String>)> = state
@@ -80,7 +82,8 @@ pub fn resolve_identity(
             Ok(rows.next().transpose()?)
         })
         .map_err(|_| AppError::unauthorized("sesión inválida o expirada"))?;
-    row.map(Some).ok_or_else(|| AppError::unauthorized("sesión inválida o expirada"))
+    row.map(Some)
+        .ok_or_else(|| AppError::unauthorized("sesión inválida o expirada"))
 }
 
 // ---------------------------------------------------------------------------
@@ -129,7 +132,10 @@ impl FromRequestParts<SharedState> for AuthedDevice {
             .map_err(|_| {
                 AppError::unauthorized("token de dispositivo inválido, expirado o sin claim")
             })?;
-        Ok(AuthedDevice { account_id: row.0, device_id: row.1 })
+        Ok(AuthedDevice {
+            account_id: row.0,
+            device_id: row.1,
+        })
     }
 }
 
@@ -143,7 +149,9 @@ const DEVICE_COLS: &str =
 
 fn row_to_device(r: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
     let last_seen: Option<i64> = r.get(6)?;
-    let online = last_seen.map(|t| now_ms() - t < ONLINE_WINDOW_MS).unwrap_or(false);
+    let online = last_seen
+        .map(|t| now_ms() - t < ONLINE_WINDOW_MS)
+        .unwrap_or(false);
     Ok(json!({
         "id": r.get::<_, String>(0)?,
         "account_id": r.get::<_, Option<String>>(1)?,
@@ -221,7 +229,16 @@ pub async fn enroll_handler(
             "INSERT INTO devices (id, name, board, pubkey, claim_code, claim_expires_at, \
              enroll_secret_hash, status, created_at) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'offline', ?8)",
-            params![id, name, board, pubkey, claim_code, claim_expires, enroll_hash, now_ms()],
+            params![
+                id,
+                name,
+                board,
+                pubkey,
+                claim_code,
+                claim_expires,
+                enroll_hash,
+                now_ms()
+            ],
         )?;
         Ok(())
     })?;
@@ -278,9 +295,7 @@ pub async fn claim_handler(
             )?;
             Ok(id)
         })
-        .map_err(|_| {
-            AppError::not_found("código de emparejado inválido, ya usado o expirado")
-        })?;
+        .map_err(|_| AppError::not_found("código de emparejado inválido, ya usado o expirado"))?;
 
     let dev = device_by_id(&state, &device_id)?;
     tracing::info!("account {} claimed device {device_id}", auth.account_id);

@@ -9,7 +9,7 @@ la carpeta sea `api/`).
 ```
 api/src/
 ├── main.rs          — bootstrap: config, DB, spawns (sync_loop, settler), servidor
-├── config.rs        — Config::load() lee .env (dotenv a mano); R2Config; master key
+├── config.rs        — Config::load() lee el .env raíz (dotenv a mano); R2Config; master key
 ├── api.rs           — router (TODAS las rutas) + handlers generales + middleware gate
 ├── db.rs            — SQLite (WAL): schema + migraciones idempotentes + helpers
 ├── crypto.rs        — argon2id + XChaCha20-Poly1305 (seal/open) + tokens de sesión
@@ -90,7 +90,7 @@ api/src/
 | Agente | `GET /agent/tools` · `POST /agent/call` · `GET /agent/state` |
 | MCP | `GET /mcp/status|tools` · `POST /mcp/call` (puente Streamable HTTP) |
 
-## Variables de entorno (`api/.env`)
+## Variables de entorno (`../.env`, único archivo central)
 
 Servidor (`AGENT_OS_API_HOST/PORT`, `AGENT_OS_API_DB_PATH`, `SYNC_INTERVAL_SECS`)
 · ERP (`PAYLOAD_URL`) · Solana (`SOLANA_NETWORK`, `SOLANA_{LOCAL,DEVNET,TESTNET,MAINNET}_URL`,

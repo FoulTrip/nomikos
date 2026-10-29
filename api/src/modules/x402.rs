@@ -1348,9 +1348,11 @@ pub async fn me_x402_summary_handler(
         .unwrap_or_default();
 
     let mut by_status: std::collections::BTreeMap<String, u64> = Default::default();
+    let mut lamports_by_status: std::collections::BTreeMap<String, i64> = Default::default();
     let mut settled_lamports = 0i64;
     for inv in &invoices {
         *by_status.entry(inv.status.clone()).or_insert(0) += 1;
+        *lamports_by_status.entry(inv.status.clone()).or_insert(0) += inv.amount_lamports;
         if inv.status == "settled" {
             settled_lamports += inv.amount_lamports;
         }
@@ -1490,6 +1492,7 @@ pub async fn me_x402_summary_handler(
         },
         "invoices_total": invoices.len(),
         "invoices_by_status": by_status,
+        "invoices_lamports_by_status": lamports_by_status,
         "settled_lamports": settled_lamports,
         "payouts_by_status": payouts,
     }))

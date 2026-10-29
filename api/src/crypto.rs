@@ -32,8 +32,12 @@ pub fn hash_password(plain: &str) -> Result<String, AppError> {
 
 /// Verifica un password contra su PHC string (constant-time). Nunca pánico.
 pub fn verify_password(plain: &str, phc: &str) -> bool {
-    let Ok(parsed) = PasswordHash::new(phc) else { return false };
-    Argon2::default().verify_password(plain.as_bytes(), &parsed).is_ok()
+    let Ok(parsed) = PasswordHash::new(phc) else {
+        return false;
+    };
+    Argon2::default()
+        .verify_password(plain.as_bytes(), &parsed)
+        .is_ok()
 }
 
 // ---------------------------------------------------------------------------

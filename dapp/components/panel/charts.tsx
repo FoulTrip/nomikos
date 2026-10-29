@@ -138,7 +138,11 @@ export function InvoiceStatusBreakdown({
   data,
   total,
 }: {
-  data: { status: string; count: number }[];
+  data: {
+    status: string;
+    count: number;
+    amount: { primary: string; secondary?: string };
+  }[];
   total: number;
 }) {
   const t = useTranslations("panel.charts");
@@ -188,7 +192,7 @@ export function InvoiceStatusBreakdown({
 
   return (
     <div className="grid gap-3">
-      {data.map(({ status, count }) => {
+      {data.map(({ status, count, amount }) => {
         const state = states[status] ?? {
           label: status,
           icon: CircleHelp,
@@ -203,9 +207,17 @@ export function InvoiceStatusBreakdown({
                 <Icon className={`size-3.5 shrink-0 ${state.iconClass}`} aria-hidden="true" />
                 <span className="truncate">{state.label}</span>
               </Badge>
-              <span className="shrink-0 font-mono text-xs tabular-nums">
-                {new Intl.NumberFormat(locale).format(count)} <span className="text-muted-foreground">/ {new Intl.NumberFormat(locale).format(total)}</span>
-              </span>
+              <div className="grid shrink-0 justify-items-end gap-0.5 text-right">
+                <span className="font-mono text-xs tabular-nums">
+                  {new Intl.NumberFormat(locale).format(count)}
+                </span>
+                <span className="text-xs font-medium tabular-nums">{amount.primary}</span>
+                {amount.secondary && (
+                  <span className="text-[10px] text-muted-foreground tabular-nums">
+                    {amount.secondary}
+                  </span>
+                )}
+              </div>
             </div>
             <Progress
               value={total > 0 ? (count / total) * 100 : 0}

@@ -21,8 +21,7 @@
       "title": "Tu hogar, por fin con voz propia.",
       "sub": "Nomik escucha lo que necesitas, mueve tus aparatos, hace tus llamadas y se encarga de los pagos. Tú solo hablas.",
       "start": "Empezar gratis",
-      "how": "Ver cómo funciona",
-      "note": "Estarás hablando en menos de un minuto."
+      "how": "Ver cómo funciona"
     },
     "marquee": [
       "Buenos días",
@@ -324,7 +323,6 @@
     "unset": "sin configurar",
     "copyAddr": "Copiar dirección {network} para fondear",
     "principal": "Wallet principal (dPaaS)",
-    "noSubwallets": "Sin sub-wallets. Se usará la wallet principal.",
     "create": "Crear wallet dPaaS",
     "creating": "Creando…",
     "devnet": "Fondeo de pruebas",
@@ -332,6 +330,7 @@
     "dripping": "Goteando…",
     "faucetInfo": "Fondea la wallet dPaaS de devnet con SOL de prueba.",
     "browser": "Wallets conectadas",
+    "connectBrowserWallet": "Conectar wallet",
     "connecting": "Conectando…",
     "inUse": "En uso",
     "use": "Usar",
@@ -468,7 +467,7 @@
     "tools": "Tools",
     "uses": "Usos",
     "inAccount": "en tu cuenta",
-    "x402": "Análisis x402",
+    "x402": "Facturas",
     "tolls": "Peajes de la cuenta",
     "tollsSandbox": "Peajes del sandbox",
     "fiatUnavailable": "Cotización no disponible",

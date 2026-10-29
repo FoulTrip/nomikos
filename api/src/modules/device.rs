@@ -61,10 +61,13 @@ pub async fn specs_value(state: &SharedState) -> AppResult<Value> {
 /// Etiqueta del header de origen: (&'static str nombre, valor dinámico).
 fn glb_response(bytes: Vec<u8>, source_tag: (&'static str, String)) -> Response {
     let mut res = Response::new(axum::body::Body::from(bytes));
-    res.headers_mut()
-        .insert(header::CONTENT_TYPE, HeaderValue::from_static(CONTENT_TYPE_GLTF));
+    res.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static(CONTENT_TYPE_GLTF),
+    );
     if let Ok(v) = HeaderValue::from_str(&source_tag.1) {
-        res.headers_mut().insert(HeaderName::from_static(source_tag.0), v);
+        res.headers_mut()
+            .insert(HeaderName::from_static(source_tag.0), v);
     }
     res
 }
@@ -80,7 +83,9 @@ pub async fn get_model(State(state): State<SharedState>) -> AppResult<Response> 
         .map(str::trim)
         .filter(|k| !k.is_empty())
         .map(str::to_string)
-        .ok_or_else(|| AppError::not_found("modelo 3D no configurado en la DB (model_r2_key vacío)"))?;
+        .ok_or_else(|| {
+            AppError::not_found("modelo 3D no configurado en la DB (model_r2_key vacío)")
+        })?;
 
     let r2 = state
         .r2
@@ -90,7 +95,10 @@ pub async fn get_model(State(state): State<SharedState>) -> AppResult<Response> 
     // 1) Cloudflare REST API con Bearer token
     match r2.get_via_cloudflare_api(&key).await {
         Ok(bytes) => {
-            return Ok(glb_response(bytes, ("x-source", "cloudflare-api".to_string())));
+            return Ok(glb_response(
+                bytes,
+                ("x-source", "cloudflare-api".to_string()),
+            ));
         }
         Err(e) => {
             tracing::error!("Cloudflare API get error: {e}");
@@ -130,10 +138,7 @@ pub async fn upload_model(State(state): State<SharedState>) -> AppResult<impl In
     let bytes = tokio::fs::read(&path).await?;
 
     let key = state.cfg.r2_model_key.clone();
-    let uploaded = r2
-        .put(&key, bytes)
-        .await
-        .map_err(AppError::internal)?;
+    let uploaded = r2.put(&key, bytes).await.map_err(AppError::internal)?;
 
     let public_url = state
         .cfg
@@ -141,7 +146,12 @@ pub async fn upload_model(State(state): State<SharedState>) -> AppResult<impl In
         .as_deref()
         .map(|base| format!("{base}/{key}"));
 
-    state.db.update_model(&key, uploaded.size, uploaded.etag.as_deref(), public_url.as_deref())?;
+    state.db.update_model(
+        &key,
+        uploaded.size,
+        uploaded.etag.as_deref(),
+        public_url.as_deref(),
+    )?;
     tracing::info!("modelo 3D en R2: {key} ({} bytes)", uploaded.size);
 
     let dev = state.db.get_device()?;
@@ -162,7 +172,11 @@ pub async fn model_head(State(state): State<SharedState>) -> StatusCode {
         Ok(d) => d,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR,
     };
-    let key_ok = dev.model_r2_key.as_deref().map(str::trim).is_some_and(|k| !k.is_empty());
+    let key_ok = dev
+        .model_r2_key
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|k| !k.is_empty());
     if (key_ok && state.r2.is_some()) || Path::new(&state.cfg.device_model_file).exists() {
         StatusCode::OK
     } else {

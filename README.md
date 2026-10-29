@@ -143,8 +143,9 @@ for installing, starting, testing, and imaging the whole system.
 Prerequisites are a Rust toolchain, Python 3.13, Node.js, and Ollama for the
 safety shields, with Docker available as an alternative deployment path. All
 configuration flows from a single environment file at the repository root,
-which is created from the provided template before generating secrets and
-synchronizing each service. One install command compiles the API, creates the
+which is created from the provided template before generating secrets. The
+launcher passes that environment to each local service; it does not create
+per-service copies. One install command compiles the API, creates the
 Python environments, installs JavaScript dependencies, and pulls the two small
 Ollama models. One start command then brings up the API on port 8080, the
 orchestrator on port 8322, the shields on port 11434, the panel on port 3000,
@@ -319,11 +320,11 @@ change is scoped.
 
 ### Configuration is centralized
 
-The root environment file is the only configuration that matters. Each
-service keeps an example file that acts as its contract, and the sync
-command overlays every non-empty central value onto those defaults. A new
-variable therefore belongs in the service example first and in the central
-file second; anything else is silently ignored by design.
+The root `.env` is the only runtime environment file. `make up`, Docker
+Compose, the API, brain, and dapp load values from it; `make env` validates
+that the root file covers the central template and does not generate service
+copies. Service `.env.example` files remain as reference contracts. See
+`ENVIRONMENT.txt` for the complete variable inventory and setup steps.
 
 ```bash
 make env

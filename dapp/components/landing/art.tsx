@@ -102,8 +102,14 @@ export function HeroArt({ className = "" }: { className?: string }) {
       <div className="absolute right-[4%] bottom-[6%] size-[30%] rounded-full bg-[#F2EBE0]" />
 
       {/* pieza central */}
-      <div className="drift absolute top-[30%] left-[26%] flex aspect-square w-[38%] items-center justify-center rounded-[28%] bg-[#7DC4FF] shadow-[0_18px_50px_rgba(77,175,255,0.35)]">
-        <HugeiconsIcon icon={ChatBotIcon} color="#FFFFFF" strokeWidth={1.8} className="w-1/2" />
+      <div className="drift absolute top-[33%] left-[33%] flex aspect-square w-[34%] items-center justify-center rounded-[28%] bg-[#7DC4FF] shadow-[0_18px_50px_rgba(77,175,255,0.35)]">
+        <HugeiconsIcon
+          icon={ChatBotIcon}
+          color="#FFFFFF"
+          strokeWidth={1.8}
+          size={68}
+          className="size-[clamp(44px,13vw,68px)]"
+        />
       </div>
 
       <Chip icon={Coins01Icon} bg="#F5B442" delay="-1.5s" className="absolute top-[8%] right-[16%] aspect-square w-[17%] rounded-[30%]" />
@@ -256,17 +262,17 @@ export function DevicesArt({ className = "" }: { className?: string }) {
     <div
       role="img"
       aria-label="Aparatos conectados"
-      className={`relative flex aspect-[440/360] items-center justify-center gap-2 rounded-[40px] bg-[#F6F4EF] p-8 ${className}`}
+      className={`relative flex aspect-[440/360] min-w-0 items-center justify-center gap-2 rounded-[40px] bg-[#F6F4EF] p-5 sm:p-8 ${className}`}
     >
-      <div className="drift-soft flex size-32 items-center justify-center rounded-[36px] bg-[#7DC4FF] shadow-[0_10px_30px_rgba(77,175,255,0.35)]">
-        <HugeiconsIcon icon={Mic01Icon} size={56} color="#FFFFFF" strokeWidth={1.8} />
+      <div className="drift-soft flex size-20 shrink-0 items-center justify-center rounded-[28px] bg-[#7DC4FF] shadow-[0_10px_30px_rgba(77,175,255,0.35)] sm:size-24 sm:rounded-[32px] md:size-32 md:rounded-[36px]">
+        <HugeiconsIcon icon={Mic01Icon} size={56} color="#FFFFFF" strokeWidth={1.8} className="size-10 sm:size-11 md:size-14" />
       </div>
       <div className="flex flex-col items-center gap-1 px-1" aria-hidden="true">
         <HugeiconsIcon icon={Wifi01Icon} size={22} color="#B2A79A" strokeWidth={2} />
         <span className="w-10 border-t-4 border-dotted border-[#E2D6C5]" />
       </div>
-      <div className="drift-soft flex h-40 w-32 items-center justify-center rounded-[36px] bg-[#5F5DE7] shadow-[0_10px_30px_rgba(95,93,231,0.35)]" style={{ animationDelay: "-2.2s" }}>
-        <HugeiconsIcon icon={SmartphoneIcon} size={56} color="#FFFFFF" strokeWidth={1.8} />
+      <div className="drift-soft flex h-28 w-20 shrink-0 items-center justify-center rounded-[28px] bg-[#5F5DE7] shadow-[0_10px_30px_rgba(95,93,231,0.35)] sm:h-32 sm:w-24 sm:rounded-[32px] md:h-40 md:w-32 md:rounded-[36px]" style={{ animationDelay: "-2.2s" }}>
+        <HugeiconsIcon icon={SmartphoneIcon} size={56} color="#FFFFFF" strokeWidth={1.8} className="size-10 sm:size-11 md:size-14" />
       </div>
       <Sparkle className="absolute top-8 right-10" size={20} delay="-1s" />
       <Dot className="absolute bottom-10 left-10" size={12} fill="#F966AC" />

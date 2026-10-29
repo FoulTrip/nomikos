@@ -44,6 +44,7 @@ interface X402Summary {
   };
   invoices_total?: number;
   invoices_by_status?: Record<string, number>;
+  invoices_lamports_by_status?: Record<string, number>;
   settled_lamports?: number;
 }
 type DisplayCurrency = "USD" | "COP";
@@ -230,11 +231,16 @@ export default function Dashboard() {
   const maxAppUses = Math.max(1, ...usesByApp.values());
 
   const byStatus = x402?.invoices_by_status ?? {};
+  const lamportsByStatus = x402?.invoices_lamports_by_status ?? {};
   const settled = byStatus.settled ?? 0;
   const settledLamports = x402?.settled_lamports ?? 0;
   const settledSol = settledLamports / 1_000_000_000;
   const statusData = Object.entries(byStatus)
-    .map(([status, count]) => ({ status, count }))
+    .map(([status, count]) => ({
+      status,
+      count,
+      amountLamports: lamportsByStatus[status] ?? 0,
+    }))
     .sort((a, b) => b.count - a.count);
   const dailyLimit = x402?.dpaas?.daily_limit_lamports ?? null;
   const dailyUsed = x402?.dpaas?.daily_used_lamports ?? 0;
@@ -254,6 +260,23 @@ export default function Dashboard() {
     minimumFractionDigits: currency === "USD" ? 2 : 0,
     maximumFractionDigits: currency === "USD" ? 4 : 2,
   }).format(value);
+  const formatInvoiceAmount = (lamports: number) => {
+    const sol = lamports / 1_000_000_000;
+    const fiatRate = currency === "COP" ? marketRates?.usd_cop : 1;
+    if (marketRates && fiatRate != null) {
+      const fiatAmount = new Intl.NumberFormat(locale, {
+        style: "currency",
+        currency,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: currency === "USD" ? 4 : 2,
+      }).format(sol * marketRates.sol_usd * fiatRate);
+      return {
+        primary: fiatAmount,
+        secondary: `${formatSol(sol)} SOL`,
+      };
+    }
+    return { primary: `${formatSol(sol)} SOL`, secondary: undefined };
+  };
   const tokensByDate = new Map((llmUsage?.daily_usage ?? []).map((day) => [day.date, day]));
   const todayUtc = new Date();
   todayUtc.setUTCHours(0, 0, 0, 0);
@@ -409,16 +432,19 @@ export default function Dashboard() {
                     </div>
                     <div className="rounded-lg border p-2">
                       <p className="whitespace-nowrap text-xs font-bold leading-tight tracking-tight tabular-nums sm:text-sm md:text-base">
-                        {formatSol(settledSol)} SOL
+                        {fiatValue === null ? t("fiatUnavailable") : formatFiat(fiatValue)}
                       </p>
                       <p className="text-[11px] tabular-nums text-muted-foreground">
-                        {fiatValue === null ? t("fiatUnavailable") : formatFiat(fiatValue)}
+                        {formatSol(settledSol)} SOL
                       </p>
                       <p className="truncate text-[11px] text-muted-foreground">{t("spend")}</p>
                     </div>
                   </div>
                   <Separator />
-                  <InvoiceStatusBreakdown data={statusData} total={x402.invoices_total ?? 0} />
+                  <InvoiceStatusBreakdown
+                    data={statusData.map((item) => ({ ...item, amount: formatInvoiceAmount(item.amountLamports) }))}
+                    total={x402.invoices_total ?? 0}
+                  />
                   {dailyPct !== null && (
                     <Progress
                       value={dailyPct}

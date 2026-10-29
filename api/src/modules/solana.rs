@@ -28,7 +28,10 @@ pub struct SolanaClient {
 
 impl SolanaClient {
     pub fn new(http: reqwest::Client, url: impl Into<String>) -> Self {
-        Self { http, url: url.into() }
+        Self {
+            http,
+            url: url.into(),
+        }
     }
 
     pub async fn rpc(&self, method: &str, params: Value) -> Result<Value, String> {
@@ -115,7 +118,11 @@ impl SolanaClient {
                     Some(s) => s.get("Ok").is_some() || s.get("Err").is_none(),
                     None => matches!(conf, "confirmed" | "finalized"),
                 };
-                let conf = if conf.is_empty() { None } else { Some(conf.to_string()) };
+                let conf = if conf.is_empty() {
+                    None
+                } else {
+                    Some(conf.to_string())
+                };
                 Ok(Some((ok, conf)))
             }
         }
@@ -157,8 +164,8 @@ fn expand_home(p: &str) -> String {
 /// Lee un keypair JSON de Solana: array de 64 bytes `[seed(32) || pubkey(32)]`.
 pub fn keypair_bytes_from_json(path: &str) -> Result<[u8; 64], String> {
     let expanded = expand_home(path);
-    let text = std::fs::read_to_string(&expanded)
-        .map_err(|e| format!("keypair {expanded}: {e}"))?;
+    let text =
+        std::fs::read_to_string(&expanded).map_err(|e| format!("keypair {expanded}: {e}"))?;
     let arr: Vec<u8> = serde_json::from_str(&text)
         .map_err(|e| format!("keypair {expanded}: JSON inválido: {e}"))?;
     if arr.len() < 64 {
@@ -197,7 +204,12 @@ fn keypair_path_from_cli_config() -> Option<String> {
 /// Pubkey cuyo balance se sincroniza: `SOLANA_WALLET` (pubkey o ruta) o la
 /// del CLI local (`~/.config/solana`).
 pub fn resolve_wallet(cfg: &Config) -> Option<String> {
-    if let Some(w) = cfg.solana_wallet.as_deref().map(str::trim).filter(|w| !w.is_empty()) {
+    if let Some(w) = cfg
+        .solana_wallet
+        .as_deref()
+        .map(str::trim)
+        .filter(|w| !w.is_empty())
+    {
         if w.contains('/') || w.ends_with(".json") || w.starts_with('~') {
             return pubkey_of_keypair_file(w).ok();
         }
@@ -219,7 +231,10 @@ pub async fn sync(state: &SharedState) {
     let network_label = state.cfg.solana_network_label();
 
     let Some(url) = state.cfg.solana_url().cloned() else {
-        tracing::warn!("SOLANA_NETWORK «{}» no reconocida", state.cfg.solana_network);
+        tracing::warn!(
+            "SOLANA_NETWORK «{}» no reconocida",
+            state.cfg.solana_network
+        );
         return;
     };
     let client = SolanaClient::new(state.http.clone(), url.clone());
@@ -247,7 +262,10 @@ pub async fn sync(state: &SharedState) {
     }
 
     let detail = if running {
-        format!("validator {version:?} · slot {:?}", slot.unwrap_or_default())
+        format!(
+            "validator {version:?} · slot {:?}",
+            slot.unwrap_or_default()
+        )
     } else {
         "sin conexión con el RPC".to_string()
     };
@@ -270,7 +288,10 @@ pub async fn sync(state: &SharedState) {
         Ok(()) => {
             if running {
                 if let (Some(w), Some(lamports)) = (&wallet, balance) {
-                    tracing::info!("Solana {network_label} → corriendo · {w}: {} SOL", fmt_sol(lamports));
+                    tracing::info!(
+                        "Solana {network_label} → corriendo · {w}: {} SOL",
+                        fmt_sol(lamports)
+                    );
                 } else {
                     tracing::info!("Solana {network_label} → corriendo");
                 }
@@ -341,11 +362,7 @@ pub fn build_transfer_message(
     msg.push(0);
     msg.push(1);
 
-    let data = [
-        2u32.to_le_bytes().as_ref(),
-        lamports.to_le_bytes().as_ref(),
-    ]
-    .concat();
+    let data = [2u32.to_le_bytes().as_ref(), lamports.to_le_bytes().as_ref()].concat();
     put_compact(&mut msg, data.len());
     msg.extend_from_slice(&data);
     msg

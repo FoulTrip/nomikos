@@ -21,8 +21,7 @@
       "title": "Your home, finally with a voice of its own.",
       "sub": "Nomik hears what you need, moves your devices, makes your calls and takes care of payments. You just talk.",
       "start": "Get started free",
-      "how": "See how it works",
-      "note": "You'll be talking in under a minute."
+      "how": "See how it works"
     },
     "marquee": [
       "Good morning",
@@ -324,7 +323,6 @@
     "unset": "not configured",
     "copyAddr": "Copy {network} address to fund",
     "principal": "Primary wallet (dPaaS)",
-    "noSubwallets": "No sub-wallets. The primary wallet will be used.",
     "create": "Create dPaaS wallet",
     "creating": "Creating…",
     "devnet": "Test funding",
@@ -332,6 +330,7 @@
     "dripping": "Dripping…",
     "faucetInfo": "Fund the dPaaS devnet wallet with test SOL.",
     "browser": "Connected wallets",
+    "connectBrowserWallet": "Connect wallet",
     "connecting": "Connecting…",
     "inUse": "In use",
     "use": "Use",
@@ -468,7 +467,7 @@
     "tools": "Tools",
     "uses": "Uses",
     "inAccount": "on your account",
-    "x402": "x402 analysis",
+    "x402": "Invoices",
     "tolls": "Account tolls",
     "tollsSandbox": "Sandbox tolls",
     "fiatUnavailable": "Rate unavailable",

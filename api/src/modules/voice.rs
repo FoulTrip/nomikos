@@ -66,10 +66,9 @@ pub async fn voice_turn_handler(
         call = call.header(axum::http::header::AUTHORIZATION, bearer);
     }
 
-    let res = call
-        .send()
-        .await
-        .map_err(|e| AppError::unavailable(format!("orquestador (brain :8322) no disponible: {e}")))?;
+    let res = call.send().await.map_err(|e| {
+        AppError::unavailable(format!("orquestador (brain :8322) no disponible: {e}"))
+    })?;
     let status = res.status();
     let body: Value = res.json().await.unwrap_or(Value::Null);
 

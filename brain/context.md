@@ -12,7 +12,7 @@ brain/
 ├── app/
 │   ├── main.py      — POST /v1/agentic-gateway (flujo ①-⑤) · GET /v1/health · /v1/tools
 │   ├── context.py   — AccountContext + fetch_account_context(bearer) + bearer_from_headers
-│   ├── config.py    — settings de .env (AGENT_OS_API_URL, LLAMA_STACK_URL, LLM_MODEL,
+│   ├── config.py    — settings del .env raíz (AGENT_OS_API_URL, LLAMA_STACK_URL, LLM_MODEL,
 │   │                  OLLAMA_URL, GUARD_*, MUSE_BIN, MAX_TOOL_ITERATIONS)
 │   ├── llm.py       — run_agent(): SOLO cliente de cuenta (account:<provider>);
 │   │                  sin Bearer → 401, sin LLM activo → 400 LLM_NOT_CONFIGURED
@@ -95,7 +95,7 @@ llamada devuelve un ToolResult de error y la conversación continúa.
   = falsos positivos del 1B en este dominio). S11 (self-harm) y demás siguen
   bloqueando (verificado).
 
-## Variables de entorno (brain/.env)
+## Variables de entorno (../.env, único archivo central)
 
 `AGENT_OS_API_URL` (http://localhost:8080/api) · `OLLAMA_URL` ·
 `GUARD_ENABLED/LLAMA_GUARD_MODEL/GUARD_VIA_LLAMA_STACK/

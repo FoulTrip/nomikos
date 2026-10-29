@@ -60,20 +60,24 @@ impl McpClient {
     }
 
     fn truncate(s: &str, max: usize) -> String {
-        if s.len() <= max { s.to_string() } else { format!("{}…", &s[..max]) }
+        if s.len() <= max {
+            s.to_string()
+        } else {
+            format!("{}…", &s[..max])
+        }
     }
 
-    async fn parse_body(
-        res: reqwest::Response,
-        method: &str,
-    ) -> Result<Value, String> {
+    async fn parse_body(res: reqwest::Response, method: &str) -> Result<Value, String> {
         let ctype = res
             .headers()
             .get(reqwest::header::CONTENT_TYPE)
             .and_then(|v| v.to_str().ok())
             .unwrap_or("")
             .to_ascii_lowercase();
-        let text = res.text().await.map_err(|e| format!("mcp {method}: cuerpo: {e}"))?;
+        let text = res
+            .text()
+            .await
+            .map_err(|e| format!("mcp {method}: cuerpo: {e}"))?;
 
         if ctype.contains("text/event-stream") {
             // Streamable HTTP puede responder SSE: cada evento trae líneas "data: …"
@@ -94,8 +98,12 @@ impl McpClient {
                 .find(|m| m.get("result").is_some() || m.get("error").is_some())
                 .ok_or_else(|| format!("mcp {method}: SSE sin mensaje JSON-RPC"))
         } else {
-            serde_json::from_str::<Value>(&text)
-                .map_err(|e| format!("mcp {method}: cuerpo no JSON: {e} — «{}»", Self::truncate(&text, 160)))
+            serde_json::from_str::<Value>(&text).map_err(|e| {
+                format!(
+                    "mcp {method}: cuerpo no JSON: {e} — «{}»",
+                    Self::truncate(&text, 160)
+                )
+            })
         }
     }
 
@@ -126,10 +134,7 @@ impl McpClient {
             }
         }
 
-        let res = req
-            .send()
-            .await
-            .map_err(|e| format!("mcp {method}: {e}"))?;
+        let res = req.send().await.map_err(|e| format!("mcp {method}: {e}"))?;
 
         let status = res.status();
         if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) {
@@ -137,10 +142,7 @@ impl McpClient {
         }
         if !status.is_success() {
             let snippet = res.text().await.unwrap_or_default();
-            return Err(format!(
-                "HTTP {status} — {}",
-                Self::truncate(&snippet, 200)
-            ));
+            return Err(format!("HTTP {status} — {}", Self::truncate(&snippet, 200)));
         }
         if let Some(sid) = res
             .headers()
@@ -182,7 +184,10 @@ impl McpClient {
         if let Some(sid) = self.session.lock().ok().and_then(|s| s.clone()) {
             req = req.header("Mcp-Session-Id", sid);
         }
-        let res = req.send().await.map_err(|e| format!("mcp notify {method}: {e}"))?;
+        let res = req
+            .send()
+            .await
+            .map_err(|e| format!("mcp notify {method}: {e}"))?;
         if res.status().is_client_error() || res.status().is_server_error() {
             let code = res.status();
             let _ = res.text().await;
@@ -234,7 +239,12 @@ impl McpClient {
     ) -> Result<Value, String> {
         self.ensure_ready(http).await?;
         match self
-            .rpc_inner(http, "tools/call", json!({ "name": name, "arguments": args }), true)
+            .rpc_inner(
+                http,
+                "tools/call",
+                json!({ "name": name, "arguments": args }),
+                true,
+            )
             .await
         {
             Ok(result) => Ok(result),
@@ -242,8 +252,13 @@ impl McpClient {
             Err(e) if e.contains("404") || e.to_lowercase().contains("session") => {
                 let _ = self.session.lock().ok().take();
                 self.initialize(http).await?;
-                self.rpc_inner(http, "tools/call", json!({ "name": name, "arguments": args }), true)
-                    .await
+                self.rpc_inner(
+                    http,
+                    "tools/call",
+                    json!({ "name": name, "arguments": args }),
+                    true,
+                )
+                .await
             }
             Err(e) => Err(e),
         }
@@ -297,11 +312,18 @@ pub async fn summary_value(state: &SharedState, live: bool) -> Value {
         match client.initialize(&state.http).await {
             Ok(result) => {
                 out["connected"] = json!(true);
-                out["protocol"] = result.get("protocolVersion").cloned().unwrap_or(Value::Null);
+                out["protocol"] = result
+                    .get("protocolVersion")
+                    .cloned()
+                    .unwrap_or(Value::Null);
                 out["server_info"] = result.get("serverInfo").cloned().unwrap_or(Value::Null);
                 // intenta contar herramientas (no falla el status si no puede)
                 if let Ok(result) = client.tools_list(&state.http).await {
-                    out["tools_count"] = json!(result.get("tools").and_then(|t| t.as_array()).map(|a| a.len()).unwrap_or(0));
+                    out["tools_count"] = json!(result
+                        .get("tools")
+                        .and_then(|t| t.as_array())
+                        .map(|a| a.len())
+                        .unwrap_or(0));
                 }
             }
             Err(e) if e == "auth_required" => {
@@ -341,11 +363,10 @@ pub async fn tools_handler(State(state): State<SharedState>) -> AppResult<impl I
         .tools_list(&state.http)
         .await
         .map_err(|e| map_mcp_error(&e))?;
-    let tools = result
-        .get("tools")
-        .cloned()
-        .unwrap_or(Value::Array(vec![]));
-    Ok(Json(json!({ "ok": true, "url": state.mcp.url(), "tools": tools })))
+    let tools = result.get("tools").cloned().unwrap_or(Value::Array(vec![]));
+    Ok(Json(
+        json!({ "ok": true, "url": state.mcp.url(), "tools": tools }),
+    ))
 }
 
 pub async fn call_handler(
@@ -355,9 +376,17 @@ pub async fn call_handler(
     if body.tool.trim().is_empty() {
         return AppError::bad_request("tool vacía").into_response();
     }
-    let args = if body.arguments.is_null() { json!({}) } else { body.arguments };
+    let args = if body.arguments.is_null() {
+        json!({})
+    } else {
+        body.arguments
+    };
 
-    match state.mcp.tools_call(&state.http, body.tool.trim(), args).await {
+    match state
+        .mcp
+        .tools_call(&state.http, body.tool.trim(), args)
+        .await
+    {
         Ok(result) => {
             let is_error = result
                 .get("isError")
