@@ -180,19 +180,24 @@ fn invoice_value_of(state: &SharedState, inv: Invoice) -> Value {
     serde_json::to_value(with_hint).unwrap_or(Value::Null)
 }
 
-/// (estado, firma, intentos) de una factura.
-fn invoice_state_of(state: &SharedState, id: &str) -> Option<(String, Option<String>, i64)> {
+/// (estado, firma, intentos, red) de una factura.
+fn invoice_state_of(
+    state: &SharedState,
+    id: &str,
+) -> Option<(String, Option<String>, i64, String)> {
     state
         .db
         .with(|c| {
             c.query_row(
-                "SELECT status, tx_signature, verify_attempts FROM x402_invoices WHERE id = ?1",
+                "SELECT status, tx_signature, verify_attempts, COALESCE(network, 'devnet') \
+                 FROM x402_invoices WHERE id = ?1",
                 params![id],
                 |r| {
                     Ok((
                         r.get::<_, String>(0)?,
                         r.get::<_, Option<String>>(1)?,
                         r.get::<_, i64>(2)?,
+                        r.get::<_, String>(3)?,
                     ))
                 },
             )
@@ -294,8 +299,56 @@ pub async fn create_invoice_value_for(
     account_id: Option<&str>,
     device_id: Option<&str>,
 ) -> AppResult<Value> {
+    let Some(payee) = default_payee(state) else {
+        return Err(AppError::unavailable(
+            "Sin wallet para cobrar: configura X402_PAYEE_WALLET o SOLANA_WALLET",
+        ));
+    };
+    create_invoice_value_for_payee(
+        state,
+        resource,
+        amount_lamports,
+        account_id,
+        device_id,
+        &payee,
+    )
+    .await
+}
+
+/// Crea una factura SOL para un recurso que paga directamente a un publisher.
+/// El payee y monto quedan congelados en la factura y se validan al reintentar.
+pub async fn create_invoice_value_for_payee(
+    state: &SharedState,
+    resource: &str,
+    amount_lamports: i64,
+    account_id: Option<&str>,
+    device_id: Option<&str>,
+    payee: &str,
+) -> AppResult<Value> {
     let (execution_environment, network) =
         execution_context(state, account_id.unwrap_or("system"), device_id);
+    let payer_pubkey = account_id.and_then(|account| {
+        state
+            .db
+            .with(|c| {
+                c.query_row(
+                    "SELECT wallet_pubkey FROM account_chain_wallets \
+                 WHERE account_id = ?1 AND network = ?2",
+                    params![account, network],
+                    |r| r.get::<_, String>(0),
+                )
+                .or_else(|_| {
+                    c.query_row(
+                        "SELECT wallet_pubkey FROM account_chain \
+                     WHERE account_id = ?1 AND network = ?2",
+                        params![account, network],
+                        |r| r.get::<_, Option<String>>(0),
+                    )
+                    .and_then(|v| v.ok_or(rusqlite::Error::QueryReturnedNoRows))
+                })
+            })
+            .ok()
+    });
     let body = NewInvoice {
         resource: resource.trim().to_string(),
         amount_lamports,
@@ -307,19 +360,19 @@ pub async fn create_invoice_value_for(
     if body.amount_lamports <= 0 {
         return Err(AppError::bad_request("amount_lamports debe ser > 0"));
     }
-    let Some(payee) = default_payee(state) else {
-        return Err(AppError::unavailable(
-            "Sin wallet para cobrar: configura X402_PAYEE_WALLET o SOLANA_WALLET",
+    if crate::b58::decode(payee).map(|v| v.len()) != Ok(32) {
+        return Err(AppError::bad_request(
+            "payee debe ser una pubkey Solana base58 válida",
         ));
-    };
+    }
 
     let id = new_id("x402");
     let now = now_ms();
     state.db.with(|c| {
         c.execute(
             "INSERT INTO x402_invoices (id, resource, amount_lamports, payee, status, \
-             account_id, device_id, execution_environment, network, created_at, updated_at) \
-             VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?6, ?7, ?8, ?9, ?9)",
+             account_id, device_id, execution_environment, network, payer_pubkey, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, 'pending', ?5, ?6, ?7, ?8, ?9, ?10, ?10)",
             params![
                 id,
                 body.resource,
@@ -329,6 +382,7 @@ pub async fn create_invoice_value_for(
                 device_id,
                 execution_environment,
                 network,
+                payer_pubkey,
                 now
             ],
         )?;
@@ -466,14 +520,21 @@ pub async fn verify_invoice(
         return Ok(invoice_value_of(state, inv));
     }
 
-    state.db.with(|c| {
-        c.execute(
+    let updated = state.db.with(|c| {
+        Ok(c.execute(
             "UPDATE x402_invoices SET tx_signature = ?1, status = 'verifying', \
-             verify_attempts = 0, updated_at = ?2 WHERE id = ?3",
+             verify_attempts = 0, updated_at = ?2 WHERE id = ?3 \
+             AND (tx_signature IS NULL OR tx_signature = ?1) \
+             AND NOT EXISTS (SELECT 1 FROM x402_invoices other \
+                 WHERE other.tx_signature = ?1 AND other.id != ?3)",
             params![tx_signature, now_ms(), id],
-        )?;
-        Ok(())
+        )?)
     })?;
+    if updated == 0 {
+        return Err(AppError::conflict(
+            "esta transacción ya se usó o la factura ya tiene otra firma",
+        ));
+    }
 
     if let Some(next) = attempt_verify(state, id).await {
         return Ok(next);
@@ -484,13 +545,13 @@ pub async fn verify_invoice(
 /// Un intento de verificación on-chain. Devuelve el JSON si el estado cambió;
 /// `None` = seguir pendiente (el settler reintenta).
 async fn attempt_verify(state: &SharedState, id: &str) -> Option<Value> {
-    let (status, sig, attempts) = invoice_state_of(state, id)?;
+    let (status, sig, attempts, network) = invoice_state_of(state, id)?;
     if status != "verifying" {
         return None;
     }
     let sig = sig?;
 
-    let client = match client_for(state).await {
+    let client = match client_for_network(state, &network).await {
         Ok(c) => c,
         Err(e) => {
             tracing::warn!("verify x402 {id}: {e}");
@@ -500,7 +561,19 @@ async fn attempt_verify(state: &SharedState, id: &str) -> Option<Value> {
 
     match client.get_signature_status(&sig).await {
         Ok(Some((true, conf))) => {
-            mark_invoice(state, id, "settled", conf.as_deref());
+            match verify_transfer_for_invoice(state, &client, id, &sig).await {
+                Ok(true) => mark_invoice(state, id, "settled", conf.as_deref()),
+                Ok(false) => mark_invoice(
+                    state,
+                    id,
+                    "failed",
+                    Some("transacción confirmada, pero no paga el destinatario y monto de la factura"),
+                ),
+                Err(e) => {
+                    tracing::warn!("verify x402 transfer {id}: {e}");
+                    return None;
+                }
+            }
             Some(invoice_value_of(state, load_invoice(state, id).ok()?))
         }
         Ok(Some((false, err))) => {
@@ -538,6 +611,48 @@ async fn attempt_verify(state: &SharedState, id: &str) -> Option<Value> {
             None
         }
     }
+}
+
+async fn verify_transfer_for_invoice(
+    state: &SharedState,
+    client: &SolanaClient,
+    id: &str,
+    signature: &str,
+) -> Result<bool, String> {
+    let (amount, payee, payer): (i64, String, Option<String>) = state
+        .db
+        .with(|c| {
+            c.query_row(
+                "SELECT amount_lamports, payee, payer_pubkey FROM x402_invoices WHERE id = ?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+        })
+        .map_err(|e| format!("invoice {id}: {e}"))?;
+    let tx = client
+        .get_parsed_transaction(signature)
+        .await?
+        .ok_or_else(|| "RPC aún no devuelve getTransaction para la firma confirmada".to_string())?;
+    if tx.pointer("/meta/err").is_some_and(|err| !err.is_null()) {
+        return Ok(false);
+    }
+    let instructions = tx
+        .pointer("/transaction/message/instructions")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "getTransaction no contiene instrucciones interpretadas".to_string())?;
+    let expected_amount = amount as u64;
+    Ok(instructions.iter().any(|ix| {
+        let is_system = ix.get("program").and_then(Value::as_str) == Some("system");
+        let is_transfer = ix.pointer("/parsed/type").and_then(Value::as_str) == Some("transfer");
+        let info = &ix["parsed"]["info"];
+        let matches_payment = info.get("destination").and_then(Value::as_str)
+            == Some(payee.as_str())
+            && info.get("lamports").and_then(Value::as_u64) == Some(expected_amount);
+        let matches_payer = payer
+            .as_deref()
+            .is_none_or(|source| info.get("source").and_then(Value::as_str) == Some(source));
+        is_system && is_transfer && matches_payment && matches_payer
+    }))
 }
 
 fn mark_invoice(state: &SharedState, id: &str, status: &str, conf: Option<&str>) {
@@ -1004,6 +1119,17 @@ pub fn verify_access(
     invoice_id: &str,
     payer_account: Option<&str>,
 ) -> Result<(), Response> {
+    verify_access_for_resource(state, invoice_id, payer_account, None)
+}
+
+/// Verifica ownership, estado one-shot y que la factura pertenezca al
+/// recurso exacto que se va a ejecutar (evita cambiar app/tool/args al reintentar).
+pub fn verify_access_for_resource(
+    state: &SharedState,
+    invoice_id: &str,
+    payer_account: Option<&str>,
+    expected_resource: Option<&str>,
+) -> Result<(), Response> {
     let row = state.db.with(|c| {
         c.query_row(
             "SELECT account_id, status, consumed_at, resource FROM x402_invoices WHERE id = ?1",
@@ -1041,6 +1167,15 @@ pub fn verify_access(
             StatusCode::FORBIDDEN,
             "factura de otra cuenta (X-Payment no corresponde a esta identidad)",
         ));
+    }
+
+    if let Some(expected) = expected_resource {
+        if _resource != expected {
+            return Err(error_response(
+                StatusCode::CONFLICT,
+                "la factura corresponde a otro recurso o argumentos",
+            ));
+        }
     }
 
     // Anti-replay: factura de un solo uso.
@@ -1095,6 +1230,36 @@ pub fn settle_access(
 ) -> Result<(), Response> {
     verify_access(state, invoice_id, payer_account)?;
     consume_access(state, invoice_id)
+}
+
+/// Verifica y consume antes de ejecutar una acción remota. La actualización
+/// atómica impide que dos solicitudes concurrentes reproduzcan el mismo pago.
+pub fn settle_access_for_resource(
+    state: &SharedState,
+    invoice_id: &str,
+    payer_account: Option<&str>,
+    expected_resource: &str,
+) -> Result<(), Response> {
+    verify_access_for_resource(state, invoice_id, payer_account, Some(expected_resource))?;
+    consume_access(state, invoice_id)
+}
+
+pub fn invoice_terms(
+    state: &SharedState,
+    invoice_id: &str,
+) -> Option<(String, i64, String, String, String, Option<String>)> {
+    state.db.with(|c| {
+        c.query_row(
+            "SELECT resource, amount_lamports, payee, COALESCE(network, 'devnet'), status, tx_signature \
+             FROM x402_invoices WHERE id = ?1",
+            params![invoice_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+        )
+    }).ok()
+}
+
+pub fn invoice_value_for(state: &SharedState, invoice_id: &str) -> AppResult<Value> {
+    Ok(invoice_value_of(state, load_invoice(state, invoice_id)?))
 }
 
 // ---------------------------------------------------------------------------

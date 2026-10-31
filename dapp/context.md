@@ -60,7 +60,7 @@ dapp/
 │   └── api/
 │       ├── auth/[...nextauth]/route.ts — handlers de Auth.js v5
 │       ├── apps/route.ts          — catálogo DApps + proxy de instalación a api
-│       ├── account/context|chain|llm|services|connected-wallets/route.ts — proxies del panel
+│       ├── account/context|chain|llm|services/route.ts — proxies del panel
 │       ├── account/x402/summary|invoices + tool-usage/route.ts — métricas por entorno
 │       ├── account/devices/route.ts — flota de la cuenta (GET /devices)
 │       ├── account/devices/claim/route.ts — emparejado del modal Flota
@@ -152,14 +152,6 @@ nunca ve el token):
     `PUT /api/account/chain` → `account_chain.active_wallet_label`
     (tri-state en api: label / null=principal / ausente=no toca). El
     contexto (`/accounts/me/context`) resuelve `active_wallet_pubkey`.
-  - **Wallets del navegador**: conectar **Phantom / Solflare / Backpack /
-    MetaMask** desde la extensión (`window.phantom.solana`, `solflare`,
-    `backpack`, `ethereum`). Se guarda **solo la pubkey** en
-    `account_connected_wallets` (la clave privada nunca sale de la
-    wallet — no se recibe ni se guarda; proxy
-    `/api/account/connected-wallets`). Se pueden agregar **varias; solo
-    una queda en uso** (`is_active`, invariante server-side) con botón
-    "Usar" para cambiarla.
 - **Resumen de cuenta** (`components/panel/Dashboard.tsx`): las pestañas de
   producción y sandbox consultan métricas separadas al API. Producción solo
   incluye facturas, payouts y wallets dPaaS etiquetados mainnet. El inventario

@@ -239,20 +239,6 @@ impl Db {
              );
              CREATE INDEX IF NOT EXISTS idx_devices_account ON devices(account_id);
 
-             CREATE TABLE IF NOT EXISTS calls (
-                 id              TEXT PRIMARY KEY,          -- 'call-…'
-                 account_id      TEXT NOT NULL,
-                 device_id       TEXT,                      -- origen: dispositivo de la flota (opcional)
-                 destination     TEXT NOT NULL,             -- número / SIP URI
-                 status          TEXT NOT NULL DEFAULT 'ringing',  -- ringing|active|ended
-                 minutes_paid    INTEGER NOT NULL DEFAULT 0,
-                 started_at      INTEGER,
-                 ended_at        INTEGER,
-                 created_at       INTEGER NOT NULL,
-                 updated_at       INTEGER NOT NULL
-             );
-             CREATE INDEX IF NOT EXISTS idx_calls_account ON calls(account_id);
-
              CREATE TABLE IF NOT EXISTS apps (
                  slug            TEXT PRIMARY KEY,
                  name            TEXT NOT NULL,
@@ -266,6 +252,157 @@ impl Db {
                  installed_at    INTEGER,
                  created_at      INTEGER NOT NULL,
                  updated_at      INTEGER NOT NULL
+             );
+
+             -- Directorio MCP remoto. Los manifiestos firmados son globales;
+             -- instalación, permisos y aprobación quedan aislados por cuenta.
+             CREATE TABLE IF NOT EXISTS marketplace_apps (
+                 namespace          TEXT PRIMARY KEY,
+                 owner_account_id   TEXT NOT NULL REFERENCES accounts(id),
+                 publisher_pubkey   TEXT NOT NULL,
+                 current_version    TEXT NOT NULL,
+                 status             TEXT NOT NULL DEFAULT 'pending_validation',
+                 health_status      TEXT NOT NULL DEFAULT 'unknown',
+                 quarantine_reason  TEXT,
+                 created_at         INTEGER NOT NULL,
+                 updated_at         INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_marketplace_apps_status
+                 ON marketplace_apps(status, namespace);
+
+             CREATE TABLE IF NOT EXISTS marketplace_manifests (
+                 namespace       TEXT NOT NULL REFERENCES marketplace_apps(namespace),
+                 version         TEXT NOT NULL,
+                 manifest_hash   TEXT NOT NULL,
+                 manifest_json   TEXT NOT NULL,
+                 endpoint        TEXT NOT NULL,
+                 tools_json      TEXT NOT NULL,
+                 validation_json TEXT NOT NULL DEFAULT '{}',
+                 legal_status    TEXT NOT NULL DEFAULT 'pending',
+                 legal_checked_at INTEGER,
+                 legal_error     TEXT,
+                 created_at      INTEGER NOT NULL,
+                 PRIMARY KEY(namespace, version),
+                 UNIQUE(namespace, manifest_hash)
+             );
+
+             CREATE TABLE IF NOT EXISTS marketplace_legal_documents (
+                 namespace       TEXT NOT NULL,
+                 version         TEXT NOT NULL,
+                 manifest_hash   TEXT NOT NULL,
+                 document_kind   TEXT NOT NULL CHECK (document_kind IN ('terms', 'privacy')),
+                 content_sha256  TEXT NOT NULL,
+                 content         BLOB NOT NULL,
+                 verified_at     INTEGER NOT NULL,
+                 PRIMARY KEY(namespace, version, manifest_hash, document_kind),
+                 FOREIGN KEY(namespace, version)
+                     REFERENCES marketplace_manifests(namespace, version) ON DELETE CASCADE
+             );
+
+             CREATE TABLE IF NOT EXISTS marketplace_installs (
+                 account_id      TEXT NOT NULL REFERENCES accounts(id),
+                 namespace       TEXT NOT NULL REFERENCES marketplace_apps(namespace),
+                 mode            TEXT NOT NULL DEFAULT 'all' CHECK (mode IN ('all', 'selected')),
+                 device_ids_json TEXT NOT NULL DEFAULT '[]',
+                 auth_enc        TEXT,
+                 created_at      INTEGER NOT NULL,
+                 updated_at      INTEGER NOT NULL,
+                 PRIMARY KEY(account_id, namespace)
+             );
+
+             CREATE TABLE IF NOT EXISTS marketplace_tool_policies (
+                 account_id            TEXT NOT NULL REFERENCES accounts(id),
+                 namespace             TEXT NOT NULL,
+                 tool_name             TEXT NOT NULL,
+                 enabled               INTEGER NOT NULL DEFAULT 1,
+                 max_amount_lamports   INTEGER,
+                 require_confirmation  INTEGER NOT NULL DEFAULT 0,
+                 updated_at            INTEGER NOT NULL,
+                 PRIMARY KEY(account_id, namespace, tool_name),
+                 FOREIGN KEY(account_id, namespace)
+                     REFERENCES marketplace_installs(account_id, namespace) ON DELETE CASCADE
+             );
+
+             CREATE TABLE IF NOT EXISTS marketplace_approvals (
+                 id              TEXT PRIMARY KEY,
+                 account_id      TEXT NOT NULL REFERENCES accounts(id),
+                 device_id       TEXT,
+                 namespace       TEXT NOT NULL,
+                 version         TEXT NOT NULL,
+                 tool_name       TEXT NOT NULL,
+                 args_hash       TEXT NOT NULL,
+                 args_json_enc   TEXT NOT NULL,
+                 amount_lamports INTEGER NOT NULL,
+                 invoice_id      TEXT,
+                 status          TEXT NOT NULL DEFAULT 'pending',
+                 expires_at      INTEGER NOT NULL,
+                 consumed_at     INTEGER,
+                 created_at      INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_marketplace_approvals_account
+                 ON marketplace_approvals(account_id, status, expires_at);
+
+             CREATE TABLE IF NOT EXISTS marketplace_call_events (
+                 id              TEXT PRIMARY KEY,
+                 account_id      TEXT NOT NULL REFERENCES accounts(id),
+                 device_id       TEXT,
+                 namespace       TEXT NOT NULL,
+                 version         TEXT NOT NULL,
+                 tool_name       TEXT NOT NULL,
+                 invoice_id      TEXT,
+                 status          TEXT NOT NULL,
+                 http_status     INTEGER,
+                 latency_ms      INTEGER NOT NULL DEFAULT 0,
+                 error_class     TEXT,
+                 created_at      INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_marketplace_calls_app_time
+                 ON marketplace_call_events(namespace, version, created_at);
+             CREATE INDEX IF NOT EXISTS idx_marketplace_calls_account_time
+                 ON marketplace_call_events(account_id, created_at);
+
+             -- Señales de abuso ligadas a una ejecución pagada; el detalle
+             -- queda cifrado con la master key y no se expone en el catálogo.
+             CREATE TABLE IF NOT EXISTS marketplace_reports (
+                 id              TEXT PRIMARY KEY,
+                 namespace       TEXT NOT NULL REFERENCES marketplace_apps(namespace),
+                 account_id      TEXT NOT NULL REFERENCES accounts(id),
+                 invoice_id      TEXT NOT NULL REFERENCES x402_invoices(id),
+                 category        TEXT NOT NULL,
+                 details_enc     TEXT NOT NULL,
+                 evidence_sha256 TEXT NOT NULL,
+                 created_at      INTEGER NOT NULL,
+                 UNIQUE(namespace, account_id, invoice_id)
+             );
+             CREATE INDEX IF NOT EXISTS idx_marketplace_reports_app_time
+                 ON marketplace_reports(namespace, created_at);
+
+             -- Consentimientos auditables por versión y por hash legal.
+             CREATE TABLE IF NOT EXISTS marketplace_consents (
+                 account_id      TEXT NOT NULL REFERENCES accounts(id),
+                 namespace       TEXT NOT NULL REFERENCES marketplace_apps(namespace),
+                 version         TEXT NOT NULL,
+                 manifest_hash   TEXT NOT NULL,
+                 terms_sha256    TEXT NOT NULL,
+                 privacy_sha256  TEXT NOT NULL,
+                 accepted_at     INTEGER NOT NULL,
+                 PRIMARY KEY(account_id, namespace, version, manifest_hash)
+             );
+             CREATE INDEX IF NOT EXISTS idx_marketplace_consents_account
+                 ON marketplace_consents(account_id, namespace, accepted_at);
+
+             -- Las publicaciones anteriores al requisito de ToS/privacidad
+             -- quedan fuera del catálogo hasta que el publisher publique una
+             -- nueva versión firmada que incluya hashes legales.
+             UPDATE marketplace_apps
+             SET status = 'needs_legal_update', health_status = 'review',
+                 quarantine_reason = 'publica una nueva versión firmada con términos y política de privacidad',
+                 updated_at = CAST(strftime('%s','now') AS INTEGER) * 1000
+             WHERE EXISTS (
+                 SELECT 1 FROM marketplace_manifests m
+                 WHERE m.namespace = marketplace_apps.namespace
+                   AND m.version = marketplace_apps.current_version
+                   AND json_extract(m.manifest_json, '$.legal') IS NULL
              );
 
              -- Asignación de cada DApp a la flota de una cuenta. Si no hay
@@ -369,6 +506,19 @@ impl Db {
              CREATE INDEX IF NOT EXISTS idx_legal_events_run ON legal_events(run_id, created_at);",
         )?;
 
+        Self::add_column_if_missing(
+            conn,
+            "marketplace_manifests",
+            "legal_status",
+            "TEXT NOT NULL DEFAULT 'pending'",
+        )?;
+        Self::add_column_if_missing(conn, "marketplace_manifests", "legal_checked_at", "INTEGER")?;
+        Self::add_column_if_missing(conn, "marketplace_manifests", "legal_error", "TEXT")?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_marketplace_manifests_legal_audit \
+             ON marketplace_manifests(legal_status, legal_checked_at)",
+            [],
+        )?;
         // Migraciones para DBs ya existentes (idempotentes):
         // x402 pasa a ser multi-tenant con cuenta implícita "system".
         Self::add_column_if_missing(conn, "x402_invoices", "account_id", "TEXT DEFAULT 'system'")?;
@@ -383,6 +533,7 @@ impl Db {
         Self::add_column_if_missing(conn, "x402_invoices", "device_id", "TEXT")?;
         Self::add_column_if_missing(conn, "x402_invoices", "execution_environment", "TEXT")?;
         Self::add_column_if_missing(conn, "x402_invoices", "network", "TEXT")?;
+        Self::add_column_if_missing(conn, "x402_invoices", "payer_pubkey", "TEXT")?;
         Self::add_column_if_missing(conn, "x402_payouts", "execution_environment", "TEXT")?;
         Self::add_column_if_missing(conn, "x402_payouts", "network", "TEXT")?;
         Self::add_column_if_missing(conn, "sessions", "device_id", "TEXT")?;

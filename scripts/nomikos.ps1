@@ -58,7 +58,7 @@ function Require-Docker {
 }
 
 function Build-Stack {
-    foreach ($target in @('payload-cms', 'api', 'brain', 'dapp')) {
+    foreach ($target in @('payload-cms', 'mcp-server', 'api', 'brain', 'dapp')) {
         Write-Output "building $target"
         & docker compose build $target
         if ($LASTEXITCODE -ne 0) { throw "docker compose build $target failed with exit code $LASTEXITCODE" }

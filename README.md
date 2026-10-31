@@ -12,7 +12,7 @@
 ## What problem this solves
 
 Connected devices are easy to build and hard to trust. A voice assistant that can
-browse services, place calls, or move funds on your behalf raises three questions
+browse services or move funds on your behalf raises three questions
 that most stacks answer poorly: whose intelligence is reasoning, whose money is
 being spent, and who verified the outcome. NomikOS answers all three with
 architecture instead of policy documents. Every account (email plus password)
@@ -54,12 +54,6 @@ whose hash is all the server stores. The owner redeems the code in the browser
 panel, which atomically links the device to the account, and the board exchanges
 its secret for a long-lived device token. From then on the device sends
 heartbeats, reports its agent version, and inherits per-device spending limits.
-Voice calls work the same way as any other metered resource: starting a call
-creates a session and a toll for the first minute, and each subsequent minute
-arrives as a fresh invoice, so a call that runs long simply keeps settling one
-minute at a time through the bridge that drives the telephony software on the
-board.
-
 Content and business applications sit behind the same tollbooth. The reference
 application is a headless content manager, and every request the agent makes to
 it — reading collections, creating records, uploading media — costs one micro
@@ -93,8 +87,8 @@ It owns every piece of business state: identities and sessions, per-account
 language-model providers with encrypted keys, chain configuration with one
 generated wallet vault per network, sub-wallets and browser-connected wallet
 references, metered invoices and payouts with their one-shot consumption
-markers, the device fleet with claim codes and tokens, call sessions, and the
-legal verification runs with their turns, verdicts, and events. It also speaks
+markers, the device fleet with claim codes and tokens, and the legal verification
+runs with their turns, verdicts, and events. It also speaks
 raw Solana JSON-RPC and signs transfers with a pure ed25519 implementation
 rather than a vendor SDK, and it signs its object-storage requests by hand for
 the same reason. Nothing else in the repository stores business facts.
@@ -105,8 +99,8 @@ reason without a valid session or without an active provider on that account,
 shields both the incoming text and the outgoing reply with a configurable
 Llama Guard provider from the root `.env`, and runs a bounded tool-calling loop whose tools
 all pass through the reactive payment handshake. Its catalog covers device and
-network status, fleet state, metered calls, per-request application access,
-invoice management, and the four legal tools for listing and reading case
+network status, fleet state, per-request application access, invoice management,
+and the four legal tools for listing and reading case
 documents, appending audit turns, and submitting memoranda. Before any
 effectful tool executes in a legal context, a verification gate confirms the
 run holds a passing verdict, and new world evidence is polled into the
@@ -123,12 +117,12 @@ and fleet pairing with a serial-port installer that can flash boards from the
 browser.
 
 Device software lives in `firmware`, where a no-standard-library Rust core
-implements the on-device agent state machine, a host simulator reproduces voice
-and telephony behavior on a workstation, and a dedicated crate targets the
+implements the on-device agent state machine, a host simulator reproduces the
+device runtime on a workstation, and a dedicated crate targets the
 ESP32-S3 with its round AMOLED display. The `os` directory builds the actual
 Linux image for the Raspberry Pi through a Buildroot external tree, bundling
-the agent daemon, local speech recognition and synthesis, the SIP bridge, and
-the systemd units that start the voice loop once the board is paired. The
+the agent daemon, local speech recognition and synthesis, and the systemd units
+that start the voice loop once the board is paired. The
 `dapps` directory hosts the application registry and the local content-manager
 checkout that serves as the ecosystem's reference application. The workshop
 material sits in `agent` with the session-one runner and its prompts, in
@@ -149,11 +143,14 @@ launcher; `up-host` remains available for native development.
 Use only one mode at a time: Docker and native host processes bind the same
 ports.
 
-The stack contains Payload CMS (`3100`), the Rust API (`8080`), the brain
-gateway (`8322`), the panel (`3000`), and a local S3-compatible RustFS service
-(`9000`, console `9001`). API SQLite data is persisted in `api/data`; Payload
-and RustFS data use named Docker volumes. The root `.env` is created on first
-start and kept between runs.
+The stack contains Payload CMS (`3100`), a local MCP server (`4178`), the Rust
+API (`8080`), the brain gateway (`8322`), the panel (`3000`), and a local
+S3-compatible RustFS service (`9000`, console `9001`). Payload remains the CMS
+for the existing ERP/DApp flow; it is separate from MCP. The API connects to
+the local MCP server at `http://mcp-server:4177/mcp`, which provides an `echo`
+tool without external OAuth credentials. API SQLite data is persisted in
+`api/data`; Payload and RustFS data use named Docker volumes. The root `.env` is
+created on first start and kept between runs.
 
 Running NomikOS locally does not mean running a local Solana blockchain. The
 default network is Devnet for testing; Mainnet is selected for production. The
@@ -195,8 +192,8 @@ On Linux:
 bash scripts/nomikos.sh up
 ```
 
-Both commands build Payload CMS, API, brain, and dapp one at a time, then start
-the selected storage backend and the rest of the Compose stack. In local mode
+Both commands build Payload CMS, the MCP server, API, brain, and dapp one at a
+time, then start the selected storage backend and the rest of the Compose stack. In local mode
 they wait for RustFS to become healthy, upload the GLB through the API if it is
 missing, and print container status. They require only Docker; the Windows path uses
 PowerShell and the Linux path uses the system Bash.
@@ -213,6 +210,20 @@ the first local start. Open `http://localhost:9001` only if you want to inspect
 RustFS; its console login is `nomikos-local` / `nomikos-local-s3-secret`, and
 the model bucket is `nomikos-models`. The API keeps the bucket private to the
 Docker network for model delivery.
+
+The local MCP connection can be checked through the API:
+
+```bash
+curl -s http://localhost:8080/api/mcp/status
+curl -s http://localhost:8080/api/mcp/tools
+curl -s -X POST http://localhost:8080/api/mcp/call \
+  -H 'Content-Type: application/json' \
+  -d '{"tool":"echo","arguments":{"message":"hola"}}'
+```
+
+The standalone MCP endpoint is also reachable from the host at
+`http://localhost:4178/mcp`. Its test-control routes remain disabled in the
+normal stack.
 
 For Cloudflare R2, fill in the four R2 credentials in `.env`. Keep
 `OBJECT_STORE_BACKEND=r2` there or select it with the launcher flag. The
@@ -234,7 +245,7 @@ Inspect or stop the services without deleting their persistent data:
 
 ```bash
 bash scripts/nomikos.sh status
-bash scripts/nomikos.sh logs api brain dapp payload-cms rustfs
+bash scripts/nomikos.sh logs api brain dapp mcp-server payload-cms rustfs
 bash scripts/nomikos.sh down
 ```
 
@@ -318,20 +329,11 @@ curl -s -X POST http://localhost:8080/api/devices/token \
   -d '{"device_id":"<dev-id>","enroll_secret":"<secret-from-enroll>"}'
 ```
 
-### Calls and applications
+### Application requests
 
-The agent places metered calls through its tools, paying one toll per minute
-without user interaction. Called directly, the first request answers 402 with
-the invoice for minute zero, and each settled minute returns the invoice for
-the next, which sets the one-request-per-minute cadence. Application requests
-behave the same way: one toll per call, consumed only when the application
-actually answers.
-
-```bash
-curl -s -X POST http://localhost:8080/api/calls \
-  -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
-  -d '{"destination":"+15550123456"}'
-```
+Each request the agent makes to an installed application goes through the API's
+x402 gateway. The API consumes its one-shot invoice only after the application
+answers successfully.
 
 ### The legal workshop end to end
 
@@ -379,22 +381,21 @@ network access the board enrolls, prints its claim code to the console, and
 waits to be redeemed in the fleet dialog. With a USB microphone attached, the
 voice service starts automatically after pairing and the full loop of capture,
 transcription, reasoning, and spoken reply runs without further setup.
-Optionally, SIP trunk credentials enable real telephony through the on-board
-bridge. The companion display board is an ESP32-S3 with a round AMOLED panel
+The companion display board is an ESP32-S3 with a round AMOLED panel
 that is flashed over USB with the Wi-Fi credentials it should join, after
 which it shows its own claim code on screen and pairs the same way.
 
 ## Testing
 
-The suite contains twenty end-to-end files with 103 API tests, plus a Playwright
-browser flow. The Node test runner requires Node 22.22.3 or newer in 22.x, or
+The suite contains end-to-end coverage and a Playwright browser flow. The Node
+test runner requires Node 22.22.3 or newer in 22.x, or
 24.8 or newer. Tests run serially against live services and treat the public
 HTTP contracts as law.
 They cover ecosystem health, identity with revocation and rate limiting,
 per-account language-model and chain configuration, the payment gateway
 including replay and ownership conflicts, the orchestrator's authentication
 and shielding behavior, the complete diagram flow with a real account, fleet
-pairing and limits, voice calls with their SIP bridge, voiced application
+pairing and limits, voice conversations with the agent, voiced application
 access behind tolls, real on-chain settlement, the application store, the
 device simulator, and the two legal verification suites that exercise the
 rules engine, world events, the review console contract, and the full
@@ -477,3 +478,16 @@ acceptance requires a human signature that cannot be replayed or delegated to
 a device. Secrets and live ledgers stay out of version control; account wallet
 keypairs are encrypted in the persistent API database. Each service ships only
 an example environment template.
+
+## Remote MCP marketplace
+
+Publishers sign a versioned MCP manifest with an Ed25519/Solana key and set a
+price for every tool. The API checks the signature, endpoint, MCP schemas and
+payee binding; accounts choose tools, devices, spending caps and consent to
+versioned legal links before tool requests can flow through x402. Tool requests
+use one-shot invoices and default to human approval. Reports and health signals can quarantine
+a listing. The implementation contract, publisher workflow and current limits
+are in [api/MARKETPLACE.md](api/MARKETPLACE.md). The API verifies and audits
+the linked legal-document bytes and quarantines versions whose content changes
+or becomes unavailable. Publisher staking, on-chain slashing and a decentralized
+registry are not implemented.

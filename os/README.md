@@ -63,7 +63,6 @@ encontradas por el camino (todas corregidas en este árbol):
 | post-image recibe `$1=TARGET_DIR` | `cp ${BOARD_DIR}/…` falla: no es el board dir | derivar el board dir de `$0` (como post-build) |
 | genimage sin mkdosfs | `vfat(boot.vfat): failed to generate` | `BR2_PACKAGE_HOST_DOSFSTOOLS=y` + `BR2_PACKAGE_HOST_MTOOLS=y` junto a `HOST_GENIMAGE` |
 | wants/ symlink a unidades del overlay | el enable de /usr/lib deja enlaces colgando (las unidades del overlay viven en /etc) | el enable() detecta /usr/lib vs /etc |
-| `BR2_PACKAGE_BARESIP=y` | **baresip no existe en buildroot 2026.11** (removido upstream; kconfig tira la línea en silencio) | el puente SIP (W4) corre con cualquier binario en pipe mode (`AGENTD_SIP_CMD`); empaquetar baresip queda TODO |
 
 ## Primer arranque de la placa
 
@@ -85,7 +84,7 @@ encontradas por el camino (todas corregidas en este árbol):
 | Kernel | rpi-6.6.y con DTBs de la familia Pi 4/400/CM4 |
 | Acceso | dropbear (SSH) + consola serial — sin entorno gráfico |
 | Tamaño | rootfs ext4 + FAT de arranque 256 MB (imagen total ≈ 250–400 MB comprimida) |
-| Voz (F5) | baresip + alsa en el defconfig; trunk SIP en /etc/baresip/accounts; la sesión y el peaje x402 por minuto viven en el api |
+| Voz al agente | Los turnos de voz se envían al API mediante `/api/voice`; el dispositivo mantiene su identidad y sesión de cuenta |
 | OTA | estructura swupdate lista (`swupdate/nomikos.swdescription`); activar el paquete en el defconfig cuando se valide en hardware |
 
 ## Otras placas

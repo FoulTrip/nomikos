@@ -16,7 +16,7 @@ brain/
 │   │                  MUSE_BIN, MAX_TOOL_ITERATIONS)
 │   ├── llm.py       — run_agent(): SOLO cliente de cuenta (account:<provider>);
 │   │                  sin Bearer → 401, sin LLM activo → 400 LLM_NOT_CONFIGURED
-│   ├── tools.py     — 11 tools → TODAS vía guarded_call(ctx); ToolResult; RunEvents
+│   ├── tools.py     — 17 tools → TODAS vía guarded_call(ctx); ToolResult; RunEvents
 │   ├── x402.py      — guarded_call: 402 → delegated_pay_invoice (dPaaS de la cuenta)
 │   │                  → poll (4×3 s) → reintento con X-Payment → 200 recurso
 │   └── shields.py   — Llama Guard remoto vía endpoint OpenAI-compatible
@@ -120,9 +120,9 @@ x402 sin config local: el gateway de `api` manda.
 
 Brain CONSULTA al verificador de `api`, nunca ve `ground_truth/`.
 Tools nuevas (vía `guarded_call`): `list_case_docs`, `read_case_doc`,
-`legal_turn`, `submit_memorandum` (19 tools total). `brain/app/legal.py`:
+`legal_turn`, `submit_memorandum` (17 tools total). `brain/app/legal.py`:
 `extract_run_id`, `ensure_verified_for_effect` (efectos `app_request`,
-`place_call`, `x402_pay_toll` bloqueados sin pass), `poll_world_events`
+`x402_pay_toll` bloqueados sin pass), `poll_world_events`
 (new_evidence mid-run como mensaje user), `escalate_run`, `has_refusal`.
 `llm.py`: gate pre-ejecución + world poll por iteración. `main.py`:
 post-check (efectos sin pass → `ok:false` + `verification{}`) y refusal

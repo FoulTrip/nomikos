@@ -81,12 +81,12 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         }
     );
     tracing::info!(
-        "[Medusa MCP] {} (token {})",
+        "[MCP Streamable HTTP] {} (token {})",
         cfg.medusa_mcp_url,
         if cfg.medusa_mcp_token.is_some() {
             "configurado"
         } else {
-            "ausente — OAuth interactivo requerido"
+            "no configurado"
         }
     );
 
@@ -118,6 +118,9 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
     // [ x402 ] liquida micro-peajes en background.
     tokio::spawn(modules::x402::settler_loop(state.clone()));
+
+    // [ Marketplace ] revalida periódicamente hashes de documentos legales.
+    tokio::spawn(modules::marketplace::legal_audit_loop(state.clone()));
 
     // [ Tienda de dapps ] carga el registro (dapps/registry/*.json).
     modules::apps::load_registry(&state);

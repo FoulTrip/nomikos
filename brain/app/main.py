@@ -241,14 +241,20 @@ async def health() -> dict:
 
 
 @app.get("/v1/tools")
-async def list_tools() -> dict:
+async def list_tools(request: Request):
     """Herramientas disponibles para el LLM (metadata).
 
     Incluye las tools de las dapps INSTALADAS (tienda de apps): el
     refresh trae el catálogo del worker (TTL 60 s).
     """
     from . import mcp
-    await mcp.refresh()
+    bearer = bearer_from_headers(request.headers)
+    try:
+        ctx = await fetch_account_context(bearer) if bearer else None
+    except PermissionError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=401)
+    dynamic = await mcp.refresh(ctx) if ctx else {}
+    visible = {**TOOLS, **dynamic}
     return {
         "ok": True,
         "tools": [
@@ -257,6 +263,6 @@ async def list_tools() -> dict:
                 "description": t.description,
                 "parameters": t.parameters,
             }
-            for t in TOOLS.values()
+            for t in visible.values()
         ],
     }

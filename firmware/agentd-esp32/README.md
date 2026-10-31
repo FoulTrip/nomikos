@@ -47,5 +47,5 @@ contacto físico:
 ## Arquitectura (por qué sin embassy)
 
 El stack blocking propio evita embassy-net para un cliente secuencial:
-una petición = una conexión. `GET /api/calls/for-device` y `/api/voice`
-quedan como siguiente paso (el ciclo F1-F4 + x402 ya está completo).
+una petición = una conexión. `POST /api/voice` queda como siguiente paso
+(el ciclo de identidad de dispositivo y x402 ya está completo).

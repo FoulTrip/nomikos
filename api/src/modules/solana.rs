@@ -106,6 +106,27 @@ impl SolanaClient {
         }
     }
 
+    /// Transacción con instrucciones interpretadas por el RPC. Se usa para
+    /// verificar destinatario, monto y pagador de facturas; el estado de una
+    /// firma por sí solo no demuestra que haya pagado el recurso correcto.
+    pub async fn get_parsed_transaction(&self, sig: &str) -> Result<Option<Value>, String> {
+        let result = self
+            .rpc(
+                "getTransaction",
+                json!([sig, {
+                    "encoding": "jsonParsed",
+                    "commitment": "confirmed",
+                    "maxSupportedTransactionVersion": 0
+                }]),
+            )
+            .await?;
+        if result.is_null() {
+            Ok(None)
+        } else {
+            Ok(Some(result))
+        }
+    }
+
     pub async fn send_transaction(&self, tx_b64: &str) -> Result<String, String> {
         let r = self
             .rpc(

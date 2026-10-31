@@ -1,333 +1,376 @@
 vars: {
   d2-config: {
-    layout-engine: elk
+    layout-engine: tala
     theme-id: 0
-    pad: 56
+    pad: 40
   }
 }
 
 direction: down
 
-# ───────── Estilos ─────────
 classes: {
-  capa_slate: {
+  layer: {
     style: {
-      fill: "#F1F5F9"
+      fill: "#F8FAFC"
       stroke: "#CBD5E1"
-      border-radius: 12
-      font-size: 20
+      border-radius: 14
+      font-size: 19
       bold: true
       font-color: "#0F172A"
       shadow: false
     }
   }
-  capa_azul: {
+  layer_blue: {
     style: {
       fill: "#EFF6FF"
       stroke: "#BFDBFE"
-      border-radius: 12
-      font-size: 20
+      border-radius: 14
+      font-size: 19
       bold: true
       font-color: "#1E3A8A"
       shadow: false
     }
   }
-  capa_teal: {
+  layer_teal: {
     style: {
       fill: "#F0FDFA"
       stroke: "#99F6E4"
-      border-radius: 12
-      font-size: 20
+      border-radius: 14
+      font-size: 19
       bold: true
       font-color: "#115E59"
       shadow: false
     }
   }
-  capa_ambar: {
+  layer_amber: {
     style: {
       fill: "#FFFBEB"
       stroke: "#FDE68A"
-      border-radius: 12
-      font-size: 20
+      border-radius: 14
+      font-size: 19
       bold: true
       font-color: "#92400E"
       shadow: false
     }
   }
-  capa_violeta: {
+  layer_purple: {
     style: {
       fill: "#F5F3FF"
       stroke: "#DDD6FE"
-      border-radius: 12
-      font-size: 20
+      border-radius: 14
+      font-size: 19
       bold: true
       font-color: "#4C1D95"
       shadow: false
     }
   }
-  capa_rosa: {
+  layer_rose: {
     style: {
       fill: "#FFF1F2"
       stroke: "#FECDD3"
-      border-radius: 12
-      font-size: 20
+      border-radius: 14
+      font-size: 19
       bold: true
       font-color: "#881337"
       shadow: false
     }
   }
-
-  nodo: {
+  node: {
     shape: rectangle
-    width: 220
-    height: 90
+    width: 250
+    height: 112
     style: {
       fill: "#FFFFFF"
       stroke: "#475569"
       stroke-width: 2
-      border-radius: 8
-      font-size: 15
+      border-radius: 9
+      font-size: 16
       font-color: "#0F172A"
       shadow: false
     }
   }
-  nodo_azul: {
+  node_blue: {
     shape: rectangle
-    width: 220
-    height: 90
+    width: 250
+    height: 112
     style: {
       fill: "#FFFFFF"
-      stroke: "#1E40AF"
+      stroke: "#1D4ED8"
       stroke-width: 2
-      border-radius: 8
-      font-size: 15
+      border-radius: 9
+      font-size: 16
       font-color: "#0F172A"
       shadow: false
     }
   }
-  nodo_teal: {
+  node_teal: {
     shape: rectangle
-    width: 220
-    height: 90
+    width: 250
+    height: 112
     style: {
       fill: "#FFFFFF"
       stroke: "#0F766E"
       stroke-width: 2
-      border-radius: 8
-      font-size: 15
+      border-radius: 9
+      font-size: 16
       font-color: "#0F172A"
       shadow: false
     }
   }
-  nodo_ambar: {
+  node_amber: {
     shape: rectangle
-    width: 220
-    height: 90
+    width: 250
+    height: 112
     style: {
       fill: "#FFFFFF"
       stroke: "#B45309"
       stroke-width: 2
-      border-radius: 8
-      font-size: 15
+      border-radius: 9
+      font-size: 16
       font-color: "#0F172A"
       shadow: false
     }
   }
-  nodo_violeta: {
+  node_purple: {
     shape: rectangle
-    width: 220
-    height: 90
+    width: 250
+    height: 112
     style: {
       fill: "#FFFFFF"
-      stroke: "#5B21B6"
+      stroke: "#6D28D9"
       stroke-width: 2
-      border-radius: 8
-      font-size: 15
+      border-radius: 9
+      font-size: 16
       font-color: "#0F172A"
       shadow: false
     }
   }
-  nodo_rosa: {
+  node_rose: {
     shape: rectangle
-    width: 220
-    height: 90
+    width: 250
+    height: 112
     style: {
       fill: "#FFFFFF"
       stroke: "#BE123C"
       stroke-width: 2
-      border-radius: 8
+      border-radius: 9
+      font-size: 16
+      font-color: "#0F172A"
+      shadow: false
+    }
+  }
+  node_rose_detail: {
+    shape: rectangle
+    width: 300
+    height: 150
+    style: {
+      fill: "#FFFFFF"
+      stroke: "#BE123C"
+      stroke-width: 2
+      border-radius: 9
       font-size: 15
       font-color: "#0F172A"
       shadow: false
     }
   }
-
-  f_voz: {
+  node_detail: {
+    shape: rectangle
+    width: 270
+    height: 170
     style: {
+      fill: "#FFFFFF"
       stroke: "#475569"
       stroke-width: 2
-      font-size: 13
+      border-radius: 9
+      font-size: 15
+      font-color: "#0F172A"
+      shadow: false
+    }
+  }
+  edge: {
+    style: {
+      stroke: "#64748B"
+      stroke-width: 2
+      font-size: 14
       font-color: "#334155"
       bold: true
     }
   }
-  f_pago: {
-    style: {
-      stroke: "#1E40AF"
-      stroke-width: 2
-      font-size: 13
-      font-color: "#1E3A8A"
-      bold: true
-    }
+}
+
+Runtime: "Arquitectura de ejecución" {
+  class: layer_blue
+  direction: right
+
+  clients: "Personas y clientes" {
+    direction: down
+    user: "Usuario\nCuenta y permisos" { class: node }
+    panel: "Panel web\nCatálogo, flota,\naprobaciones" { class: node }
+    device: "Dispositivo NomikOS\nVoz, estado y tools\nde su cuenta" { class: node }
   }
-  f_flota: {
-    style: {
-      stroke: "#0F766E"
-      stroke-width: 2
-      font-size: 13
-      font-color: "#115E59"
-      bold: true
-    }
+
+  core: "Servicios NomikOS" {
+    direction: down
+    api: "API Rust\nIdentidad, flota, MCP,\nmarketplace, x402 y legal" { class: node_blue }
+    brain: "Brain\nBucle agéntico, selección\ny ejecución de tools" { class: node_teal }
+    model: "LLM y guardas\nProveedor/modelo de la cuenta;\nfiltros de entrada y salida" { class: node_teal }
   }
-  f_call: {
-    style: {
-      stroke: "#B45309"
-      stroke-width: 2
-      font-size: 13
-      font-color: "#92400E"
-      bold: true
-    }
+
+  resources: "Servicios y estado" {
+    direction: down
+    local_apps: "Apps locales\nPayload CMS y MCP\nservicios de Compose" { class: node_purple }
+    publisher_mcp: "MCP de publishers\nEndpoint remoto controlado\npor quien publica la app" { class: node_purple }
+    chain: "Solana\nDevnet o mainnet\npagos y liquidación" { class: node_amber }
+    database: "SQLite de la API\nCuentas, políticas, facturas\ny eventos de uso" { class: node }
+    objects: "Object storage\nRustFS local o R2\nGLB entregado por la API" { class: node }
   }
-  f_dapp: {
-    style: {
-      stroke: "#5B21B6"
-      stroke-width: 2
-      stroke-dash: 3
-      font-size: 13
-      font-color: "#4C1D95"
-      bold: true
-    }
+
+  clients.panel -> core.api: "sesión humana · Bearer" { class: edge }
+  clients.device <-> core.api: "device token · voz · estado" { class: edge }
+  core.api <-> core.brain: "gateway de voz y tools" { class: edge }
+  core.brain <-> core.model: "razonamiento con contexto de cuenta" { class: edge }
+  core.api -> resources.local_apps: "proxy local" { class: edge }
+  core.api -> resources.publisher_mcp: "gateway MCP" { class: edge }
+  core.api -> resources.chain: "x402" { class: edge }
+  core.api -> resources.database: "estado persistente" { class: edge }
+  core.api -> resources.objects: "modelos 3D" { class: edge }
+  clients.user -> clients.panel: "gestiona" { class: edge }
+  clients.user -> clients.device: "habla" { class: edge }
+}
+
+Device_flow: "Emparejamiento y voz" {
+  class: layer_teal
+  direction: down
+
+  pairing: "Alta de dispositivo" {
+    direction: right
+    boot: "La placa arranca\ny solicita emparejarse" { class: node_teal }
+    code: "La API emite\nun código temporal" { class: node_teal }
+    panel_code: "El usuario ingresa\nel código en Flota" { class: node_teal }
+    bound: "La API asocia placa\ny cuenta; entrega identidad\nlimitada al dispositivo" { class: node_teal }
+    boot -> code: "solicitud" { class: edge }
+    code -> panel_code: "emparejamiento" { class: edge }
+    panel_code -> bound: "confirmación" { class: edge }
   }
-  f_legal: {
-    style: {
-      stroke: "#BE123C"
-      stroke-width: 2
-      font-size: 13
-      font-color: "#881337"
-      bold: true
-    }
-  }
-  f_base: {
-    style: {
-      stroke: "#94A3B8"
-      stroke-width: 1
-      font-size: 12
-      font-color: "#64748B"
-    }
+
+  voice: "Turno de voz" {
+    direction: right
+    speech: "La placa envía\ntexto o voz a /voice" { class: node_teal }
+    context: "API y Brain resuelven\nla identidad y configuración\nLLM de esa cuenta" { class: node_teal }
+    tools: "El agente pide tools\na la API; se aplican\npermisos y cobros" { class: node_teal }
+    answer: "La respuesta vuelve\na la placa para mostrarla\no reproducirla" { class: node_teal }
+    speech -> context: "POST /voice" { class: edge }
+    context -> tools: "tool calls" { class: edge }
+    tools -> answer: "respuesta" { class: edge }
   }
 }
 
-# ───────── 1 · Personas y dispositivos ─────────
-Personas: "👥 1 · Personas y dispositivos" {
-  class: capa_slate
+Marketplace: "Publicar e instalar una app MCP" {
+  class: layer_purple
+  direction: down
 
-  Usuario: "👤 Usuario\nHabla y gestiona" { class: nodo }
-  Dispositivo: "📟 Dispositivo NomikOS\nMicrófono y altavoz" { class: nodo }
-  Panel: "🖥️ Panel web\nCuenta y dispositivos" { class: nodo }
+  publish: "Publicación y validación" {
+    direction: right
+    manifest: "Publisher firma el manifiesto\nEd25519 · namespace/version\nendpoint · tools/esquemas\nprecio y payTo · hashes legales" { class: node_detail }
+    validate: "La API verifica\nfirma y publisher/payTo\nHTTPS, DNS público y SSRF\ntools/list contra el manifiesto\nSHA-256 de términos y privacidad" { class: node_detail }
+    registry: "Solo publica la versión\nvalidada; guarda manifiesto\ny copia legal verificada\nEl usuario puede consultar\nlos términos como texto" { class: node_detail }
+    auditor: "Auditoría al arrancar\ny cada 15 minutos\nHash distinto o URL caída\n→ cuarentena; publisher debe\nrevalidar manualmente" { class: node_detail }
+  }
+
+  install: "Consentimiento y alcance por cuenta" {
+    direction: right
+    review: "La persona revisa y acepta\nla versión y sus hashes\nSolo una sesión humana\npuede instalar o dar permiso" { class: node_detail }
+    scope: "Elige toda la flota\no dispositivos concretos\nde su cuenta" { class: node_detail }
+    policies: "Selecciona tools, fija\ntope de precio por tool\ny decide confirmación humana" { class: node_detail }
+    disabled: "Tools nuevas empiezan\ndesactivadas; por defecto\nrequieren aprobación humana" { class: node_detail }
+  }
+
+  publish.manifest -> publish.validate: "publicar" { class: edge }
+  publish.validate -> publish.registry: "validar" { class: edge }
+  publish.registry -> publish.auditor: "revisar continuamente" { class: edge }
+  publish.registry -> install.review: "mostrar en catálogo" { class: edge }
+  install.review -> install.scope: "aceptar alcance" { class: edge }
+  install.scope -> install.policies: "configurar permisos" { class: edge }
+  install.policies -> install.disabled: "guardar" { class: edge }
 }
 
-# ───────── 2 · Plataforma ─────────
-Plataforma: "☁️ 2 · Plataforma Nomik" {
-  class: capa_azul
+Invocation: "Invocar una tool: autorización, x402 y despacho" {
+  class: layer_amber
+  direction: down
 
-  Cuentas: "🔑 Cuentas\nLogin e identidad" { class: nodo_azul }
-  Voz: "🎙️ Voz\nRecibe y responde" { class: nodo_azul }
-  Flota: "📡 Flota\nRegistro y estado" { class: nodo_azul }
+  authorize: "Solicitud y autorización" {
+    direction: right
+    request: "Brain solicita\nnamespace, tool y argumentos\ncon identidad de cuenta/device" { class: node_amber }
+    checks: "La API valida app activa,\nconsentimiento vigente, device,\ntool habilitada, tope y red" { class: node_amber }
+    approval: "Si aplica, espera\naprobación humana vinculada\na argumentos, versión y device\n(caduca en 2 minutos)" { class: node_amber }
+    invoice: "Responde 402 con factura\nligada a account + device + app\n+ versión + tool + hash args\n+ precio + red + payTo" { class: node_amber }
+  }
+
+  settle: "Pago y ejecución" {
+    direction: right
+    payer: "dPaaS firma con la wallet\ncifrada de la cuenta y paga\nen Solana; reintenta con\nX-Payment: invoice_id" { class: node_amber }
+    consume: "La API confirma el pago,\ncompara la factura completa,\nrevalida tools/list y consume\nla factura una sola vez" { class: node_amber }
+    dispatch: "La API ejecuta tools/call\nen el MCP del publisher\ny adjunta recibo x402\nverificable" { class: node_amber }
+    result: "Registra resultado,\nlatencia e invoice_id;\nretorna el resultado al agente" { class: node_amber }
+  }
+
+  authorize.request -> authorize.checks: "Bearer y contexto" { class: edge }
+  authorize.checks -> authorize.approval: "si requiere confirmación" { class: edge }
+  authorize.approval -> authorize.invoice: "aprobación válida" { class: edge }
+  authorize.invoice -> settle.payer: "402 · pagar" { class: edge }
+  settle.payer -> settle.consume: "pago liquidado" { class: edge }
+  settle.consume -> settle.dispatch: "factura consumida" { class: edge }
+  settle.dispatch -> settle.result: "MCP response" { class: edge }
 }
 
-# ───────── 3 · Asistente IA ─────────
-IA: "🤖 3 · Asistente IA" {
-  class: capa_teal
+Safety: "Integridad, replay y límites implementados" {
+  class: layer_rose
+  direction: right
 
-  Asistente: "🤖 Asistente\nDecide y ejecuta" { class: nodo_teal }
-  Modelo: "🧠 Modelo de lenguaje\nEntiende y razona" { class: nodo_teal }
-  Filtro: "🛡️ Filtros in/out\nBloquean lo inseguro" { class: nodo_teal }
+  auth: "Aislamiento\nCuenta y device se validan\ncontra instalación y política" { class: node_rose }
+  consent: "Consentimiento\nUna versión nueva invalida\nel consentimiento anterior" { class: node_rose }
+  replay: "Anti-replay\nFactura one-shot; repetirla\nresponde 409" { class: node_rose }
+  quarantine: "Cuarentena\nCambios legales, fallos o\nreportes pueden bloquear\ncatálogo, instalación y uso" { class: node_rose }
+  limits: "Límites del diseño actual\nNo hay staking, slashing\nni registro on-chain\nde publishers" { class: node_rose }
+
+  auth -> consent: "antes de ejecutar" { class: edge }
+  consent -> replay: "antes de cobrar/usar" { class: edge }
+  replay -> quarantine: "señales de riesgo" { class: edge }
+  quarantine -> limits: "estado actual" { class: edge }
 }
 
-# ───────── 4 · Taller legal S1+S2 ─────────
-Legal: "⚖️ 4 · Taller legal S1+S2" {
-  class: capa_rosa
+Legal_workshop: "Verificación legal y aceptación" {
+  class: layer_rose
+  direction: right
 
-  S1: "📝 Agente S1\nLee casos y borra" { class: nodo_rosa }
-  Casos: "📂 Casos\nDocs visibles" { class: nodo_rosa }
-  Verificador: "⚖️ Verificador\nReglas estrictas" { class: nodo_rosa }
-  Verdad: "🔒 Verdad\nSolo el verificador" { class: nodo_rosa }
-  Mundo: "🌍 Mundo\nNueva evidencia" { class: nodo_rosa }
-  Consola: "🖥️ Consola :8765\nTurnos y firma" { class: nodo_rosa }
+  agent: "Agente crea un run,\nlee solo los documentos\nvisibles del caso" { class: node_rose }
+  api_files: "La API guarda turnos;\nworld puede inyectar evidencia\nque el agente consulta" { class: node_rose }
+  verifier: "El verificador determinista\nlee ground_truth aislado\ny contrasta el memorándum" { class: node_rose }
+  gate: "PASS habilita tools con efectos.\nFAIL bloquea efectos y requiere corregir.\nLa negativa del agente escala el run" { class: node_rose_detail }
+  human: "Tras PASS, la persona revisa\ny firma la aceptación final\n(one-shot); la placa no puede\nfirmarla" { class: node_rose }
+
+  agent -> api_files: "run y memorándum" { class: edge }
+  api_files -> verifier: "envía a evaluación" { class: edge }
+  verifier -> gate: "veredicto" { class: edge }
+  gate -> human: "solo con PASS" { class: edge }
 }
 
-# ───────── 5 · Acceso y pagos ─────────
-Pagos: "💳 5 · Acceso y pagos" {
-  class: capa_ambar
+Local_usage: "Apps locales con x402" {
+  class: layer_amber
+  direction: down
 
-  Acceso: "🔒 Control de acceso\nExige y verifica el pago" { class: nodo_ambar }
-  Billetera: "👛 Billetera\nFirma los pagos" { class: nodo_ambar }
-  Blockchain: "⛓️ Blockchain Solana\nConfirma el pago" { class: nodo_ambar }
-  Historial: "🗄️ Historial\nUn solo uso · replay 409" { class: nodo_ambar }
-  Grifo: "💧 Grifo Devnet\nFondea billeteras" { class: nodo_ambar }
+  app_requests: "Tool app_request por petición" {
+    direction: right
+    ask_app: "Brain selecciona app,\ntool, método, ruta y body\ncon Bearer de cuenta/device" { class: node_amber }
+    quote_app: "La API devuelve 402\ncon invoice ligada a app,\nruta, método y hash args" { class: node_amber }
+    pay_app: "dPaaS liquida la factura\ncon la wallet de la cuenta\ny reintenta con X-Payment" { class: node_amber }
+    proxy_app: "La API valida y consume\nuna vez; autentica y proxea\na Payload CMS u otra app" { class: node_amber }
+    result_app: "La API registra tool, app,\ncuenta, device y factura;\nretorna la respuesta al Brain" { class: node_amber }
+  }
+
+  app_requests.ask_app -> app_requests.quote_app: "solicitar factura" { class: edge }
+  app_requests.quote_app -> app_requests.pay_app: "pagar con dPaaS" { class: edge }
+  app_requests.pay_app -> app_requests.proxy_app: "reintentar con X-Payment" { class: edge }
+  app_requests.proxy_app -> app_requests.result_app: "devolver y auditar" { class: edge }
+
 }
-
-# ───────── 6 · Ecosistema de dApps ─────────
-Dapps: "🧩 6 · Ecosistema de dApps" {
-  class: capa_violeta
-
-  Payload: "🗂️ Payload CMS\nGestión de contenido" { class: nodo_violeta }
-  Llamadas: "📞 Llamadas\nCobro por minuto" { class: nodo_violeta }
-  Nuevas: "➕ Nuevas dApps\nSe conectan al mismo acceso" { class: nodo_violeta }
-}
-
-# ───────── Relaciones internas ─────────
-IA.Asistente <-> IA.Modelo: "razona" { class: f_base }
-IA.Asistente <-> IA.Filtro: "revisa\nentrada y salida" { class: f_base }
-Pagos.Blockchain -> Pagos.Historial: "guarda" { class: f_base }
-Pagos.Billetera -> Pagos.Blockchain: "firma y envía" { class: f_base }
-Pagos.Acceso -> Pagos.Billetera: "factura" { class: f_base }
-Pagos.Grifo -> Pagos.Billetera: "fondea" { class: f_base }
-Legal.S1 -> Legal.Casos: "lee" { class: f_base }
-Legal.Verificador -> Legal.Verdad: "contrasta" { class: f_base }
-Legal.Mundo -> Legal.Verificador: "inyecta" { class: f_base }
-Legal.Consola -> Legal.Verificador: "lee y firma" { class: f_base }
-
-# ───────── A · Voz ─────────
-Personas.Usuario -> Personas.Dispositivo: "A1 · habla" { class: f_voz }
-Personas.Dispositivo <-> Plataforma.Voz: "A2 · envía\nA5 · responde" { class: f_voz }
-Plataforma.Voz <-> IA.Asistente: "A3 · consulta\nA4 · respuesta" { class: f_voz }
-
-# ───────── B · Servicio con pago ─────────
-IA.Asistente <-> Pagos.Acceso: "B1 · pide servicio\nB2 · 402 + factura" { class: f_pago }
-IA.Asistente <-> Pagos.Billetera: "B3 · firma" { class: f_pago }
-Pagos.Acceso -> Dapps.Payload: "B4 · entrega" { class: f_pago }
-Pagos.Acceso -> Pagos.Blockchain: "B5 · registra pago" { class: f_pago }
-
-# ───────── C · Registro de dispositivo ─────────
-Personas.Dispositivo <-> Plataforma.Flota: "C1 · pide\nC3 · activo" { class: f_flota }
-Personas.Panel -> Plataforma.Flota: "C2 · código" { class: f_flota }
-
-# ───────── D · Llamadas ─────────
-Pagos.Acceso -> Dapps.Llamadas: "D1 · inicia\npor minuto" { class: f_call }
-
-# ───────── Futuro ─────────
-Pagos.Acceso -> Dapps.Nuevas { class: f_dapp }
-
-# ───────── E · Panel ─────────
-Personas.Panel -> Plataforma.Cuentas: "E1 · inicia sesión" { class: f_base }
-IA.Asistente -> Plataforma.Cuentas: "verifica identidad" { class: f_base }
-
-# ───────── F · Caso legal S1 ─────────
-Legal.S1 -> IA.Asistente: "F1 · borrador" { class: f_legal }
-IA.Asistente -> Legal.Casos: "F2 · lee docs" { class: f_legal }
-IA.Asistente <-> Legal.Verificador: "F3 · entrega\nG3 · pasa o frena" { class: f_legal }
-
-# ───────── G · Verificación S2 ─────────
-Personas.Usuario -> Legal.Consola: "G1 · revisa y firma" { class: f_legal }
-Legal.Mundo -> IA.Asistente: "G2 · evidencia" { class: f_legal }

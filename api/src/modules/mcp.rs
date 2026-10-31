@@ -1,7 +1,7 @@
-//! [ Módulo Medusa MCP ] — cliente MCP hacia el servidor de Medusa Cloud.
+//! Cliente MCP Streamable HTTP hacia el endpoint configurado.
 //!
-//! Habla con un servidor MCP remoto (por defecto el de Medusa:
-//! `https://cloud.medusajs.com/mcp`) usando el transporte «Streamable HTTP»:
+//! Docker local conecta la API al `mcp-server` del Compose. Las ejecuciones
+//! nativas pueden apuntar al endpoint remoto configurado (por defecto Medusa):
 //! JSON-RPC 2.0 sobre POST, respuesta JSON o SSE, sesión vía header
 //! `Mcp-Session-Id`.
 //!
@@ -302,9 +302,9 @@ pub async fn summary_value(state: &SharedState, live: bool) -> Value {
     let client = &state.mcp;
     let mut out = json!({
         "enabled": true,
-        "module": "Medusa MCP (cloud.medusajs.com/mcp)",
+        "module": "MCP Streamable HTTP",
         "url": client.url(),
-        "auth": if client.has_token() { "token" } else { "oauth-manual" },
+        "auth": if client.has_token() { "token" } else { "none" },
         "connected": client.is_session_live(),
         "server_info": client.cached_info().unwrap_or(Value::Null),
     });
@@ -412,12 +412,12 @@ pub fn map_mcp_error_pub(e: &str) -> AppError {
 fn map_mcp_error(e: &str) -> AppError {
     if e == "auth_required" || e.starts_with("auth_required") {
         return AppError::unavailable(
-            "Medusa MCP requiere OAuth interactivo. Autoriza desde un cliente MCP (opencode mcp \
+            "El servidor MCP remoto requiere OAuth interactivo. Autoriza desde un cliente MCP (opencode mcp \
              auth medusa-commerce / claude mcp add … / Cursor) o pon MEDUSA_MCP_TOKEN.",
         );
     }
     if e.contains("JSON-RPC error") {
         return AppError::bad_request(e.to_string());
     }
-    AppError::unavailable(format!("Medusa MCP: {e}"))
+    AppError::unavailable(format!("MCP: {e}"))
 }

@@ -137,6 +137,10 @@ pub struct Config {
     /// Script probado que instala una dapp localmente: `<script> <slug>
     /// <result.json>`. Lo ejecuta el worker al POST /api/apps/{slug}/install.
     pub app_install_script: String,
+    /// Hostnames internos permitidos para servidores MCP locales de sandbox.
+    /// Debe estar vacío en producción; cada hostname se fija a las IP
+    /// resueltas y nunca se siguen redirecciones.
+    pub marketplace_internal_hosts: Vec<String>,
 
     /// [ Módulo Medusa MCP ] — servidor MCP remoto (Streamable HTTP).
     pub medusa_mcp_url: String,
@@ -162,10 +166,6 @@ pub struct Config {
     pub x402_protected_paths: Vec<String>,
     /// Precio (lamports) de un acceso a un path protegido.
     pub x402_path_lamports: i64,
-    /// [ NomikOS Fase 5 ] Precio (lamports) de UN MINUTO de llamada —
-    /// cada minuto es una factura x402 que la cuenta paga por dPaaS.
-    pub x402_call_lamports: i64,
-
     /// [ Dispositivo + object storage ]
     pub device_name: String,
     pub device_model_file: String,
@@ -184,6 +184,7 @@ pub struct Config {
     pub verifier_enabled: bool,
     pub verifier_gt_dir: String,
     pub verifier_cases_dir: String,
+    #[allow(dead_code)] // Reserved for the verifier UI configuration.
     pub verifier_ui_port: u16,
     pub verifier_world_token: Option<String>,
 }
@@ -281,6 +282,11 @@ impl Config {
             faucet_enabled,
             dapps_registry: env_str("DAPPS_REGISTRY", "../dapps/registry"),
             app_install_script: env_str("APP_INSTALL_SCRIPT", "../scripts/install-app.sh"),
+            marketplace_internal_hosts: env_str("MARKETPLACE_INTERNAL_HOSTS", "")
+                .split(',')
+                .map(|host| host.trim().to_ascii_lowercase())
+                .filter(|host| !host.is_empty())
+                .collect(),
             medusa_mcp_url: env_str("MEDUSA_MCP_URL", "https://cloud.medusajs.com/mcp"),
             medusa_mcp_token: env_opt("MEDUSA_MCP_TOKEN"),
             solana_network,
@@ -297,9 +303,6 @@ impl Config {
                 .filter(|p| !p.is_empty())
                 .collect(),
             x402_path_lamports: env_str("X402_PATH_LAMPORTS", "1000")
-                .parse()
-                .unwrap_or(1000),
-            x402_call_lamports: env_str("X402_CALL_LAMPORTS", "1000")
                 .parse()
                 .unwrap_or(1000),
             device_name: env_str("DEVICE_NAME", "ESP32-S3-Touch-AMOLED-1.43"),

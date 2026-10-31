@@ -7,7 +7,7 @@
 #   make flash     — la escribe a la microSD (make flash DISK=/dev/sdX)
 #
 # La placa NO lleva dapp/ ni brain/: esos viven en la PC. En la placa
-# corren agentd (Rust), whisper/piper (voz) y el puente SIP.
+# corren agentd (Rust) y la interacción de voz.
 # ═══════════════════════════════════════════════════════════════════
 
 SHELL := /bin/bash
@@ -155,7 +155,7 @@ test:
 	@cd "$(ROOT)/tests" && npm run test:e2e -- \
 		tests/01.ecosystem.health.e2e.ts tests/02.api.idp.e2e.ts tests/03.api.cuenta.e2e.ts \
 		tests/04.api.x402-gateway.e2e.ts tests/09.api.services-wallet.e2e.ts \
-		tests/13.settlement.real-chain.e2e.ts tests/14.calls.sip-bridge.e2e.ts \
+		tests/13.settlement.real-chain.e2e.ts \
 		$(suite)
 
 ## test-smoke: salud + guardarraíles del gateway (401 sin Bearer)

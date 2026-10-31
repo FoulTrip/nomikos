@@ -177,25 +177,6 @@ async def _fleet_status(ctx, ev, **_: Any) -> ToolResult:
     return await _call_api("/devices", ctx=ctx, events=ev)
 
 
-async def _place_call(destination: str, ctx=None, ev=None, **_: Any) -> ToolResult:
-    """NomikOS Fase 5: inicia una llamada al destino. Cada minuto es un
-    peaje x402 que la cuenta paga por dPaaS (402 → pago delegado →
-    reintento automático); la respuesta trae el peaje del minuto siguiente."""
-    return await _call_api(
-        "/calls", method="POST", body={"destination": destination},
-        ctx=ctx, events=ev,
-    )
-
-
-async def _end_call(id: str, ctx=None, ev=None, **_: Any) -> ToolResult:
-    from urllib.parse import quote
-
-    return await _call_api(
-        f"/calls/{quote(id)}/end", method="POST", body={},
-        ctx=ctx, events=ev,
-    )
-
-
 async def _app_request(path: str, method: str = "GET", body: dict | None = None, tool_name: str = "app_request", ctx=None, ev=None, **_: Any) -> ToolResult:
     """NomikOS F5 (diagram.d2 paso 6): tool call a la APP del ecosistema
     — Payload CMS (colecciones: /api/users, /api/media, …). CADA petición
@@ -398,28 +379,6 @@ TOOLS: dict[str, Tool] = {
         parameters=_p({}, []),
         handler=_fleet_status,
     ),
-    "place_call": Tool(
-        name="place_call",
-        description=(
-            "Inicia una llamada (voz) a un destino (número E.164 o URI SIP). "
-            "Cada minuto se cobra como micro-peaje x402 que la cuenta paga por dPaaS; "
-            "la llamada avanza cuando el peaje se liquida y el siguiente llega en la respuesta."
-        ),
-        parameters=_p(
-            {"destination": {"type": "string", "description": "Destino: +573001234567 o sip:usuario@dominio"}},
-            ["destination"],
-        ),
-        handler=_place_call,
-    ),
-    "end_call": Tool(
-        name="end_call",
-        description="Finaliza (cuelga) una llamada en curso por su id.",
-        parameters=_p(
-            {"id": {"type": "string", "description": "Id de la llamada (call-…)"}},
-            ["id"],
-        ),
-        handler=_end_call,
-    ),
     "app_request": Tool(
         name="app_request",
         description=(
@@ -554,10 +513,11 @@ async def execute_tool(
     *,
     ctx: AccountContext | None = None,
     events: RunEvents | None = None,
+    dynamic_tools: dict[str, Tool] | None = None,
 ) -> ToolResult:
     """Ejecuta una herramienta con el contexto de la cuenta (handshake x402
     reactivo incluido en cada llamada a la API)."""
-    tool = TOOLS.get(name)
+    tool = (dynamic_tools or {}).get(name) or TOOLS.get(name)
     if not tool:
         return ToolResult(False, None, f"herramienta «{name}» no registrada")
 
@@ -574,5 +534,8 @@ async def execute_tool(
     return result
 
 
-def tools_openai_schemas() -> list[dict]:
-    return [t.openai_schema() for t in TOOLS.values()]
+def tools_openai_schemas(dynamic_tools: dict[str, Tool] | None = None) -> list[dict]:
+    """Tools fijas + las instaladas y habilitadas para esta cuenta."""
+    schemas = [t.openai_schema() for t in TOOLS.values()]
+    schemas.extend(t.openai_schema() for t in (dynamic_tools or {}).values())
+    return schemas

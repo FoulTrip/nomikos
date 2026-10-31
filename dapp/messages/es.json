@@ -2,7 +2,7 @@
   "landing": {
     "meta": {
       "title": "Nomik — Tu hogar, con voz propia",
-      "description": "Habla con tu hogar: aparatos, llamadas y pagos que se encargan solos. Tú solo hablas."
+      "description": "Habla con tu hogar: dispositivos y pagos que se encargan solos. Tú solo hablas."
     },
     "nav": {
       "features": "Funciones",
@@ -19,7 +19,7 @@
     },
     "hero": {
       "title": "Tu hogar, por fin con voz propia.",
-      "sub": "Nomik escucha lo que necesitas, mueve tus aparatos, hace tus llamadas y se encarga de los pagos. Tú solo hablas.",
+      "sub": "Nomik escucha lo que necesitas, controla tus aparatos y gestiona los pagos. Tú solo hablas.",
       "start": "Empezar gratis",
       "how": "Ver cómo funciona"
     },
@@ -35,7 +35,7 @@
     ],
     "features": {
       "eyebrow": "Todo en un lugar",
-      "title": "Habla, llama y controla. Todo junto.",
+      "title": "Habla y controla. Todo junto.",
       "items": [
         {
           "title": "Habla natural",
@@ -46,8 +46,8 @@
           "text": "Solo pagas cuando algo trabaja para ti."
         },
         {
-          "title": "Llama a quien quieras",
-          "text": "Di el nombre y llama. Hablas, cuelgas y listo."
+          "title": "Controla tus dispositivos",
+          "text": "Pide lo que necesitas y Nomik ejecuta las acciones permitidas."
         },
         {
           "title": "Siempre con tu permiso",
@@ -134,7 +134,7 @@
         },
         {
           "title": "Precio por uso, siempre antes",
-          "text": "Ves el precio antes de cada servicio: una llamada, una consulta, un minuto. Sin sorpresas."
+          "text": "Ves el precio antes de cada servicio: una consulta, una herramienta, una transferencia. Sin sorpresas."
         }
       ],
       "appsTitle": "Tus aplicaciones, conectadas.",
@@ -193,7 +193,7 @@
       ],
       "economy": {
         "title": "Una economía que se mueve sola.",
-        "text": "Tú pones el presupuesto una vez. Los agentes pagan céntimos por cada servicio que usan —una llamada, una consulta, una entrega— y cada movimiento queda registrado de punta a punta, hasta el cliente final."
+        "text": "Tú pones el presupuesto una vez. Los agentes pagan céntimos por cada servicio que usan —una consulta, una herramienta, una entrega— y cada movimiento queda registrado de punta a punta, hasta el cliente final."
       },
       "cta": "Empezar gratis"
     },
@@ -329,28 +329,15 @@
     "creating": "Creando…",
     "devnet": "Fondeo de pruebas",
     "faucet": "Faucet Devnet",
-    "dripping": "Goteando…",
-    "faucetInfo": "Solicita 0,005 SOL de prueba para la wallet Devnet de esta cuenta. Una solicitud por minuto; sujeto a los límites del RPC.",
-    "officialFaucet": "Abrir faucet oficial de Solana",
+    "faucetInfo": "Abre el faucet oficial y pega la dirección de esta wallet Devnet.",
     "mainnetFundingInfo": "Producción usa Solana Mainnet. Copia esta dirección y envía SOL desde un exchange o wallet por la red Solana. El API guarda la clave cifrada y firma los peajes del agente.",
-    "browser": "Wallets conectadas",
-    "connectBrowserWallet": "Conectar wallet",
-    "connecting": "Conectando…",
-    "inUse": "En uso",
-    "use": "Usar",
-    "browserHint": "Conecta una extensión. Solo se guarda la dirección pública.",
     "chain": "Red de Solana",
     "sandboxNetworkHint": "Redes de prueba disponibles en sandbox.",
     "productionNetworkHint": "La producción opera solo en mainnet.",
     "saved": "Guardado — el agente operará con esta wallet y red.",
     "cancel": "Cancelar",
     "save": "Guardar",
-    "saving": "Guardando…",
-    "errConnect": "Error al conectar la wallet",
-    "mmMissing": "MetaMask no detectado — instala la extensión",
-    "mmNoAccount": "MetaMask no devolvió cuenta",
-    "wMissing": "Wallet no detectada — instala la extensión",
-    "wNoPubkey": "La wallet no devolvió su pubkey"
+    "saving": "Guardando…"
   },
   "models": {
     "title": "Modelos del agente",
@@ -385,6 +372,33 @@
   },
   "dapps": {
     "title": "Catálogo de DApps",
+    "tabHosted": "DApps instalables",
+    "tabMcp": "Marketplace MCP",
+    "mcpLoading": "Cargando marketplace MCP…",
+    "mcpEmpty": "No hay servidores MCP activos publicados.",
+    "mcpInstall": "Instalar MCP",
+    "mcpUpdate": "Guardar permisos",
+    "mcpInstalled": "Instalada",
+    "mcpScope": "Disponibilidad en la flota",
+    "mcpAllDevices": "Todos los dispositivos",
+    "mcpSelectedDevices": "Dispositivos seleccionados",
+    "mcpTools": "Tools y precios",
+    "mcpAccept": "He leído y acepto los términos y la política de privacidad de esta versión.",
+    "mcpTerms": "Términos",
+    "mcpPrivacy": "Privacidad",
+    "mcpVerifiedCopy": "Ver copia verificada",
+    "mcpHash": "SHA-256 publicado",
+    "mcpRisk": "Riesgo declarado",
+    "mcpNeedsConsent": "Debes aceptar los documentos legales de la versión actual.",
+    "mcpInstallError": "No se pudo instalar el servidor MCP.",
+    "mcpNoDevices": "No hay dispositivos en tu flota; puedes instalar para todos.",
+    "mcpPublisher": "Publisher",
+    "mcpHighRisk": "Permiso sensible",
+    "mcpApprovalsTitle": "Acciones MCP pendientes",
+    "mcpApprovalsEmpty": "No hay acciones esperando aprobación.",
+    "mcpApprove": "Aprobar",
+    "mcpReject": "Rechazar",
+    "mcpApprovalBusy": "Guardando decisión…",
     "loading": "Cargando DApps…",
     "empty": "La API no tiene DApps disponibles en este momento.",
     "notFound": "No existe ninguna DApp que coincida con «{query}» en el catálogo global.",
@@ -504,12 +518,12 @@
     "tokenPeriod": "Últimos {days} días",
     "tokenLoadError": "No se pudieron cargar las métricas de tokens.",
     "providerModelUsage": "Uso por proveedor y modelo",
-    "providerModelUsageDescription": "Proveedor y modelo con más llamadas, y tokens registrados por modelo en este período.",
+    "providerModelUsageDescription": "Proveedor y modelo más usados, con tokens registrados por modelo en este período.",
     "mostUsedProvider": "Proveedor más usado",
     "mostUsedModel": "Modelo más usado",
     "provider": "Proveedor",
     "model": "Modelo",
-    "calls": "Llamadas",
+    "calls": "Solicitudes",
     "inputTokens": "Entrada",
     "outputTokens": "Salida",
     "totalTokens": "Tokens totales",

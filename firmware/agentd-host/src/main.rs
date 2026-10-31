@@ -210,13 +210,6 @@ fn main() {
     // (en la Pi real: mic → whisper.cpp → esta misma petición; la respuesta
     // se pasaría a piper/espeak para el altavoz). AGENTD_VOICE=1 para activar.
     let voice_mode = env::var("AGENTD_VOICE").map(|v| v == "1").unwrap_or(false);
-    // NomikOS W4 — puente SIP: la placa consulta SU llamada en el api
-    // (GET /calls/for-device) y mueve el audio con baresip (pipe mode):
-    // active → /dial sip:destino, terminada → /hangup. El peaje x402 por
-    // minuto vive en el api; aquí solo el audio.
-    let sip_mode = env::var("AGENTD_SIP").map(|v| v == "1").unwrap_or(false);
-    let mut sip = if sip_mode { SipBridge::from_env() } else { None };
-
     log("boot", &format!("agentd-host v0.1.0 · api {} · board {board} · name {name}", api.prefix));
     let mut p = load_state();
     log("boot", &format!("identidad: {}… (la clave no sale del dispositivo)", &p.pubkey[..12]));
@@ -309,11 +302,6 @@ fn main() {
                     x402_demo(&api, &token);
                 }
 
-                // ── Puente SIP (W4): la Pi consulta SU llamada (3 s) ──
-                if let Some(bridge) = sip.as_mut() {
-                    bridge.tick(&api, &token);
-                }
-
                 // ── Modo voz (diagram.d2: User → Worker "Voz / texto") ──
                 if voice_mode {
                     let mut line = String::new();
@@ -337,124 +325,9 @@ fn main() {
                         // stdin cerrado → sin turnos: mantener heartbeat
                         sleep(Duration::from_secs(HEARTBEAT_SECS));
                     }
-                } else if sip.is_some() {
-                    // tick de llamada más ágil que el heartbeat (3 s)
-                    sleep(Duration::from_secs(3));
                 } else {
                     sleep(Duration::from_secs(HEARTBEAT_SECS));
                 }
-            }
-        }
-    }
-}
-
-// ── Puente SIP (NomikOS W4 — diagram.d2 C1-C4) ────────────────────────
-//
-// El api guarda la sesión de llamada y cobra el peaje x402 por minuto;
-// la placa mueve el AUDIO: baresip en pipe mode recibe `/dial` y
-// `/hangup` por stdin. AGENTD_SIP_CMD permite sustituir baresip por un
-// mock en pruebas (los comandos se registran y la suite los congela).
-
-struct SipBridge {
-    /// binario de control de llamadas (default baresip).
-    cmd: String,
-    /// dominio SIP del trunk (opcional): sip:destino@dominio.
-    domain: String,
-    /// id de la llamada marcada (para no re-marcar el mismo turno).
-    dialed: Option<String>,
-    child: Option<std::process::Child>,
-    stdin: Option<std::process::ChildStdin>,
-}
-
-impl SipBridge {
-    fn from_env() -> Option<Self> {
-        let cmd = env::var("AGENTD_SIP_CMD").unwrap_or_else(|_| "baresip".into());
-        let domain = env::var("AGENTD_SIP_DOMAIN").unwrap_or_default();
-        Some(Self { cmd, domain, dialed: None, child: None, stdin: None })
-    }
-
-    fn tick(&mut self, api: &Api, token: &str) {
-        let Ok((200, _, body)) = api.call("GET", "/calls/for-device", None, Some(token), None)
-        else {
-            return;
-        };
-        let has_call = agentd_core::json_str(&body, "has_call") == Some("true");
-        if !has_call {
-            if self.child.is_some() {
-                self.hangup("la llamada terminó en el api (end/peaje)");
-            }
-            return;
-        }
-        let id = agentd_core::json_str(&body, "call_id").unwrap_or_default().to_string();
-        let status = agentd_core::json_str(&body, "call_status").unwrap_or_default();
-        let dest = agentd_core::json_str(&body, "call_destination").unwrap_or_default();
-        // se marca cuando el minuto 0 está pagado (active) — ringing aún no suena
-        if status == "active" && self.dialed.as_deref() != Some(id.as_str()) {
-            self.dial(&id, &dest);
-        }
-    }
-
-    fn dial(&mut self, id: &str, dest: &str) {
-        if self.child.is_none() {
-            match std::process::Command::new(&self.cmd)
-                .arg("-p")
-                .arg("-f")
-                .arg("/etc/baresip")
-                .stdin(std::process::Stdio::piped())
-                .spawn()
-            {
-                Ok(c) => {
-                    self.child = Some(c);
-                    log("sip", &format!("baresip arriba ({} -p)", self.cmd));
-                }
-                Err(e) => {
-                    log("sip", &format!("no pude lanzar {}: {e}", self.cmd));
-                    return;
-                }
-            }
-        }
-        let uri = if self.domain.is_empty() {
-            format!("sip:{dest}")
-        } else {
-            format!("sip:{dest}@{}", self.domain)
-        };
-        log("sip", &format!("marcando {uri} (llamada {id})"));
-        self.write_cmd(&format!("/dial {uri}"));
-        self.dialed = Some(id.to_string());
-    }
-
-    fn hangup(&mut self, why: &str) {
-        log("sip", why);
-        self.write_cmd("/hangup");
-        self.stdin = None; // EOF: el proceso de audio cierra limpio
-        if let Some(mut c) = self.child.take() {
-            // darle un instante a baresip para procesar el /hangup antes
-            // del kill de respaldo (un SIGKILL inmediato pierde la línea
-            // que aún viaja por el pipe).
-            for _ in 0..20 {
-                if matches!(c.try_wait(), Ok(Some(_))) {
-                    break;
-                }
-                sleep(Duration::from_millis(100));
-            }
-            let _ = c.kill();
-            let _ = c.wait();
-        }
-        self.dialed = None;
-    }
-
-    fn write_cmd(&mut self, cmd: &str) {
-        if self.stdin.is_none() {
-            if let Some(child) = self.child.as_mut() {
-                self.stdin = child.stdin.take();
-            }
-        }
-        if let Some(stdin) = self.stdin.as_mut() {
-            use std::io::Write;
-            if writeln!(stdin, "{cmd}").and_then(|_| stdin.flush()).is_err() {
-                log("sip", "baresip cerró el stdin (¿se cayó?)");
-                self.child = None;
-                self.stdin = None;
             }
         }
     }

@@ -135,7 +135,7 @@ async def run_agent(
     # Tienda de dapps: incorpora las tools de las apps INSTALADAS al
     # catálogo (TTL 60 s; best-effort — sin worker el agente sigue).
     from . import mcp
-    await mcp.refresh()
+    dynamic_tools = await mcp.refresh(ctx)
 
     system = SYSTEM_PROMPT
     if ctx:
@@ -147,7 +147,7 @@ async def run_agent(
         {"role": "system", "content": system},
         {"role": "user", "content": user_text},
     ]
-    schemas = tools_openai_schemas()
+    schemas = tools_openai_schemas(dynamic_tools)
 
     # S2: contexto legal (run_id) + polling de world/ por iteración.
     run_id = legal_gate.extract_run_id(user_text, extra_instructions)
@@ -248,7 +248,13 @@ async def run_agent(
 
                 log.info("tool-call #%d: %s(%s)", iteration, tc.function.name, args)
                 try:
-                    result = await execute_tool(tc.function.name, args, ctx=ctx, events=events)
+                    result = await execute_tool(
+                        tc.function.name,
+                        args,
+                        ctx=ctx,
+                        events=events,
+                        dynamic_tools=dynamic_tools,
+                    )
                 except Exception as e:  # noqa: BLE001 — robustez: un LLM que
                     # llama la tool con args inválidos no debe tumbar la corrida
                     log.warning("tool «%s» falló (¿args inválidos del LLM?): %s", tc.function.name, e)

@@ -22,7 +22,7 @@ while (($#)); do
     *) SERVICES+=("$1"); shift ;;
   esac
 done
-BUILD_ORDER=(payload-cms api brain dapp)
+BUILD_ORDER=(payload-cms mcp-server api brain dapp)
 COMPOSE_PROFILE_ARGS=()
 STORAGE_BACKEND=local
 

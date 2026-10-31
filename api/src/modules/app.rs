@@ -23,7 +23,7 @@
 use crate::error::{AppError, AppResult};
 use crate::modules::apps::{self, AppRow};
 use crate::modules::devices::resolve_identity;
-use crate::modules::x402::{consume_access, create_invoice_value_for, verify_access};
+use crate::modules::x402::{create_invoice_value_for, settle_access_for_resource};
 use crate::state::SharedState;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
@@ -148,27 +148,6 @@ async fn app_auth_token(state: &SharedState, target: &AppTarget) -> Option<Strin
             .insert(target.slug.clone(), (tok.clone(), exp));
     }
     Some(tok)
-}
-
-/// Llamada REAL a la app (la usan el gateway peajizado y el dispatch de
-/// tools del MCP manager). Devuelve (status HTTP de la app, su cuerpo).
-pub async fn fetch_app(
-    state: &SharedState,
-    row: &AppRow,
-    method: &str,
-    path: &str,
-    body: Option<Value>,
-) -> AppResult<(u16, Value)> {
-    let target = resolve_target_of_row(row);
-    fetch(state, &target, method, path, body).await
-}
-
-fn resolve_target_of_row(row: &AppRow) -> AppTarget {
-    AppTarget {
-        slug: row.slug.clone(),
-        base_url: row.base_url.clone().unwrap_or_default(),
-        row: Some(row.clone()),
-    }
 }
 
 /// La app vive en el HOST (:3100): dentro del contenedor, localhost es el
@@ -400,7 +379,17 @@ pub async fn app_request_handler(
 
     // app destino (registro de dapps o config clásica)
     let target = resolve_target(&state, req.app.as_deref())?;
-    let resource = format!("x402:app:{}:{method}:{path}", target.slug);
+    let amount = state.cfg.x402_app_lamports;
+    let fingerprint = serde_json::to_vec(&json!({
+        "app": target.slug, "method": method, "path": path,
+        "body": req.body, "tool_name": req.tool_name,
+    }))
+    .unwrap_or_default();
+    let args_hash = crate::crypto::sha256_hex(&fingerprint);
+    let resource = format!(
+        "x402:app:{}:{method}:{path}:{amount}:{args_hash}",
+        target.slug
+    );
 
     // ── con X-Payment: verificar (sin consumir) → proxy → consumir ──
     if let Some(invoice_id) = headers
@@ -409,17 +398,15 @@ pub async fn app_request_handler(
         .map(str::trim)
         .filter(|s| !s.is_empty())
     {
-        if let Err(r) = verify_access(&state, invoice_id, Some(&account)) {
+        if let Err(r) = settle_access_for_resource(&state, invoice_id, Some(&account), &resource) {
             return Ok(r);
         }
 
         // 6. Tool call: la petición REAL a la app
         let (status, app_body) = fetch(&state, &target, &method, &path, req.body.clone()).await?;
 
-        // 7. La app RESPONDIÓ → el peaje se consume (pagas servicio real).
-        if let Err(e) = consume_access(&state, invoice_id) {
-            return Ok(e);
-        }
+        // La factura se reclama atómicamente antes de llamar a la app; una
+        // retransmisión concurrente no puede duplicar una acción remota.
         let artifact_media = artifact_media(&state, &target, &app_body).await;
         let invoice = crate::modules::x402::invoice_for_app_usage(&state, invoice_id);
         if let Some((account_id, device_id, execution_environment, network)) = invoice {
@@ -462,14 +449,9 @@ pub async fn app_request_handler(
     }
 
     // ── sin X-Payment: peaje nuevo de esta petición → 402 ──
-    let invoice = create_invoice_value_for(
-        &state,
-        &resource,
-        state.cfg.x402_app_lamports,
-        Some(&account),
-        device.as_deref(),
-    )
-    .await?;
+    let invoice =
+        create_invoice_value_for(&state, &resource, amount, Some(&account), device.as_deref())
+            .await?;
     tracing::info!(
         "app-request peaje emitido: {resource} (app {}, cuenta {account})",
         target.slug

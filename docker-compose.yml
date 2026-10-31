@@ -23,6 +23,29 @@ services:
       start_period: 45s
     restart: unless-stopped
 
+  # MCP local liviano para que el API pueda probar tools sin credenciales
+  # de servicios externos. El perfil E2E usa la misma imagen con controles habilitados.
+  mcp-server:
+    build:
+      context: ./tests/fixtures/mcp-server
+      dockerfile: Dockerfile
+    container_name: nomikos-mcp-server
+    environment:
+      MCP_FIXTURE_ADMIN: "0"
+    ports:
+      - "127.0.0.1:4178:4177"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:4177/health').then((r) => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 3s
+    restart: unless-stopped
+
   # Local S3-compatible storage for the simulator model. OBJECT_STORE_BACKEND
   # The launcher activates this profile only when OBJECT_STORE_BACKEND=local.
   rustfs:
@@ -72,12 +95,18 @@ services:
       PAYLOAD_EMAIL: "${PAYLOAD_EMAIL:-}"
       PAYLOAD_PASSWORD: "${PAYLOAD_PASSWORD:-}"
       PAYLOAD_TOKEN: "${PAYLOAD_TOKEN:-}"
+      # MCP local de demostración; no requiere OAuth ni un servidor externo.
+      MEDUSA_MCP_URL: "http://mcp-server:4177/mcp"
+      MEDUSA_MCP_TOKEN: ""
       SOLANA_NETWORK: "${SOLANA_NETWORK:-devnet}"
       # A host-run solana-test-validator is reachable from the API container here.
       SOLANA_LOCAL_URL: "http://host.docker.internal:8899"
       SOLANA_DEVNET_URL: "${SOLANA_DEVNET_URL:-https://api.devnet.solana.org}"
       AGENT_OS_API_HOST: "0.0.0.0"
       AGENT_OS_API_PORT: "8080"
+      # Hostnames internos autorizados para MCP HTTP en las pruebas sandbox.
+      # En uso normal queda vacío.
+      MARKETPLACE_INTERNAL_HOSTS: "${MARKETPLACE_INTERNAL_HOSTS:-}"
       # Orquestador (voz): dentro de Compose se resuelve por nombre de servicio.
       BRAIN_URL: "http://brain:8322"
       # Cifrado de secretos de cuentas (keypairs, api_keys) — 32 B base64.
@@ -131,6 +160,8 @@ services:
       - "8080:8080"
     depends_on:
       payload-cms:
+        condition: service_healthy
+      mcp-server:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/health"]
@@ -192,6 +223,18 @@ services:
     ports:
       - "3000:3000"
     restart: unless-stopped
+
+  marketplace-fixture:
+    build:
+      context: ./tests/fixtures/mcp-server
+      dockerfile: Dockerfile
+    container_name: nomikos-marketplace-fixture
+    environment:
+      MCP_FIXTURE_ADMIN: "1"
+    profiles: ["e2e"]
+    ports:
+      - "127.0.0.1:4177:4177"
+    restart: "no"
 
 volumes:
   payload-state:

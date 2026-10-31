@@ -2,7 +2,7 @@
   "landing": {
     "meta": {
       "title": "Nomik — Your home, with a voice of its own",
-      "description": "Talk to your home: devices, calls and payments that take care of themselves. You just talk."
+      "description": "Talk to your home: devices and payments that take care of themselves. You just talk."
     },
     "nav": {
       "features": "Features",
@@ -19,23 +19,23 @@
     },
     "hero": {
       "title": "Your home, finally with a voice of its own.",
-      "sub": "Nomik hears what you need, moves your devices, makes your calls and takes care of payments. You just talk.",
+      "sub": "Nomik hears what you need, controls your devices and handles payments. You just talk.",
       "start": "Get started free",
       "how": "See how it works"
     },
     "marquee": [
       "Good morning",
-      "Call mom",
+      "Turn on the lights",
       "Turn on the living room",
       "How much have I spent?",
       "Play my list",
       "Turn everything off",
-      "Who called yesterday?",
+      "What did I spend yesterday?",
       "Turn it up"
     ],
     "features": {
       "eyebrow": "Everything in one place",
-      "title": "Talk, call and control. All together.",
+      "title": "Talk and control. All together.",
       "items": [
         {
           "title": "Natural speech",
@@ -46,8 +46,8 @@
           "text": "You only pay when something works for you."
         },
         {
-          "title": "Call anyone",
-          "text": "Say the name and call. Talk, hang up, done."
+          "title": "Control your devices",
+          "text": "Ask for what you need and Nomik carries out the allowed actions."
         },
         {
           "title": "Always with your permission",
@@ -134,7 +134,7 @@
         },
         {
           "title": "Pay-per-use pricing, always upfront",
-          "text": "You see the price before every service: a call, a lookup, a minute. No surprises."
+          "text": "You see the price before every service: a lookup, a tool, a transfer. No surprises."
         }
       ],
       "appsTitle": "Your apps, connected.",
@@ -193,7 +193,7 @@
       ],
       "economy": {
         "title": "An economy that runs itself.",
-        "text": "You set the budget once. Agents pay cents for every service they use —a call, a lookup, a delivery— and every move is recorded end to end, all the way to the final customer."
+        "text": "You set the budget once. Agents pay cents for every service they use —a lookup, a tool, a delivery— and every move is recorded end to end, all the way to the final customer."
       },
       "cta": "Get started free"
     },
@@ -329,28 +329,15 @@
     "creating": "Creating…",
     "devnet": "Test funding",
     "faucet": "Devnet faucet",
-    "dripping": "Dripping…",
-    "faucetInfo": "Request 0.005 test SOL for this account's Devnet wallet. One request per minute; subject to RPC limits.",
-    "officialFaucet": "Open the official Solana faucet",
+    "faucetInfo": "Open the official faucet and paste this Devnet wallet address.",
     "mainnetFundingInfo": "Production uses Solana Mainnet. Copy this address and send SOL from an exchange or wallet over the Solana network. The API stores the encrypted signing key and signs the agent's tolls.",
-    "browser": "Connected wallets",
-    "connectBrowserWallet": "Connect wallet",
-    "connecting": "Connecting…",
-    "inUse": "In use",
-    "use": "Use",
-    "browserHint": "Connect a browser extension. Only the public address is stored.",
     "chain": "Solana network",
     "sandboxNetworkHint": "Test networks available in sandbox.",
     "productionNetworkHint": "Production runs on mainnet only.",
     "saved": "Saved — the agent will operate with this wallet and network.",
     "cancel": "Cancel",
     "save": "Save",
-    "saving": "Saving…",
-    "errConnect": "Failed to connect the wallet",
-    "mmMissing": "MetaMask not detected — install the extension",
-    "mmNoAccount": "MetaMask returned no account",
-    "wMissing": "No wallet detected — install the extension",
-    "wNoPubkey": "The wallet returned no pubkey"
+    "saving": "Saving…"
   },
   "models": {
     "title": "Agent models",
@@ -385,6 +372,33 @@
   },
   "dapps": {
     "title": "DApp catalog",
+    "tabHosted": "Installable DApps",
+    "tabMcp": "MCP marketplace",
+    "mcpLoading": "Loading MCP marketplace…",
+    "mcpEmpty": "There are no active MCP servers published.",
+    "mcpInstall": "Install MCP",
+    "mcpUpdate": "Save permissions",
+    "mcpInstalled": "Installed",
+    "mcpScope": "Fleet availability",
+    "mcpAllDevices": "All devices",
+    "mcpSelectedDevices": "Selected devices",
+    "mcpTools": "Tools and prices",
+    "mcpAccept": "I have read and accept this version's terms and privacy policy.",
+    "mcpTerms": "Terms",
+    "mcpPrivacy": "Privacy",
+    "mcpVerifiedCopy": "View verified copy",
+    "mcpHash": "Published SHA-256",
+    "mcpRisk": "Declared risk",
+    "mcpNeedsConsent": "Accept the current version's legal documents to continue.",
+    "mcpInstallError": "Could not install the MCP server.",
+    "mcpNoDevices": "Your fleet has no devices; you can install for all devices.",
+    "mcpPublisher": "Publisher",
+    "mcpHighRisk": "Sensitive permission",
+    "mcpApprovalsTitle": "Pending MCP actions",
+    "mcpApprovalsEmpty": "No actions are waiting for approval.",
+    "mcpApprove": "Approve",
+    "mcpReject": "Reject",
+    "mcpApprovalBusy": "Saving decision…",
     "loading": "Loading DApps…",
     "empty": "The API has no DApps available right now.",
     "notFound": "No DApp matching “{query}” exists in the global catalog.",
@@ -504,12 +518,12 @@
     "tokenPeriod": "Last {days} days",
     "tokenLoadError": "Token usage metrics could not be loaded.",
     "providerModelUsage": "Usage by provider and model",
-    "providerModelUsageDescription": "Most called provider and model, plus tokens recorded for each model in this period.",
+    "providerModelUsageDescription": "Most used provider and model, plus tokens recorded for each model in this period.",
     "mostUsedProvider": "Most used provider",
     "mostUsedModel": "Most used model",
     "provider": "Provider",
     "model": "Model",
-    "calls": "Calls",
+    "calls": "Requests",
     "inputTokens": "Input",
     "outputTokens": "Output",
     "totalTokens": "Total tokens",

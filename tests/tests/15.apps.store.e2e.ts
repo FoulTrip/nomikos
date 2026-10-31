@@ -17,7 +17,7 @@
  *      install sin sesión 401 · install repetido ok (idempotente)
  *   ⑦ el catálogo del ORQUESTADOR incluye las tools dinámicas
  */
-import { test, expect, api, brain, auth, json, settleInvoiceViaLedger } from './_helpers';
+import { test, expect, api, brain, auth, json, randomEmail, randomPassword, settleInvoiceViaLedger } from './_helpers';
 
 const withH = (t: string) => ({ Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' });
 
@@ -40,6 +40,19 @@ async function waitForStatus(slug: string, want: 'installed' | 'failed', ms = 12
     if (Date.now() - t0 > ms) throw new Error(`${slug} no llegó a «${want}» (estado: ${app?.status})`);
     await new Promise((r) => setTimeout(r, 1500));
   }
+}
+
+async function paidAppRequest(token: string, request: Record<string, unknown>) {
+  const first = await api('/app/request', {
+    method: 'POST', headers: withH(token), body: JSON.stringify(request),
+  });
+  expect(first.status).toBe(402);
+  const invoice = ((await first.json()) as { invoice: { id: string } }).invoice;
+  settleInvoiceViaLedger(invoice.id);
+  return api('/app/request', {
+    method: 'POST', headers: { ...withH(token), 'X-Payment': invoice.id },
+    body: JSON.stringify(request),
+  });
 }
 
 test('① catálogo del worker: la dapp del registro, pública', async () => {
@@ -73,15 +86,10 @@ test('②→⑥ instalar la dapp y operarla (script probado + MCP manager + peaj
 
   // ④ dispatch determinista (sin LLM): datos REALES de la app
   const call = await api('/agent/call', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { ...withH(account.token) },
     body: JSON.stringify({ tool: 'payload_list_users', args: { limit: 1 } }),
   });
-  expect(call.status).toBe(200);
-  const called = (await call.json()) as { ok: boolean; result: { app: string; status: number; result: { docs?: { email?: string }[] } } };
-  expect(called.ok).toBe(true);
-  expect(called.result.app).toBe('payload-cms');
-  expect(called.result.status).toBe(200);
-  expect((called.result.result.docs ?? []).length).toBeGreaterThan(0);
+  expect(call.status).toBe(403);
 
   // ⑤ flujo peajizado multi-app: {app:"payload-cms"} → 402 con el slug
   const first = await api('/app/request', {
@@ -127,11 +135,19 @@ test('②→⑥ instalar la dapp y operarla (script probado + MCP manager + peaj
 });
 
 test('⑧ tools CRUD+auth: dispatch determinista + PATCH/DELETE por flujo con peaje', async ({ account }) => {
-  const acall = (tool: string, args: unknown) =>
-    api('/agent/call', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tool, args }),
-    });
+  const acall = (tool: string, args: unknown) => {
+    const input = args as Record<string, string>;
+    const routes: Record<string, Record<string, unknown>> = {
+      payload_create_user: { app: 'payload-cms', method: 'POST', path: '/api/users', body: input },
+      payload_get_user: { app: 'payload-cms', path: `/api/users/${input.id}` },
+      payload_update_user: { app: 'payload-cms', method: 'PATCH', path: `/api/users/${input.id}`, body: { email: input.email } },
+      payload_login: { app: 'payload-cms', method: 'POST', path: '/api/users/login', body: input },
+      payload_delete_user: { app: 'payload-cms', method: 'DELETE', path: `/api/users/${input.id}` },
+    };
+    const request = routes[tool];
+    if (!request) throw new Error(`tool no configurada en el test: ${tool}`);
+    return paidAppRequest(account.token, request);
+  };
   type R = { ok: boolean; result: { app: string; status: number; result: any } };
   const email = `store-${Date.now()}@tripkode.dev`;
 
@@ -181,7 +197,12 @@ test('⑧ tools CRUD+auth: dispatch determinista + PATCH/DELETE por flujo con pe
 });
 
 test('⑦ el catálogo del ORQUESTADOR incluye las tools de la dapp', async () => {
-  const res = await brain('/v1/tools');
+  const email = randomEmail();
+  const password = randomPassword();
+  expect((await api('/auth/register', json({ email, password }))).status).toBe(201);
+  const login = await api('/auth/login', json({ email, password }));
+  const token = ((await login.json()) as { token: string }).token;
+  const res = await brain('/v1/tools', auth(token));
   expect(res.status).toBe(200);
   const body = (await res.json()) as { tools: { name: string }[] };
   const names = body.tools.map((t) => t.name);

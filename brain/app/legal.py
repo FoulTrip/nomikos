@@ -14,8 +14,8 @@ log = logging.getLogger("agent-brain.legal")
 
 RUN_RE = re.compile(r"run-\d+-[0-9a-f]+")
 
-# Tools con efectos externos (pagos, llamadas, app real): bloqueadas sin pass.
-EFFECTFUL_TOOLS = frozenset({"app_request", "place_call", "x402_pay_toll"})
+# Tools con efectos externos (pagos, app real): bloqueadas sin pass.
+EFFECTFUL_TOOLS = frozenset({"app_request", "x402_pay_toll"})
 
 # Palabras que marcan contexto legal S1/S2 (sin run_id explícito).
 LEGAL_KEYWORDS = ("dpaas", "toll", "peaje", "invoice", "factura", "memorandum", "memorándum", "exhibit", "dispute", "disputa", "ledger")

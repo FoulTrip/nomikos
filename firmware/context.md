@@ -50,11 +50,6 @@ la ESP32-S3 cuando el driver AMOLED tenga framebuffer + táctil verificados.
   Pi) → `POST /api/voice` con el token del dispositivo; la respuesta del
   orquestador se imprime (→ piper/altavoz). `AGENTD_X402=0` recomendado
   en voz para no mezclar la demo del peaje.
-- **Puente SIP (W4)**: `AGENTD_SIP=1` — el agente consulta SU llamada
-  (`GET /api/calls/for-device`, cada 3 s) y mueve el audio con baresip
-  en pipe mode: `active` → `/dial sip:destino[@AGENTD_SIP_DOMAIN]`,
-  terminada → `/hangup`. `AGENTD_SIP_CMD` sustituye baresip (mock en
-  la suite 14); el peaje x402 por minuto vive en el api.
 
 ## Servicios que consume
 

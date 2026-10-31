@@ -4,8 +4,8 @@
 use crate::db::now_ms;
 use crate::error::{AppError, AppResult};
 use crate::modules::{
-    accounts, app, apps, calls, device, devices, faucet, mcp, simulation, solana, usage, verify,
-    voice, x402,
+    accounts, app, apps, device, devices, faucet, marketplace, mcp, simulation, solana, usage,
+    verify, voice, x402,
 };
 use crate::state::SharedState;
 use axum::extract::{Query, State};
@@ -118,19 +118,66 @@ pub fn router(state: SharedState) -> Router {
             post(devices::me_llm_activate_handler),
         )
         .route("/api/devices/{id}/limits", put(devices::limits_handler))
-        // [ NomikOS F5 — llamadas con peaje x402 por minuto ]
-        .route("/api/calls", post(calls::create_call_handler))
-        .route("/api/calls/{id}", get(calls::get_call_handler))
-        .route("/api/calls/{id}/end", post(calls::end_call_handler))
-        // [ NomikOS W4 — puente baresip: la Pi consulta SU llamada ]
-        .route("/api/calls/for-device", get(calls::for_device_handler))
-        // [ NomikOS F5 — voz + MCP Gateway peajizado hacia la app (diagram.d2) ]
+        // [ Voz del dispositivo y MCP Gateway peajizado hacia la app ]
         .route("/api/voice", post(voice::voice_turn_handler))
         .route("/api/app/request", post(app::app_request_handler))
         // [ Tienda de dapps — el worker lista e instala apps del registro ]
         .route("/api/apps", get(apps::list_handler))
         .route("/api/apps/{slug}", get(apps::get_handler))
         .route("/api/apps/{slug}/install", post(apps::install_handler))
+        // [ Marketplace MCP remoto: registro firmado, precios por tool y runtime]
+        .route(
+            "/api/marketplace/apps",
+            get(marketplace::list_handler).post(marketplace::publish_handler),
+        )
+        .route(
+            "/api/marketplace/apps/mine",
+            get(marketplace::my_apps_handler),
+        )
+        .route(
+            "/api/marketplace/apps/{namespace}",
+            get(marketplace::get_handler),
+        )
+        .route(
+            "/api/marketplace/apps/{namespace}/legal/{kind}",
+            get(marketplace::legal_document_handler),
+        )
+        .route(
+            "/api/marketplace/apps/{namespace}/reports",
+            get(marketplace::publisher_reports_handler).post(marketplace::report_handler),
+        )
+        .route(
+            "/api/marketplace/apps/{namespace}/revalidate",
+            post(marketplace::revalidate_handler),
+        )
+        .route(
+            "/api/marketplace/apps/{namespace}/install",
+            post(marketplace::install_handler),
+        )
+        .route(
+            "/api/marketplace/apps/{namespace}/tools/{tool}/call",
+            post(marketplace::call_handler),
+        )
+        .route(
+            "/api/accounts/me/marketplace/tools",
+            get(marketplace::account_tools_handler),
+        )
+        .route(
+            "/api/accounts/me/marketplace/apps",
+            get(marketplace::account_apps_handler),
+        )
+        .route(
+            "/api/accounts/me/marketplace/approvals",
+            get(marketplace::approvals_handler),
+        )
+        .route(
+            "/api/accounts/me/marketplace/approvals/{id}",
+            post(marketplace::approval_decision_handler),
+        )
+        .route(
+            "/api/accounts/me/marketplace/apps/{namespace}/tools/{tool}",
+            put(marketplace::tool_policy_handler),
+        )
         // [ Módulo Medusa MCP ] — puente hacia cloud.medusajs.com/mcp
         .route("/api/mcp/status", get(mcp::status_handler))
         .route("/api/mcp/tools", get(mcp::tools_handler))
@@ -504,6 +551,7 @@ fn arg_i64(args: &Value, key: &str) -> AppResult<i64> {
 
 async fn agent_call(
     State(state): State<SharedState>,
+    headers: axum::http::HeaderMap,
     Json(call): Json<AgentCall>,
 ) -> AppResult<impl IntoResponse> {
     let args = if call.args.is_null() {
@@ -559,15 +607,10 @@ async fn agent_call(
             x402::pay_value(&state, x402::PayBody { to, lamports, memo }, "system").await?
         }
         other => {
-            // tools de las dapps INSTALADAS (MCP manager dinámico:
-            // POST /api/apps/{slug}/install las registra)
-            if let Some(res) = apps::call_dynamic_tool(&state, other, &args).await {
-                res?
-            } else {
-                return Err(AppError::not_found(format!(
-                    "tool «{other}» no existe — GET /api/agent/tools"
-                )));
-            }
+            let _identity = accounts::resolve_account_id(&state, &headers)?;
+            return Err(AppError::forbidden(format!(
+                "la tool dinámica «{other}» requiere el gateway x402 de su app"
+            )));
         }
     };
 

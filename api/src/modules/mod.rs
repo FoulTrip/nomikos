@@ -3,11 +3,11 @@
 pub mod accounts;
 pub mod app;
 pub mod apps;
-pub mod calls;
 pub mod device;
 pub mod devices;
 pub mod erp;
 pub mod faucet;
+pub mod marketplace;
 pub mod mcp;
 pub mod simulation;
 pub mod solana;

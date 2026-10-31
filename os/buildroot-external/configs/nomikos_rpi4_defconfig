@@ -51,14 +51,7 @@ BR2_PACKAGE_UTIL_LINUX_LOGGER=y
 # CLI nomikos (tienda de apps en consola: python3 para parsear JSON)
 BR2_PACKAGE_PYTHON3=y
 
-# ── Voz (NomikOS Fase 5): SIP client para las llamadas del agente ────
-# El agente (place_call) abre la sesión en el api con peaje x402/min;
-# baresip lleva el audio RTP contra el trunk SIP configurado en
-# /etc/baresip/accounts (requiere audio USB/HAT en la placa).
-# ── Llamadas: el puente SIP (W4) vive en agentd (AGENTD_SIP_CMD);
-# baresip NO está en buildroot 2026.11 (paquete removido upstream) —
-# cualquier binario SIP en pipe mode sirve; empaquetarlo queda
-# documentado como TODO en nomikos/README.md.
+# Audio para interacción local del dispositivo.
 BR2_PACKAGE_ALSA_LIB=y
 BR2_PACKAGE_ALSA_UTILS=y
 

@@ -621,26 +621,6 @@ pub async fn install_handler(
 // Tools dinámicas → MCP manager (GET /api/agent/tools + POST /api/agent/call)
 // ---------------------------------------------------------------------------
 
-/// Render `{clave}` desde args (string/number → string).
-fn render(tpl: &str, args: &Value) -> String {
-    let mut out = String::with_capacity(tpl.len() + 16);
-    let mut rest = tpl;
-    while let Some(i) = rest.find('{') {
-        out.push_str(&rest[..i]);
-        let Some(j) = rest[i..].find('}') else { break };
-        let key = &rest[i + 1..i + j];
-        let v = match args.get(key) {
-            Some(Value::String(s)) => s.clone(),
-            Some(Value::Number(n)) => n.to_string(),
-            _ => String::new(),
-        };
-        out.push_str(&v);
-        rest = &rest[i + j + 1..];
-    }
-    out.push_str(rest);
-    out
-}
-
 /// Catálogo plano de las tools de las apps INSTALADAS (para el MCP manager:
 /// GET /api/agent/tools). Cada tool indica su app y sus argumentos.
 pub fn installed_tools_value(state: &SharedState) -> Vec<Value> {
@@ -662,49 +642,4 @@ pub fn installed_tools_value(state: &SharedState) -> Vec<Value> {
         }
     }
     out
-}
-
-/// Ejecuta una tool de una app instalada (dispatch del MCP manager).
-/// Llama a la app SIN peaje — esa es la superficie del sistema; el
-/// AGENTE (brain → POST /app/request) es el flujo peajizado.
-pub async fn call_dynamic_tool(
-    state: &SharedState,
-    tool: &str,
-    args: &Value,
-) -> Option<AppResult<Value>> {
-    for row in all(state).into_iter().filter(|r| r.status == "installed") {
-        let Ok(tools) = serde_json::from_str::<Vec<Value>>(&row.tools) else {
-            continue;
-        };
-        for spec in tools {
-            if spec["name"].as_str() != Some(tool) {
-                continue;
-            }
-            let call = &spec["call"];
-            let method = call["method"].as_str().unwrap_or("GET").to_string();
-            let path = render(call["path"].as_str().unwrap_or("/"), args);
-            let body: Option<Value> = call["body"].as_object().map(|obj| {
-                let mut out = serde_json::Map::new();
-                for (k, v) in obj {
-                    if let Some(s) = v.as_str() {
-                        // placeholder intacto (arg omitido) → no enviar la
-                        // clave (igual que brain/mcp.py: updates parciales)
-                        let is_bare = s.len() > 2 && s.starts_with('{') && s.ends_with('}');
-                        let missing = is_bare && args.get(&s[1..s.len() - 1]).is_none();
-                        if !missing {
-                            out.insert(k.clone(), json!(render(s, args)));
-                        }
-                    } else {
-                        out.insert(k.clone(), v.clone());
-                    }
-                }
-                Value::Object(out)
-            });
-            let res = crate::modules::app::fetch_app(state, &row, &method, &path, body).await;
-            return Some(res.map(|(status, app_body)| {
-                json!({ "app": row.slug, "status": status, "result": app_body })
-            }));
-        }
-    }
-    None
 }

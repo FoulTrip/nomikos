@@ -16,25 +16,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
 import {
-  Backpack,
   Blocks,
   Bot,
   Check,
   CircleCheck,
   Copy,
   Droplets,
-  Ghost,
   ArrowLeft,
   LoaderCircle,
   PlugZap,
   Plus,
   RotateCw,
   Search,
-  Sun,
   Trash2,
   TriangleAlert,
   Wallet,
-  WalletMinimal,
 } from "lucide-react";
 import Modal from "./ModalShell";
 import FleetModal from "./FleetModal";
@@ -94,6 +90,57 @@ interface DAppRow {
   status: string;
   tools_count: number;
 }
+interface McpManifestLegal {
+  terms_url: string;
+  terms_sha256: string;
+  privacy_url: string;
+  privacy_sha256: string;
+}
+interface McpToolPrice {
+  scheme: string;
+  network: string;
+  asset: string;
+  amount_atomic: number;
+  pay_to: string;
+}
+interface McpManifestTool {
+  name: string;
+  description: string;
+  risk_class: string;
+  permissions: string[];
+  price: McpToolPrice;
+}
+interface McpDirectoryApp {
+  namespace: string;
+  status: string;
+  health_status: string;
+  manifest_hash: string;
+  manifest: {
+    name: string;
+    version: string;
+    description: string;
+    publisher_pubkey: string;
+    legal: McpManifestLegal;
+    tools: McpManifestTool[];
+  };
+}
+interface McpInstalledApp {
+  namespace: string;
+  mode: "all" | "selected";
+  device_ids: string[];
+  version: string;
+  legal_consent: boolean;
+  tools: { name: string; enabled: boolean | number }[];
+}
+interface McpApproval {
+  id: string;
+  namespace: string;
+  version: string;
+  tool: string;
+  arguments: unknown;
+  amount_lamports: number;
+  expires_at: number;
+}
 interface ControlDevice {
   id: string;
   name: string;
@@ -147,16 +194,6 @@ function shortKey(pubkey: string | null | undefined, unset: string): string {
   return `${pubkey.slice(0, 6)}…${pubkey.slice(-5)}`;
 }
 
-interface ConnectedWallet {
-  id: string;
-  label: string;
-  provider: string;
-  chain: string; // 'solana' | 'evm'
-  pubkey: string;
-  is_active: boolean;
-  balance_lamports?: number | null; // solo chain=solana (vía RPC del api)
-}
-
 interface DpaasSummary {
   wallet: string | null;
   network?: string | null;
@@ -164,68 +201,12 @@ interface DpaasSummary {
   wallets?: { network: string; wallet_pubkey: string; balance_lamports?: number | null }[];
 }
 
-/** Nombres legibles de chains EVM habituales (eth_chainId → nombre). */
-const EVM_CHAINS: Record<string, string> = {
-  "0x1": "Ethereum",
-  "0x2105": "Base",
-  "0x89": "Polygon",
-  "0xa": "Optimism",
-  "0x38": "BSC",
-  "0xaa36a7": "Sepolia",
-  "0x14a34": "Base Sepolia",
-  "0x66eee": "Arbitrum Sepolia",
-  "0xa4b1": "Arbitrum",
-};
-
 function fmtSol(lamports: number | null | undefined): string {
   if (lamports == null) return "…";
   return `${(lamports / 1_000_000_000).toFixed(4)} SOL`;
 }
 
-function fmtEth(weiHex: string, chainId: string): string {
-  const wei = BigInt(weiHex);
-  const int = wei / 10n ** 18n;
-  const frac = ((wei % 10n ** 18n) / 10n ** 14n).toString().padStart(4, "0");
-  const name = EVM_CHAINS[chainId.toLowerCase()] ?? `chain ${chainId}`;
-  return `${int}.${frac} ETH · ${name}`;
-}
-
-/** Wallets del navegador detectables (extensión instalada). */
-const BROWSER_WALLETS = [
-  { id: "phantom", label: "Phantom", icon: Ghost },
-  { id: "solflare", label: "Solflare", icon: Sun },
-  { id: "backpack", label: "Backpack", icon: Backpack },
-  { id: "metamask", label: "MetaMask", icon: WalletMinimal },
-] as const;
-
-/** Conecta una wallet del navegador y devuelve SOLO su pubkey (base58 o 0x…).
- *  La clave privada nunca sale de la wallet — no se solicita ni se guarda. */
-async function connectBrowserWallet(id: string, t: (key: string) => string): Promise<string> {
-  const w = window as unknown as Record<string, any>;
-
-  if (id === "metamask") {
-    const eth = w.ethereum;
-    if (!eth?.request) throw new Error(t("mmMissing"));
-    const accounts: string[] = await eth.request({ method: "eth_requestAccounts" });
-    if (!accounts?.[0]) throw new Error(t("mmNoAccount"));
-    return accounts[0];
-  }
-
-  const inj =
-    id === "phantom"
-      ? (w.phantom?.solana ?? w.solana)
-      : id === "solflare"
-        ? w.solflare
-        : w.backpack;
-  if (!inj?.connect) throw new Error(t("wMissing"));
-  const res = (await inj.connect()) ?? {};
-  const pk = res?.publicKey?.toString?.() ?? inj.publicKey?.toString?.();
-  if (!pk) throw new Error(t("wNoPubkey"));
-  return pk;
-}
-
-/** Modal Wallet · Red — wallet firmante (dPaaS), wallets del navegador
- *  (Phantom/MetaMask — varias, una en uso) y red blockchain del agente. */
+/** Modal Wallet · Red — wallet firmante dPaaS y red blockchain del agente. */
 function WalletModal({ onClose }: { onClose: () => void }) {
   const t = useTranslations("wallet");
   const tc = useTranslations("common");
@@ -236,14 +217,8 @@ function WalletModal({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [connected, setConnected] = useState<ConnectedWallet[] | null>(null);
-  const [connectWallet, setConnectWallet] = useState("");
-  const [connectingWallet, setConnectingWallet] = useState<string | null>(null);
-  const [faucetBusy, setFaucetBusy] = useState(false);
-  const [faucetMsg, setFaucetMsg] = useState<string | null>(null);
   const [dpaas, setDpaas] = useState<DpaasSummary | null>(null);
   const [generating, setGenerating] = useState(false);
-  const [evmBalance, setEvmBalance] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const selectedNetwork: Network = sandbox
     ? SANDBOX_NETWORKS.includes(network as (typeof SANDBOX_NETWORKS)[number])
@@ -284,16 +259,6 @@ function WalletModal({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const loadConnected = async () => {
-    try {
-      const res = await fetch("/api/account/connected-wallets", { cache: "no-store" });
-      const data = await res.json();
-      if (data.ok) setConnected(data.wallets ?? []);
-    } catch {
-      /* silencioso: la lista principal es la del contexto */
-    }
-  };
-
   useEffect(() => {
     (async () => {
       try {
@@ -310,85 +275,8 @@ function WalletModal({ onClose }: { onClose: () => void }) {
         setError(e instanceof Error ? e.message : tc("networkError"));
       }
     })();
-    loadConnected();
     loadSummary();
   }, []);
-
-  // Balance EVM de la wallet ACTIVA con su propia extensión: ella sabe en
-  // qué red está (el api no puede saberlo). Solo si la pubkey coincide con
-  // la cuenta actual de la extensión.
-  useEffect(() => {
-    (async () => {
-      setEvmBalance(null);
-      try {
-        const w = window as unknown as Record<string, any>;
-        const eth = w.ethereum;
-        const activeEvm = connected?.find((c) => c.is_active && c.chain === "evm");
-        if (!eth?.request || !activeEvm) return;
-        const [accounts, chainId] = await Promise.all([
-          eth.request({ method: "eth_accounts" }) as Promise<string[]>,
-          eth.request({ method: "eth_chainId" }) as Promise<string>,
-        ]);
-        if (!accounts?.[0] || accounts[0].toLowerCase() !== activeEvm.pubkey.toLowerCase()) return;
-        const bal = (await eth.request({
-          method: "eth_getBalance",
-          params: [accounts[0], "latest"],
-        })) as string;
-        setEvmBalance(fmtEth(bal, chainId));
-      } catch {
-        /* sin extensión o sin permiso: sin balance EVM */
-      }
-    })();
-  }, [connected]);
-
-  /** Conectar wallet del navegador → pubkey → guardada en la cuenta (en uso). */
-  const onConnect = async (id: string) => {
-    setConnectingWallet(id);
-    setError(null);
-    try {
-      const pubkey = await connectBrowserWallet(id, t);
-      const res = await fetch("/api/account/connected-wallets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider: id,
-          chain: id === "metamask" ? "evm" : "solana",
-          pubkey,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        setError(data.error ?? `HTTP ${res.status}`);
-        return;
-      }
-      await loadConnected(); // nueva wallet → queda EN USO (solo una activa)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t("errConnect"));
-    } finally {
-      setConnectingWallet(null);
-    }
-  };
-
-  /** Marcar una wallet conectada como la en uso (desactiva las demás). */
-  const useWallet = async (label: string) => {
-    setError(null);
-    try {
-      const res = await fetch("/api/account/connected-wallets", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        setError(data.error ?? `HTTP ${res.status}`);
-        return;
-      }
-      await loadConnected();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : tc("networkError"));
-    }
-  };
-
   /** Crear wallet dPaaS (ed25519, sellada AEAD) — un clic y listo. */
   const onGenerate = async () => {
     setGenerating(true);
@@ -408,34 +296,6 @@ function WalletModal({ onClose }: { onClose: () => void }) {
       setError(e instanceof Error ? e.message : tc("networkError"));
     } finally {
       setGenerating(false);
-    }
-  };
-
-  /** Faucet Devnet: solicita fondos de prueba para la wallet Devnet de la cuenta. */
-  const onFaucet = async () => {
-    setFaucetBusy(true);
-    setError(null);
-    setFaucetMsg(null);
-    try {
-      const res = await fetch("/api/account/faucet", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        setFaucetMsg(data.error ?? `HTTP ${res.status}`);
-        return;
-      }
-      setFaucetMsg(
-        `tx ${String(data.tx_signature).slice(0, 18)}… · ` +
-          `${data.lamports} lamports → ${shortKey(data.wallet_pubkey, t("unset"))}`,
-      );
-      // refrescar contexto de la cuenta + balance
-      const ctxRes = await fetch("/api/account/context", { cache: "no-store" });
-      const ctxData: AccountContext = await ctxRes.json();
-      if (ctxRes.ok && ctxData.ok) setCtx(ctxData);
-      await loadSummary();
-    } catch (e) {
-      setFaucetMsg(e instanceof Error ? e.message : tc("networkError"));
-    } finally {
-      setFaucetBusy(false);
     }
   };
 
@@ -616,33 +476,11 @@ function WalletModal({ onClose }: { onClose: () => void }) {
                 <CardDescription>{t("faucetInfo")}</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-2 px-4 pb-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={onFaucet}
-                  disabled={faucetBusy || selectedNetwork !== "devnet"}
-                >
-                  {faucetBusy ? (
-                    <LoaderCircle className="animate-spin" />
-                  ) : (
-                    <Droplets />
-                  )}
-                  {faucetBusy ? t("dripping") : t("faucet")}
+                <Button asChild variant="outline" size="sm" className="w-fit">
+                  <a href="https://faucet.solana.com/" target="_blank" rel="noopener noreferrer">
+                    {t("faucet")}
+                  </a>
                 </Button>
-                {faucetMsg && (
-                  <p className="text-xs text-muted-foreground">
-                    {faucetMsg}
-                  </p>
-                )}
-                <a
-                  href="https://faucet.solana.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs font-medium text-primary underline-offset-4 hover:underline"
-                >
-                  {t("officialFaucet")}
-                </a>
               </CardContent>
             </Card>
           )}
@@ -655,89 +493,6 @@ function WalletModal({ onClose }: { onClose: () => void }) {
               </CardHeader>
             </Card>
           )}
-
-          <Card className="gap-0 py-0 shadow-none">
-            <CardHeader className="gap-1 px-4 py-3">
-              <CardTitle className="text-sm">{t("browser")}</CardTitle>
-              <CardDescription>{t("browserHint")}</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3 px-4 pb-4">
-              <Select
-                value={connectWallet}
-                onValueChange={(provider) => {
-                  setConnectWallet("");
-                  void onConnect(provider);
-                }}
-              >
-                <SelectTrigger className="w-full sm:w-fit" disabled={connectingWallet !== null}>
-                  {connectingWallet ? (
-                    <LoaderCircle className="animate-spin" />
-                  ) : (
-                    <Plus />
-                  )}
-                  <SelectValue placeholder={connectingWallet ? t("connecting") : t("connectBrowserWallet")} />
-                </SelectTrigger>
-                <SelectContent className="theme-light bg-white text-[#343433]">
-                  {BROWSER_WALLETS.map((bw) => (
-                    <SelectItem key={bw.id} value={bw.id}>
-                      <span className="flex items-center gap-2">
-                        <bw.icon className="size-4" />
-                        {bw.label}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {connected && connected.length > 0 ? (
-                <div className="grid gap-2">
-                  {connected.map((cw) => {
-                    const provider = BROWSER_WALLETS.find((bw) => bw.id === cw.provider);
-                    const WalletIcon = provider?.icon ?? WalletMinimal;
-                    return (
-                      <div
-                        key={cw.id}
-                        className={cn(
-                          "flex items-center gap-3 rounded-lg border p-3",
-                          cw.is_active && "border-primary bg-primary/10",
-                        )}
-                      >
-                        <span className="flex flex-1 flex-col gap-1">
-                          <span className="flex flex-wrap items-center gap-1.5">
-                            <Badge variant="secondary" className="gap-1.5 text-[10px]">
-                              <WalletIcon className="size-3" aria-hidden="true" />
-                              {provider?.label ?? cw.label}
-                            </Badge>
-                            <Badge variant="secondary" className="font-mono text-[10px]">
-                              {cw.chain}
-                            </Badge>
-                          </span>
-                          <small className="text-xs text-muted-foreground">
-                            {shortKey(cw.pubkey, t("unset"))}
-                            {cw.chain === "solana" &&
-                              ` · ${fmtSol(cw.balance_lamports)}`}
-                            {cw.chain === "evm" &&
-                              cw.is_active &&
-                              evmBalance != null &&
-                              ` · ${evmBalance}`}
-                          </small>
-                        </span>
-                        {cw.is_active ? (
-                          <Badge>{t("inUse")}</Badge>
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => useWallet(cw.label)}
-                          >{t("use")}</Button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
 
           <Card className="gap-0 py-0 shadow-none">
             <CardHeader className="gap-1 px-4 py-3">
@@ -1518,6 +1273,7 @@ function DAppsModal({ onClose }: { onClose: () => void }) {
   const [controlApp, setControlApp] = useState<DAppRow | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [catalog, setCatalog] = useState<"hosted" | "mcp">("hosted");
 
   const load = useCallback(async (query: string) => {
     try {
@@ -1592,6 +1348,26 @@ function DAppsModal({ onClose }: { onClose: () => void }) {
       }
       onClose={onClose}
     >
+      <div className="flex w-fit rounded-lg bg-muted p-1" role="tablist" aria-label={t("title")}>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={catalog === "hosted"}
+          onClick={() => setCatalog("hosted")}
+          className={cn("rounded-md px-3 py-1.5 text-xs font-medium transition-colors", catalog === "hosted" && "bg-white text-foreground shadow-sm")}
+        >{t("tabHosted")}</button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={catalog === "mcp"}
+          onClick={() => setCatalog("mcp")}
+          className={cn("rounded-md px-3 py-1.5 text-xs font-medium transition-colors", catalog === "mcp" && "bg-white text-foreground shadow-sm")}
+        >{t("tabMcp")}</button>
+      </div>
+      {catalog === "mcp" ? (
+        <McpMarketplace />
+      ) : (
+        <>
       <form
         className="relative"
         onSubmit={(event) => {
@@ -1696,7 +1472,284 @@ function DAppsModal({ onClose }: { onClose: () => void }) {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
+        </>
+      )}
     </Modal>
+  );
+}
+
+function McpMarketplace() {
+  const t = useTranslations("dapps");
+  const tc = useTranslations("common");
+  const [apps, setApps] = useState<McpDirectoryApp[] | null>(null);
+  const [installed, setInstalled] = useState<McpInstalledApp[]>([]);
+  const [approvals, setApprovals] = useState<McpApproval[]>([]);
+  const [devices, setDevices] = useState<ControlDevice[]>([]);
+  const [scope, setScope] = useState<Record<string, "all" | "selected">>({});
+  const [deviceIds, setDeviceIds] = useState<Record<string, string[]>>({});
+  const [enabledTools, setEnabledTools] = useState<Record<string, Record<string, boolean>>>({});
+  const [accepted, setAccepted] = useState<Record<string, boolean>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const [catalogRes, installedRes, devicesRes, approvalsRes] = await Promise.all([
+        fetch("/api/marketplace/apps", { cache: "no-store" }),
+        fetch("/api/account/marketplace/apps", { cache: "no-store" }),
+        fetch("/api/account/devices", { cache: "no-store" }),
+        fetch("/api/account/marketplace/approvals", { cache: "no-store" }),
+      ]);
+      const [catalogData, installedData, devicesData, approvalsData] = await Promise.all([
+        catalogRes.json(), installedRes.json(), devicesRes.json(), approvalsRes.json(),
+      ]);
+      if (!catalogRes.ok || !catalogData.ok) throw new Error(catalogData.error ?? `HTTP ${catalogRes.status}`);
+      if (!installedRes.ok || !installedData.ok) throw new Error(installedData.error ?? `HTTP ${installedRes.status}`);
+      if (!devicesRes.ok || !devicesData.ok) throw new Error(devicesData.error ?? `HTTP ${devicesRes.status}`);
+      if (!approvalsRes.ok || !approvalsData.ok) throw new Error(approvalsData.error ?? `HTTP ${approvalsRes.status}`);
+      const directoryApps: McpDirectoryApp[] = catalogData.apps ?? [];
+      const installedApps: McpInstalledApp[] = installedData.apps ?? [];
+      setApps(directoryApps);
+      setInstalled(installedApps);
+      setDevices(devicesData.devices ?? []);
+      setApprovals(approvalsData.approvals ?? []);
+      setScope((current) => {
+        const next = { ...current };
+        for (const app of directoryApps) {
+          const prior = installedApps.find((row) => row.namespace === app.namespace);
+          next[app.namespace] ??= prior?.mode ?? "all";
+        }
+        return next;
+      });
+      setDeviceIds((current) => {
+        const next = { ...current };
+        for (const app of directoryApps) {
+          const prior = installedApps.find((row) => row.namespace === app.namespace);
+          next[app.namespace] ??= prior?.device_ids ?? [];
+        }
+        return next;
+      });
+      setEnabledTools((current) => {
+        const next = { ...current };
+        for (const app of directoryApps) {
+          const prior = installedApps.find((row) => row.namespace === app.namespace);
+          const configured = new Map((prior?.legal_consent ? prior.tools : []).map((row) => [row.name, Boolean(row.enabled)]));
+          next[app.namespace] ??= Object.fromEntries(app.manifest.tools.map((tool) => [tool.name, configured.get(tool.name) ?? false]));
+        }
+        return next;
+      });
+      setAccepted((current) => {
+        const next = { ...current };
+        for (const app of directoryApps) {
+          const prior = installedApps.find((row) => row.namespace === app.namespace);
+          const key = `${app.namespace}:${app.manifest_hash}`;
+          if (prior?.legal_consent && prior.version === app.manifest.version) next[key] ??= true;
+        }
+        return next;
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : tc("networkError"));
+    }
+  }, [tc]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const install = async (app: McpDirectoryApp) => {
+    setBusy(app.namespace);
+    setError(null);
+    const selectedMode = scope[app.namespace] ?? "all";
+    const consentKey = `${app.namespace}:${app.manifest_hash}`;
+    try {
+      const res = await fetch("/api/marketplace/apps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          namespace: app.namespace,
+          mode: selectedMode,
+          device_ids: selectedMode === "selected" ? (deviceIds[app.namespace] ?? []) : [],
+          legal_consent: {
+            accepted: Boolean(accepted[consentKey] ?? (installed.find((row) => row.namespace === app.namespace)?.legal_consent && installed.find((row) => row.namespace === app.namespace)?.version === app.manifest.version)),
+            manifest_hash: app.manifest_hash,
+            terms_sha256: app.manifest.legal.terms_sha256,
+            privacy_sha256: app.manifest.legal.privacy_sha256,
+          },
+          tools: app.manifest.tools.map((tool) => ({
+            name: tool.name,
+            enabled: Boolean(enabledTools[app.namespace]?.[tool.name]),
+            max_amount_lamports: tool.price.amount_atomic,
+            require_confirmation: true,
+          })),
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) throw new Error(data?.error ?? (data?.code === "LEGAL_CONSENT_REQUIRED" ? t("mcpNeedsConsent") : `HTTP ${res.status}`));
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("mcpInstallError"));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const decideApproval = async (approval: McpApproval, approved: boolean) => {
+    setBusy(approval.id);
+    setError(null);
+    try {
+      const res = await fetch("/api/account/marketplace/approvals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: approval.id, approved }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("mcpInstallError"));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (!apps && !error) {
+    return <p className="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin" />{t("mcpLoading")}</p>;
+  }
+
+  return (
+    <div className="grid gap-3">
+      <section className="grid gap-2 rounded-xl border p-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold">{t("mcpApprovalsTitle")}</h3>
+          <Badge variant="secondary" className="text-[10px]">{approvals.length}</Badge>
+        </div>
+        {approvals.length === 0 ? (
+          <p className="text-xs text-muted-foreground">{t("mcpApprovalsEmpty")}</p>
+        ) : approvals.map((approval) => (
+          <article key={approval.id} className="grid gap-2 border-t pt-2 text-xs">
+            <p className="font-medium">{approval.namespace} · {approval.tool} · v{approval.version}</p>
+            <pre className="max-h-28 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted/60 p-2 font-mono text-[10px]">{JSON.stringify(approval.arguments, null, 2)}</pre>
+            <p className="text-muted-foreground">{approval.amount_lamports / 1_000_000_000} SOL · {new Date(approval.expires_at).toLocaleTimeString()}</p>
+            <div className="flex justify-end gap-2">
+              <Button type="button" size="sm" variant="outline" disabled={busy !== null} onClick={() => void decideApproval(approval, false)}>
+                {busy === approval.id ? <LoaderCircle className="animate-spin" /> : null}{t("mcpReject")}
+              </Button>
+              <Button type="button" size="sm" disabled={busy !== null} onClick={() => void decideApproval(approval, true)}>
+                {busy === approval.id ? <LoaderCircle className="animate-spin" /> : null}{t("mcpApprove")}
+              </Button>
+            </div>
+          </article>
+        ))}
+      </section>
+      {apps?.length === 0 && !error && (
+        <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">{t("mcpEmpty")}</p>
+      )}
+      {apps?.map((app) => {
+        const prior = installed.find((row) => row.namespace === app.namespace);
+        const selectedMode = scope[app.namespace] ?? "all";
+        const selectedDevices = deviceIds[app.namespace] ?? [];
+        const consentKey = `${app.namespace}:${app.manifest_hash}`;
+        const currentConsent = accepted[consentKey] ?? (prior?.version === app.manifest.version && prior.legal_consent) ?? false;
+        return (
+          <Card key={app.namespace} className="gap-0 rounded-xl py-0 shadow-none">
+            <CardContent className="grid gap-3 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-semibold">{app.manifest.name}</h3>
+                    <Badge variant="outline" className="font-mono text-[10px]">{app.namespace}</Badge>
+                    <Badge variant="secondary" className="font-mono text-[10px]">v{app.manifest.version}</Badge>
+                    {prior && <Badge className="text-[10px]">{t("mcpInstalled")}</Badge>}
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{app.manifest.description}</p>
+                  <p className="mt-1 break-all text-[10px] text-muted-foreground">{t("mcpPublisher")}: {app.manifest.publisher_pubkey}</p>
+                </div>
+                <Badge variant="outline" className="text-[10px]">{app.health_status}</Badge>
+              </div>
+
+              <section className="grid gap-2 rounded-lg bg-muted/50 p-3 text-xs">
+                <p className="font-medium">{t("mcpTools")}</p>
+                {app.manifest.tools.map((tool) => (
+                  <label key={tool.name} className="flex cursor-pointer items-start gap-2 border-t pt-2">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(enabledTools[app.namespace]?.[tool.name])}
+                      onChange={(event) => setEnabledTools((current) => ({
+                        ...current,
+                        [app.namespace]: { ...current[app.namespace], [tool.name]: event.target.checked },
+                      }))}
+                      className="mt-0.5 accent-zinc-900"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex flex-wrap items-center gap-1.5 font-medium">
+                        <span>{tool.name}</span>
+                        <Badge variant="outline" className="text-[9px]">{t("mcpRisk")}: {tool.risk_class}</Badge>
+                      </span>
+                      <span className="block text-muted-foreground">{tool.description}</span>
+                      <span className="mt-0.5 block font-mono text-[10px]">
+                        {tool.price.amount_atomic / 1_000_000_000} SOL · {tool.price.network} · pay_to {tool.price.pay_to}
+                      </span>
+                      {!!tool.permissions.length && <span className="mt-1 block text-[10px] text-muted-foreground">{tool.permissions.join(" · ")}</span>}
+                    </span>
+                  </label>
+                ))}
+              </section>
+
+              <section className="grid gap-1 rounded-lg border p-3 text-[10px] text-muted-foreground">
+                <p className="font-medium text-foreground">{t("mcpTerms")} / {t("mcpPrivacy")}</p>
+                {[{ kind: "terms", label: t("mcpTerms"), url: app.manifest.legal.terms_url, hash: app.manifest.legal.terms_sha256 },
+                  { kind: "privacy", label: t("mcpPrivacy"), url: app.manifest.legal.privacy_url, hash: app.manifest.legal.privacy_sha256 }].map((document) => (
+                  <p key={document.label} className="break-all">
+                    {document.label}: <a className="underline underline-offset-2" href={`/api/marketplace/legal?namespace=${encodeURIComponent(app.namespace)}&document=${document.kind}`} target="_blank" rel="noopener noreferrer">{t("mcpVerifiedCopy")}</a>
+                    <span className="block">{document.url}</span>
+                    <span className="block">{t("mcpHash")}: {document.hash}</span>
+                  </p>
+                ))}
+              </section>
+
+              <fieldset className="grid gap-2 text-xs">
+                <legend className="mb-1 font-medium">{t("mcpScope")}</legend>
+                <div className="flex flex-wrap gap-x-4 gap-y-2">
+                  <label className="flex items-center gap-2"><input type="radio" name={`scope-${app.namespace}`} checked={selectedMode === "all"} onChange={() => setScope((current) => ({ ...current, [app.namespace]: "all" }))} />{t("mcpAllDevices")}</label>
+                  <label className="flex items-center gap-2"><input type="radio" name={`scope-${app.namespace}`} checked={selectedMode === "selected"} onChange={() => setScope((current) => ({ ...current, [app.namespace]: "selected" }))} />{t("mcpSelectedDevices")}</label>
+                </div>
+                {selectedMode === "selected" && (devices.length ? (
+                  <div className="grid max-h-28 gap-1 overflow-y-auto rounded-md border p-2">
+                    {devices.map((device) => (
+                      <label key={device.id} className="flex items-center gap-2">
+                        <input type="checkbox" checked={selectedDevices.includes(device.id)} onChange={(event) => setDeviceIds((current) => ({
+                          ...current,
+                          [app.namespace]: event.target.checked
+                            ? [...new Set([...selectedDevices, device.id])]
+                            : selectedDevices.filter((id) => id !== device.id),
+                        }))} />
+                        <span>{device.name} <span className="text-muted-foreground">· {device.board}</span></span>
+                      </label>
+                    ))}
+                  </div>
+                ) : <p className="text-muted-foreground">{t("mcpNoDevices")}</p>)}
+              </fieldset>
+
+              <label className="flex cursor-pointer items-start gap-2 border-t pt-3 text-xs leading-relaxed">
+                <input type="checkbox" checked={Boolean(currentConsent)} onChange={(event) => setAccepted((current) => ({ ...current, [consentKey]: event.target.checked }))} className="mt-0.5 accent-zinc-900" />
+                <span>{t("mcpAccept")}</span>
+              </label>
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => void install(app)}
+                  disabled={busy !== null || !currentConsent || (selectedMode === "selected" && selectedDevices.length === 0)}
+                >
+                  {busy === app.namespace ? <LoaderCircle className="animate-spin" /> : <Plus />}
+                  {prior ? t("mcpUpdate") : t("mcpInstall")}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
+      {error && <Alert variant="destructive"><TriangleAlert /><AlertDescription>{error}</AlertDescription></Alert>}
+    </div>
   );
 }
 
