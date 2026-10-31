@@ -264,18 +264,30 @@ fn sim_heartbeat(state: &SharedState, sim: &mut Value) -> AppResult<()> {
 }
 
 /// Cache de las dapps INSTALADAS (la pantalla «apps» del OS simulado).
-fn refresh_apps(state: &SharedState, sim: &mut Value) {
-    let apps: Vec<Value> = crate::modules::apps::all(state)
-        .into_iter()
-        .filter(|r| r.status == "installed")
-        .map(|r| {
-            let tools_count = serde_json::from_str::<Vec<Value>>(&r.tools)
-                .map(|v| v.len())
-                .unwrap_or(0) as i64;
-            json!({ "slug": r.slug, "name": r.name, "status": r.status, "tools_count": tools_count })
-        })
-        .collect();
+fn refresh_apps(state: &SharedState, account: &str, sim: &mut Value) -> AppResult<()> {
+    let device_id = s(sim, "device_id");
+    let mut apps = Vec::new();
+    for row in crate::modules::apps::all(state) {
+        if row.status != "installed" {
+            continue;
+        }
+        if let Some(device_id) = device_id.as_deref() {
+            if !crate::modules::apps::visible_to_device(state, account, device_id, &row.slug)? {
+                continue;
+            }
+        }
+        let tools_count = serde_json::from_str::<Vec<Value>>(&row.tools)
+            .map(|v| v.len())
+            .unwrap_or(0) as i64;
+        apps.push(json!({
+            "slug": row.slug,
+            "name": row.name,
+            "status": row.status,
+            "tools_count": tools_count
+        }));
+    }
     sim["apps"] = json!(apps);
+    Ok(())
 }
 
 /// Resumen LLM de la cuenta para los ajustes del dispositivo (SIN
@@ -422,13 +434,17 @@ pub async fn get_handler(
 ) -> AppResult<Response> {
     let mut sim = load(&state, &auth.account_id);
     sim["llm"] = llm_summary(&state, &auth.account_id);
-    refresh_apps(&state, &mut sim);
+    refresh_apps(&state, &auth.account_id, &mut sim)?;
     Ok(Json(json!({ "ok": true, "simulation": sim })).into_response())
 }
 
 #[derive(Deserialize)]
 pub struct StepBody {
     action: String,
+    /// Código que el usuario copió de la pantalla al emparejar desde Flota.
+    /// Solo se envía para validar el emparejado manual del simulador.
+    #[serde(default)]
+    claim_code: Option<String>,
     /// Texto del turno de voz (acción `say`).
     #[serde(default)]
     text: Option<String>,
@@ -483,10 +499,20 @@ pub async fn step_handler(
             }
         }
         "claim" => {
+            if let Some(provided_code) = body.claim_code.as_deref() {
+                let expected_code = s(&sim, "claim_code").unwrap_or_default();
+                if provided_code.trim().to_uppercase() != expected_code.to_uppercase()
+                    || expected_code.is_empty()
+                {
+                    return Err(AppError::bad_request(
+                        "el código no coincide con el que muestra el simulador",
+                    ));
+                }
+            }
             if sim_claim_and_token(&state, &auth.account_id, &mut sim)? {
                 event(&mut sim, "claim");
                 event(&mut sim, "online");
-                refresh_apps(&state, &mut sim);
+                refresh_apps(&state, &auth.account_id, &mut sim)?;
                 sim["screen"] = json!("home"); // al entrar, la pantalla principal
                 sim["locked"] = json!(true); // como la placa real: arranca bloqueado
             } else {
@@ -582,7 +608,7 @@ pub async fn step_handler(
             event(&mut sim, "heartbeat");
         }
         "apps" => {
-            refresh_apps(&state, &mut sim);
+            refresh_apps(&state, &auth.account_id, &mut sim)?;
             event(&mut sim, "apps");
         }
         "x402" => {

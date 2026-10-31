@@ -96,35 +96,13 @@ impl SolanaClient {
         let r = self
             .rpc(
                 "getSignatureStatuses",
-                json!([[sig], { "searchTransactionHistory": false }]),
+                json!([[sig], { "searchTransactionHistory": true }]),
             )
             .await?;
         let entry = r.get("value").and_then(|v| v.get(0));
         match entry {
             None | Some(Value::Null) => Ok(None),
-            Some(v) => {
-                let conf = v
-                    .get("confirmationStatus")
-                    .and_then(|c| c.as_str())
-                    .unwrap_or("");
-                let on_chain_err = v
-                    .get("status")
-                    .and_then(|s| s.get("Err"))
-                    .map(|e| e.to_string());
-                if let Some(err) = on_chain_err {
-                    return Ok(Some((false, Some(err))));
-                }
-                let ok = match v.get("status") {
-                    Some(s) => s.get("Ok").is_some() || s.get("Err").is_none(),
-                    None => matches!(conf, "confirmed" | "finalized"),
-                };
-                let conf = if conf.is_empty() {
-                    None
-                } else {
-                    Some(conf.to_string())
-                };
-                Ok(Some((ok, conf)))
-            }
+            Some(v) => Ok(signature_status_from_entry(v)),
         }
     }
 
@@ -132,13 +110,70 @@ impl SolanaClient {
         let r = self
             .rpc(
                 "sendTransaction",
-                json!([tx_b64, { "encoding": "base64", "skipPreflight": true }]),
+                json!([tx_b64, {
+                    "encoding": "base64",
+                    "skipPreflight": false,
+                    "preflightCommitment": "confirmed"
+                }]),
             )
             .await?;
         r.as_str()
             .map(|s| s.to_string())
             .ok_or_else(|| "sendTransaction sin firma".to_string())
     }
+
+    pub async fn request_airdrop(&self, pubkey: &str, lamports: u64) -> Result<String, String> {
+        let r = self
+            .rpc(
+                "requestAirdrop",
+                json!([pubkey, lamports, { "commitment": "confirmed" }]),
+            )
+            .await?;
+        r.as_str()
+            .map(str::to_string)
+            .ok_or_else(|| "requestAirdrop sin firma".to_string())
+    }
+
+    pub async fn get_fee_for_message(&self, message_b64: &str) -> Result<u64, String> {
+        let r = self
+            .rpc(
+                "getFeeForMessage",
+                json!([message_b64, { "commitment": "confirmed" }]),
+            )
+            .await?;
+        r.get("value")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| "getFeeForMessage devolvió null".to_string())
+    }
+}
+
+fn signature_status_from_entry(entry: &Value) -> Option<(bool, Option<String>)> {
+    if let Some(err) = entry.get("err").filter(|err| !err.is_null()) {
+        return Some((false, Some(err.to_string())));
+    }
+
+    let confirmation = entry
+        .get("confirmationStatus")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if matches!(confirmation, "confirmed" | "finalized") {
+        return Some((true, Some(confirmation.to_string())));
+    }
+
+    if confirmation == "processed"
+        || entry
+            .get("confirmations")
+            .is_some_and(|confirmations| !confirmations.is_null())
+    {
+        return None;
+    }
+
+    // Older RPC nodes signal finalization with confirmations: null.
+    if entry.get("confirmations").is_some_and(Value::is_null) && entry.get("err").is_some() {
+        return Some((true, Some("finalized".to_string())));
+    }
+
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -214,6 +249,17 @@ pub fn resolve_wallet(cfg: &Config) -> Option<String> {
             return pubkey_of_keypair_file(w).ok();
         }
         return Some(w.to_string());
+    }
+    // Si no se configuró una wallet de observación, el cobrador global de
+    // x402 sirve como dirección pública para mostrar su balance en el navbar.
+    // No se usa para pagar ni se confunde con la wallet dPaaS de una cuenta.
+    if let Some(payee) = cfg
+        .x402_payee
+        .as_deref()
+        .map(str::trim)
+        .filter(|w| !w.is_empty())
+    {
+        return Some(payee.to_string());
     }
     let path = keypair_path_from_cli_config()
         .or_else(|| home_dir().map(|h| format!("{h}/.config/solana/id.json")))?;
@@ -436,6 +482,15 @@ pub async fn transfer_lamports_with_kp(
     bh.copy_from_slice(&bh_bytes);
 
     let msg = build_transfer_message(&from_pub, &to, lamports, &bh);
+    let message_b64 = base64::engine::general_purpose::STANDARD.encode(&msg);
+    let fee = client.get_fee_for_message(&message_b64).await?;
+    let balance = client.get_balance(&b58::encode(&from_pub)).await?;
+    let required = lamports.saturating_add(fee);
+    if balance < 0 || (balance as u64) < required {
+        return Err(format!(
+            "saldo insuficiente: la wallet tiene {balance} lamports y requiere {required} ({lamports} del pago + {fee} de comisión); fondea la wallet de la misma red y vuelve a intentar"
+        ));
+    }
     let sig = sign_message(&seed_of(kp), &from_pub, &msg)?;
 
     // Tx wire: compact(1 firmante) + firma(64) + message.
@@ -458,6 +513,42 @@ mod tests {
         assert_eq!(fmt_sol(2_100_000_000), "2.1");
         assert_eq!(fmt_sol(0), "0 SOL");
         assert_eq!(fmt_sol(1_000_000_000), "1 SOL");
+    }
+
+    #[test]
+    fn processed_signature_is_pending_until_confirmed() {
+        let processed = json!({
+            "err": null,
+            "confirmations": 0,
+            "confirmationStatus": "processed"
+        });
+        assert_eq!(signature_status_from_entry(&processed), None);
+
+        let confirmed = json!({
+            "err": null,
+            "confirmations": 1,
+            "confirmationStatus": "confirmed"
+        });
+        assert_eq!(
+            signature_status_from_entry(&confirmed),
+            Some((true, Some("confirmed".to_string())))
+        );
+    }
+
+    #[test]
+    fn on_chain_error_is_reported_as_rejected() {
+        let failed = json!({
+            "err": { "InstructionError": [0, "InsufficientFunds"] },
+            "confirmations": 0,
+            "confirmationStatus": "processed"
+        });
+        assert_eq!(
+            signature_status_from_entry(&failed),
+            Some((
+                false,
+                Some("{\"InstructionError\":[0,\"InsufficientFunds\"]}".to_string())
+            ))
+        );
     }
 
     #[test]

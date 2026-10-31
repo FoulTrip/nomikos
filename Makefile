@@ -14,14 +14,13 @@ SHELL := /bin/bash
 ROOT  := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 LOGS  := /tmp/nomikos
 .DEFAULT_GOAL := help
-.PHONY: help env secrets install up down status logs test test-smoke app-init \
+.PHONY: help env secrets install up down status logs up-host down-host status-host logs-host test test-smoke app-init \
         image flash esp32 esp32-flash wasm clean ui
 
 # ── puertos del ecosistema ──
 P_API := 8080
 P_BRAIN := 8322
 P_STACK := 8321
-P_OLLAMA := 11434
 P_DAPP := 3000
 P_APP := 3100
 P_VERIFIER_UI := 8765
@@ -55,39 +54,46 @@ app-init:
 
 ## ── INSTALACIÓN (una vez por máquina) ─────────────────────────────────
 
-## install: dependencias + builds (api, venvs de brain, dapp, tests, ollama)
+## install: dependencias nativas para make up-host (api, brain, dapp, tests)
 install:
 	@cd "$(ROOT)/api" && cargo build
 	@cd "$(ROOT)/brain" && [ -x .venv/bin/python ] || { python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt; }
 	@cd "$(ROOT)/brain" && [ -x .venv-stack/bin/llama ] || { echo "  (stack opcional: make install-stack)"; }
 	@cd "$(ROOT)/dapp" && [ -d node_modules ] || npm install
 	@cd "$(ROOT)/tests" && [ -d node_modules ] || npm install
-	@command -v ollama >/dev/null || { echo "⚠ instala ollama: curl -fsSL https://ollama.com/install.sh | sh"; exit 1; }
-	@for m in llama-guard3:1b llama3.2:1b; do ollama list 2>/dev/null | grep -q "$$m" || ollama pull "$$m"; done
-	@echo "install listo — make up"
+	@echo "install listo — make up-host"
 
 ## install-stack: venv de Llama Stack (opcional — solo si self-hosteas
 ## tu propio stack y lo apuntas como provider custom de tu cuenta)
 install-stack:
 	@cd "$(ROOT)/brain" && { [ -x .venv-stack/bin/llama ] || \
 		{ python3 -m venv .venv-stack && .venv-stack/bin/pip install -q llama-stack openai "mcp==1.23.0" chardet pypdf; }; }
-	@echo "stack listo — pon NVIDIA_API_KEY en .env y make up"
+	@echo "stack listo — configúralo como proveedor custom de una cuenta"
 
 ## ── ECOSISTEMA LOCAL (la PC) ──────────────────────────────────────────
 
-## up: valida el .env raíz y prende TODO (api, brain, ollama, dapp, app local)
+## up: crea .env/secretos y construye en secuencia todo el stack Docker
 up:
+	@bash "$(ROOT)/scripts/nomikos.sh" up $(svc)
+
+## down: apaga el stack Docker sin borrar datos persistentes
+down:
+	@bash "$(ROOT)/scripts/nomikos.sh" down
+
+## status: estado de los contenedores Docker
+status:
+	@bash "$(ROOT)/scripts/nomikos.sh" status
+
+## logs: sigue logs Docker (make logs svc=api)
+logs:
+	@bash "$(ROOT)/scripts/nomikos.sh" logs $(svc)
+
+## up-host: inicia los procesos nativos del host (alternativa de desarrollo)
+up-host:
 	@mkdir -p "$(LOGS)"
 	@cd "$(ROOT)" && test -f .env || { echo "falta .env — cp .env.example .env && make secrets"; exit 1; }
 	@$(MAKE) --no-print-directory env
 	@echo "── arrancando (logs en $(LOGS)/):"
-	@# ollama (shields Llama Guard — el razonamiento es 100% de la cuenta).
-	@# CPU a propósito: la iGPU compartida se queda sin VRAM con el prompt
-	@# largo del guard (ErrorOutOfDeviceMemory → 500s intermitentes) y esta
-	@# build ignora OLLAMA_NUM_GPU; VK_ICD_FILENAMES=/dev/null oculta las
-	@# GPUs a Vulkan y llama.cpp cae a CPU (el 1B tarda segundos).
-	@bash -c '(echo > /dev/tcp/localhost/$(P_OLLAMA)) 2>/dev/null || \
-		{ VK_ICD_FILENAMES=/dev/null OLLAMA_NUM_GPU=0 nohup ollama serve > "$(LOGS)/ollama.log" 2>&1 & echo "  ↑ ollama :$(P_OLLAMA) (CPU)"; }'
 	@# api (binario ya compilado por make install)
 	@test -x "$(ROOT)/api/target/debug/agent-os-api" || { $(MAKE) --no-print-directory install; }
 	@set -a; . "$(ROOT)/.env"; set +a; \
@@ -113,29 +119,29 @@ up:
 	bash -c '(echo > /dev/tcp/localhost/$(P_DAPP)) 2>/dev/null || \
 		{ cd "$(ROOT)/dapp" && nohup npm run dev > "$(LOGS)/dapp.log" 2>&1 & echo "  ↑ dapp :$(P_DAPP)"; }'
 	@echo "── esperando salud de los servicios…"
-	@bash -c 'ok=0; for p in $(P_OLLAMA) $(P_API) $(P_BRAIN) $(P_DAPP) $(P_APP); do \
+	@bash -c 'ok=0; for p in $(P_API) $(P_BRAIN) $(P_DAPP) $(P_APP); do \
 		for i in $$(seq 1 60); do (echo > /dev/tcp/localhost/$$p) 2>/dev/null && { ok=1; break; }; sleep 1.5; done; \
 		if [ $$ok -eq 1 ]; then echo "  ✓ :$$p listo"; else echo "  ✗ :$$p no respondió (revisa make logs svc=<api|brain|app|dapp>)"; fi; ok=0; done'
-	@$(MAKE) --no-print-directory status
+	@$(MAKE) --no-print-directory status-host
 
-## down: apaga todo el ecosistema local
-down:
+## down-host: apaga los procesos nativos por puerto
+down-host:
 	@for p in $(P_DAPP) $(P_APP) $(P_BRAIN) $(P_STACK) $(P_API); do fuser -k $$p/tcp 2>/dev/null && echo "  ↓ :$$p" || true; done
-	@pkill -x agent-os-api 2>/dev/null || true; pkill -x ollama 2>/dev/null || true
+	@pkill -x agent-os-api 2>/dev/null || true
 	@echo "ecosistema apagado"
 
-## status: salud de los servicios
-status:
+## status-host: salud de procesos nativos del host
+status-host:
 	@echo "── NomikOS:"
-	@for p in "$(P_API)=api" "$(P_BRAIN)=brain" "$(P_OLLAMA)=ollama(shields)" "$(P_DAPP)=dapp" "$(P_APP)=app"; do \
+	@for p in "$(P_API)=api" "$(P_BRAIN)=brain" "$(P_DAPP)=dapp" "$(P_APP)=app"; do \
 		port="$${p%%=*}"; name="$${p##*=}"; \
 		if (echo > /dev/tcp/localhost/$$port) 2>/dev/null; then printf "  ✓ :%-5s %s\n" "$$port" "$$name"; \
 		else printf "  ✗ :%-5s %s (DOWN)\n" "$$port" "$$name"; fi; done
 	@curl -sm3 http://localhost:$(P_API)/api/health -o /dev/null 2>/dev/null && echo "  ✓ api /health 200" || true
 	@curl -sm3 http://localhost:$(P_BRAIN)/v1/health -o /dev/null 2>/dev/null && echo "  ✓ brain /v1/health 200" || true
 
-## logs: tail de los logs del ecosistema (logs svc=api)
-logs:
+## logs-host: sigue logs de /tmp/nomikos (logs-host svc=api)
+logs-host:
 	@if [ -z "$(svc)" ]; then ls "$(LOGS)" 2>/dev/null; else tail -f "$(LOGS)/$(svc).log"; fi
 
 ## ui: consola del verificador legal S2 (workshop) en :8765 (estática → api :8080)

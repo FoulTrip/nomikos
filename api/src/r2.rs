@@ -1,12 +1,12 @@
-//! Cliente mínimo de Cloudflare R2 (S3-compatible) con firma SigV4 a mano.
+//! Cliente mínimo S3-compatible (RustFS local y Cloudflare R2) con firma SigV4 a mano.
 //!
 //! Se firma con sha2 + hmac y se calcula la fecha civil sin dependencias.
-//! La petición es path-style: https://{account}.r2.cloudflarestorage.com/{bucket}/{key}
+//! Las peticiones son path-style: {endpoint}/{bucket}/{key}.
 //!
 //! (Se evitó `object_store` porque introduce checksums que R2 rechaza con
 //! `XAmzContentSHA256Mismatch`.)
 
-use crate::config::R2Config;
+use crate::config::{ObjectStoreBackend, ObjectStoreConfig};
 use base64::Engine;
 use hmac::{Hmac, Mac};
 use reqwest::header::{AUTHORIZATION, CONTENT_LENGTH};
@@ -15,10 +15,8 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 type HmacSha256 = Hmac<Sha256>;
-const REGION: &str = "auto"; // así trata R2 a la región en SigV4
-
-pub struct R2 {
-    cfg: R2Config,
+pub struct ObjectStore {
+    cfg: ObjectStoreConfig,
     http: reqwest::Client,
 }
 
@@ -84,9 +82,13 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
-impl R2 {
-    pub fn new(cfg: R2Config, http: reqwest::Client) -> Self {
+impl ObjectStore {
+    pub fn new(cfg: ObjectStoreConfig, http: reqwest::Client) -> Self {
         Self { cfg, http }
+    }
+
+    pub fn backend(&self) -> ObjectStoreBackend {
+        self.cfg.backend
     }
 
     /// URI canónica del recurso: /{bucket}/{key}
@@ -112,9 +114,9 @@ impl R2 {
         );
         let amz_date = format!("{year:04}{month:02}{day:02}T{h:02}{m:02}{s:02}Z");
         let date_str = format!("{year:04}{month:02}{day:02}");
-        let scope = format!("{date_str}/{REGION}/s3/aws4_request");
+        let scope = format!("{date_str}/{}/s3/aws4_request", self.cfg.region);
 
-        let host = self.cfg.host();
+        let host = self.cfg.endpoint_host();
         let signed_headers = "host;x-amz-content-sha256;x-amz-date";
         let canonical_headers =
             format!("host:{host}\nx-amz-content-sha256:{payload_hash}\nx-amz-date:{amz_date}\n");
@@ -130,7 +132,7 @@ impl R2 {
             format!("AWS4{}", self.cfg.secret_access_key).as_bytes(),
             date_str.as_bytes(),
         );
-        let k_region = hmac_sha256(&k_date, REGION.as_bytes());
+        let k_region = hmac_sha256(&k_date, self.cfg.region.as_bytes());
         let k_service = hmac_sha256(&k_region, b"s3");
         let k_signing = hmac_sha256(&k_service, b"aws4_request");
         let signature = hex_string(&hmac_sha256(&k_signing, string_to_sign.as_bytes()));
@@ -148,14 +150,24 @@ impl R2 {
         key: &str,
         body: Option<Vec<u8>>,
     ) -> Result<Response, String> {
-        let url = format!("https://{}{}", self.cfg.host(), self.canonical_uri(key));
+        self.signed_request_uri(method, self.canonical_uri(key), body)
+            .await
+    }
+
+    async fn signed_request_uri(
+        &self,
+        method: Method,
+        canonical_uri: String,
+        body: Option<Vec<u8>>,
+    ) -> Result<Response, String> {
+        let url = format!("{}{}", self.cfg.endpoint_url, canonical_uri);
         // x-amz-content-sha256: hash del body (vacío para GET, real para PUT)
         let payload_hash = match &body {
             Some(data) => hex_string(&sha256(data)),
             None => hex_string(&sha256(b"")),
         };
         let (amz_date, _scope, authz) =
-            self.build_authz(method.as_str(), &self.canonical_uri(key), &payload_hash);
+            self.build_authz(method.as_str(), &canonical_uri, &payload_hash);
 
         let mut req = self
             .http
@@ -175,17 +187,21 @@ impl R2 {
             req = req.body(data);
         }
 
-        let res = req.send().await.map_err(|e| format!("R2 request: {e}"))?;
+        let res = req
+            .send()
+            .await
+            .map_err(|e| format!("object storage request: {e}"))?;
         let status = res.status();
         if !status.is_success() {
             let text = res.text().await.unwrap_or_default();
-            return Err(format!("R2 {status}: {}", truncate(&text, 300)));
+            return Err(format!("object storage {status}: {}", truncate(&text, 300)));
         }
         Ok(res)
     }
 
     /// Sube un objeto; devuelve tamaño y ETag (md5 entre comillas se recorta).
     pub async fn put(&self, key: &str, data: Vec<u8>) -> Result<Uploaded, String> {
+        self.ensure_local_bucket().await?;
         let size = data.len() as i64;
         let res = self.signed_request(Method::PUT, key, Some(data)).await?;
         let etag = res
@@ -199,13 +215,44 @@ impl R2 {
     /// Descarga el objeto entero a memoria (el GLB cabe de sobra).
     pub async fn get(&self, key: &str) -> Result<Vec<u8>, String> {
         let res = self.signed_request(Method::GET, key, None).await?;
-        let bytes = res.bytes().await.map_err(|e| format!("R2 body: {e}"))?;
+        let bytes = res
+            .bytes()
+            .await
+            .map_err(|e| format!("object storage body: {e}"))?;
         Ok(bytes.to_vec())
+    }
+
+    pub async fn head(&self, key: &str) -> Result<(), String> {
+        self.signed_request(Method::HEAD, key, None).await?;
+        Ok(())
+    }
+
+    async fn ensure_local_bucket(&self) -> Result<(), String> {
+        if self.cfg.backend != ObjectStoreBackend::LocalS3 {
+            return Ok(());
+        }
+        let bucket_uri = format!("/{}", pct_path(&self.cfg.bucket));
+        match self
+            .signed_request_uri(Method::HEAD, bucket_uri.clone(), None)
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(error) if error.contains("404") => self
+                .signed_request_uri(Method::PUT, bucket_uri, None)
+                .await
+                .map(|_| ()),
+            Err(error) => Err(error),
+        }
     }
 
     /// Descarga un objeto vía Cloudflare REST API con Bearer token.
     /// GET https://api.cloudflare.com/client/v4/accounts/{id}/storage/r2/objects/{bucket}/{key}
     pub async fn get_via_cloudflare_api(&self, key: &str) -> Result<Vec<u8>, String> {
+        if self.cfg.backend != ObjectStoreBackend::CloudflareR2 {
+            return Err(
+                "Cloudflare API solo está disponible con OBJECT_STORE_BACKEND=r2".to_string(),
+            );
+        }
         let Some(token) = self.cfg.api_token.as_deref().filter(|t| !t.is_empty()) else {
             return Err("R2 API Token no configurado".to_string());
         };

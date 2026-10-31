@@ -28,9 +28,10 @@ use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::path::{Path as FsPath, PathBuf};
 
 const APP_COLS: &str =
     "slug, name, COALESCE(description,''), COALESCE(version,''), status, base_url, auth_enc, tools";
@@ -123,6 +124,47 @@ pub fn search(state: &SharedState, query: &str) -> Vec<AppRow> {
         .unwrap_or_default()
 }
 
+#[derive(Clone)]
+struct AppVisibility {
+    mode: String,
+    device_ids: Vec<String>,
+}
+
+fn app_visibility(state: &SharedState, account_id: &str, slug: &str) -> AppResult<AppVisibility> {
+    let row: Option<(String, String)> = state.db.with(|c| {
+        c.query_row(
+            "SELECT mode, device_ids_json FROM account_app_visibility \
+             WHERE account_id = ?1 AND app_slug = ?2",
+            params![account_id, slug],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()
+    })?;
+    match row {
+        Some((mode, raw_ids)) => Ok(AppVisibility {
+            mode,
+            device_ids: serde_json::from_str(&raw_ids)?,
+        }),
+        None => Ok(AppVisibility {
+            mode: "all".into(),
+            device_ids: Vec::new(),
+        }),
+    }
+}
+
+/// Decide si una DApp asignada debe aparecer en el catálogo de un dispositivo.
+/// La política por defecto es toda la flota para conservar apps ya instaladas.
+pub fn visible_to_device(
+    state: &SharedState,
+    account_id: &str,
+    device_id: &str,
+    slug: &str,
+) -> AppResult<bool> {
+    let policy = app_visibility(state, account_id, slug)?;
+    Ok(policy.mode == "all"
+        || (policy.mode == "selected" && policy.device_ids.iter().any(|id| id == device_id)))
+}
+
 // ---------------------------------------------------------------------------
 // Registro: los manifiestos de dapps/registry entran a la tabla (idempotente)
 // ---------------------------------------------------------------------------
@@ -207,15 +249,35 @@ pub fn open_auth(state: &SharedState, row: &AppRow) -> Option<Value> {
 /// Ejecuta el instalador y actualiza la tabla. Corre en un task aparte:
 /// el estado se sondea con GET /api/apps/{slug}.
 async fn run_install(state: SharedState, slug: String) {
-    let result_file = format!("/tmp/nomikos-install-{slug}.json");
+    let result_file = std::env::temp_dir()
+        .join(format!("nomikos-install-{slug}.json"))
+        .to_string_lossy()
+        .into_owned();
     let _ = std::fs::remove_file(&result_file);
 
-    let out = tokio::process::Command::new("bash")
-        .arg(&state.cfg.app_install_script)
-        .arg(&slug)
-        .arg(&result_file)
-        .output()
-        .await;
+    let script = installer_script_path(&state.cfg.app_install_script);
+    #[cfg(windows)]
+    let mut command = {
+        let mut command = tokio::process::Command::new("powershell.exe");
+        command
+            .args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+            ])
+            .arg(&script);
+        command
+    };
+    #[cfg(not(windows))]
+    let mut command = {
+        let mut command = tokio::process::Command::new("bash");
+        command.arg(&script);
+        command
+    };
+    let out = command.arg(&slug).arg(&result_file).output().await;
 
     let (ok, log) = match out {
         Ok(o) => (
@@ -232,15 +294,16 @@ async fn run_install(state: SharedState, slug: String) {
     let log: String = log.chars().take(16_000).collect();
 
     if !ok {
+        let _ = std::fs::remove_file(&result_file);
         set_status(&state, &slug, "failed", None, None, Some(&log));
         tracing::warn!("apps: instalación de {slug} FALLÓ (ver /api/apps/{slug})");
         return;
     }
 
     // el instalador deja {base_url, email?, password?, token?} en result_file
-    let parsed: Option<Value> = std::fs::read_to_string(&result_file)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok());
+    let result_json = std::fs::read_to_string(&result_file);
+    let _ = std::fs::remove_file(&result_file);
+    let parsed: Option<Value> = result_json.ok().and_then(|s| serde_json::from_str(&s).ok());
     let Some(res) = parsed else {
         set_status(
             &state,
@@ -280,6 +343,15 @@ async fn run_install(state: SharedState, slug: String) {
         Some(&log),
     );
     tracing::info!("apps: {slug} INSTALADA en {base_url} — tools al MCP manager");
+}
+
+fn installer_script_path(configured: &str) -> PathBuf {
+    let configured = FsPath::new(configured);
+    if cfg!(windows) {
+        configured.with_extension("ps1")
+    } else {
+        configured.to_path_buf()
+    }
 }
 
 fn set_status(
@@ -350,6 +422,7 @@ pub struct ListAppsQuery {
 pub async fn list_handler(
     State(state): State<SharedState>,
     Query(query): Query<ListAppsQuery>,
+    headers: HeaderMap,
 ) -> AppResult<Response> {
     let query: String = query
         .q
@@ -358,15 +431,130 @@ pub async fn list_handler(
         .chars()
         .take(128)
         .collect();
-    let apps: Vec<Value> = search(&state, &query)
-        .iter()
-        .map(|r| app_value(&state, r, false))
-        .collect();
+    let identity = resolve_identity(&state, &headers)?;
+    let mut apps = Vec::new();
+    for row in search(&state, &query) {
+        if let Some((account_id, Some(device_id))) = identity.as_ref() {
+            if !visible_to_device(&state, account_id, device_id, &row.slug)? {
+                continue;
+            }
+        }
+        apps.push(app_value(&state, &row, false));
+    }
     Ok(Json(json!({
         "ok": true,
         "apps": apps,
         "query": query,
         "how": "POST /api/apps/{slug}/install (con Bearer de cuenta o dispositivo)",
+    }))
+    .into_response())
+}
+
+#[derive(Deserialize)]
+pub struct AppVisibilityBody {
+    mode: String,
+    #[serde(default)]
+    device_ids: Vec<String>,
+}
+
+/// GET /api/accounts/me/apps/{slug}/visibility — política de visibilidad.
+pub async fn get_visibility_handler(
+    State(state): State<SharedState>,
+    auth: crate::modules::accounts::AuthedAccount,
+    Path(slug): Path<String>,
+) -> AppResult<Response> {
+    by_slug(&state, &slug)
+        .ok_or_else(|| AppError::not_found(format!("DApp «{slug}» no existe")))?;
+    let policy = app_visibility(&state, &auth.account_id, &slug)?;
+    Ok(Json(json!({
+        "ok": true,
+        "app_slug": slug,
+        "mode": policy.mode,
+        "device_ids": policy.device_ids,
+    }))
+    .into_response())
+}
+
+/// PUT /api/accounts/me/apps/{slug}/visibility — asigna una app a la flota
+/// completa o a una lista validada de dispositivos de la cuenta.
+pub async fn put_visibility_handler(
+    State(state): State<SharedState>,
+    auth: crate::modules::accounts::AuthedAccount,
+    Path(slug): Path<String>,
+    Json(body): Json<AppVisibilityBody>,
+) -> AppResult<Response> {
+    by_slug(&state, &slug)
+        .ok_or_else(|| AppError::not_found(format!("DApp «{slug}» no existe")))?;
+
+    let mode = body.mode.trim();
+    let device_ids = match mode {
+        "all" => Vec::new(),
+        "selected" => {
+            if body.device_ids.len() > 500 {
+                return Err(AppError::bad_request("máximo 500 dispositivos por app"));
+            }
+            let mut ids = body
+                .device_ids
+                .into_iter()
+                .map(|id| id.trim().to_string())
+                .collect::<Vec<_>>();
+            if ids.iter().any(String::is_empty) {
+                return Err(AppError::bad_request("hay un id de dispositivo vacío"));
+            }
+            ids.sort();
+            ids.dedup();
+            if ids.is_empty() {
+                return Err(AppError::bad_request(
+                    "selecciona al menos un dispositivo para esta app",
+                ));
+            }
+            ids
+        }
+        _ => return Err(AppError::bad_request("mode debe ser 'all' o 'selected'")),
+    };
+
+    if mode == "selected" {
+        let owned_count = state.db.with(|c| {
+            device_ids.iter().try_fold(0usize, |count, device_id| {
+                let owned: bool = c.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM devices WHERE id = ?1 AND account_id = ?2)",
+                    params![device_id, auth.account_id],
+                    |r| r.get(0),
+                )?;
+                Ok::<usize, rusqlite::Error>(count + usize::from(owned))
+            })
+        })?;
+        if owned_count != device_ids.len() {
+            return Err(AppError::forbidden(
+                "la selección incluye dispositivos que no pertenecen a tu cuenta",
+            ));
+        }
+    }
+
+    state.db.with(|c| {
+        c.execute(
+            "INSERT INTO account_app_visibility \
+             (account_id, app_slug, mode, device_ids_json, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5) \
+             ON CONFLICT(account_id, app_slug) DO UPDATE SET \
+               mode = excluded.mode, device_ids_json = excluded.device_ids_json, \
+               updated_at = excluded.updated_at",
+            params![
+                auth.account_id,
+                slug,
+                mode,
+                json!(device_ids).to_string(),
+                now_ms(),
+            ],
+        )?;
+        Ok(())
+    })?;
+
+    Ok(Json(json!({
+        "ok": true,
+        "app_slug": slug,
+        "mode": mode,
+        "device_ids": device_ids,
     }))
     .into_response())
 }
@@ -399,6 +587,16 @@ pub async fn install_handler(
         AppError::not_found(format!("app «{slug}» no está en el registro del worker"))
     })?;
 
+    if row.status == "installed" {
+        return Ok(Json(json!({
+            "ok": true,
+            "slug": slug,
+            "status": "installed",
+            "already_installed": true,
+        }))
+        .into_response());
+    }
+
     if row.status == "installing" {
         return Err(AppError::conflict(
             "instalación en curso — sondea GET /api/apps/{slug}",
@@ -406,10 +604,8 @@ pub async fn install_handler(
     }
 
     set_status(&state, &slug, "installing", None, None, Some("iniciando…"));
-    tracing::info!(
-        "apps: instalando {slug} (script: {})",
-        state.cfg.app_install_script
-    );
+    let script = installer_script_path(&state.cfg.app_install_script);
+    tracing::info!("apps: instalando {slug} (script: {})", script.display());
     tokio::spawn(run_install(state.clone(), slug.clone()));
 
     Ok(Json(json!({

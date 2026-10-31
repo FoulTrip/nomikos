@@ -1,5 +1,5 @@
 //! Pantallas del OS: port 1:1 de la geometría del panel
-//! (mismas coordenadas 466×466, misma paleta, mismos textos).
+//! (mismas coordenadas 466×466 y misma paleta).
 //! Sin heap: buffers fijos + rebanadas.
 
 use embedded_graphics::{
@@ -508,19 +508,9 @@ fn draw_claim(f: &mut Frame, p: &Palette, os: &OsState) {
         true,
         Align::Center,
         R,
-        R - 120,
+        R - 55,
         p.gold,
-        "NOMIKOS",
-    );
-    txt(
-        f,
-        Face::Large,
-        false,
-        Align::Center,
-        R,
-        R - 90,
-        p.text,
-        os.device_id,
+        "Nomik",
     );
     txt(
         f,
@@ -528,50 +518,13 @@ fn draw_claim(f: &mut Frame, p: &Palette, os: &OsState) {
         true,
         Align::Center,
         R,
-        R + 10,
+        R + 35,
         p.text,
         if os.claim_code.is_empty() {
             "????????"
         } else {
             os.claim_code
         },
-    );
-    txt(
-        f,
-        Face::Base,
-        false,
-        Align::Center,
-        R,
-        R + 50,
-        p.muted,
-        "empareja en el panel",
-    );
-    txt(
-        f,
-        Face::Base,
-        false,
-        Align::Center,
-        R,
-        R + 74,
-        p.muted,
-        "(Flota -> Emparejar)",
-    );
-    let mut buf = [0u8; 32];
-    let n = fmt_u32(os.taps, &mut buf);
-    let mut line = [0u8; 64];
-    // "toques: N · pulsa AGREGAR"
-    let mut tmp = [0u8; 64];
-    let a = snip_append("toques: ", n, &mut tmp);
-    let msg = snip_append(a, " · pulsa AGREGAR", &mut line);
-    txt(
-        f,
-        Face::Small,
-        false,
-        Align::Center,
-        R,
-        R + 100,
-        p.muted,
-        msg,
     );
 }
 
@@ -2652,6 +2605,38 @@ mod tests {
         os.stage = Stage::Claim;
         assert!(count_opaque(&render(Some(&os), &v, 1200)) > 100_000);
         assert!(count_opaque(&render(None, &v, 1200)) > 50_000);
+    }
+
+    #[test]
+    fn claim_screen_shows_name_and_code_without_device_instructions() {
+        let mut os = os_home();
+        os.stage = Stage::Claim;
+        os.claim_code = "AB12CD34";
+        let v = ViewState::default();
+        let buf = render(Some(&os), &v, 1200);
+
+        // La identidad del dispositivo ya no forma parte de esta pantalla.
+        os.device_id = "dev-a-different-device";
+        assert_eq!(buf, render(Some(&os), &v, 1200));
+
+        // Bajo el código no quedan las instrucciones de emparejado ni toques.
+        for y in (CENTER + 60) as usize..(CENTER + 125) as usize {
+            for x in 100usize..366 {
+                let offset = (y * PX as usize + x) * 4;
+                assert_eq!(
+                    &buf[offset..offset + 4],
+                    &[0, 0, 0, 255],
+                    "unexpected text on claim screen at ({x}, {y})",
+                );
+            }
+        }
+
+        os.claim_code = "EF56GH78";
+        assert_ne!(
+            buf,
+            render(Some(&os), &v, 1200),
+            "claim code must be visible"
+        );
     }
 
     #[test]

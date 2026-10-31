@@ -1,16 +1,15 @@
-# Faucet Devnet (W6 — settlement x402 real)
+# Treasury Devnet para pruebas x402
 
-La wallet **treasury** (`nomikos-treasury.json`, SOLO devnet) financia las
-wallets dPaaS de las cuentas para que `pay-invoice` firme transfers que
-**confirman on-chain** (sin el settler de ledger de los tests).
+La API crea una wallet treasury solo para Devnet al arrancar y cifra su
+keypair en la base SQLite persistente usando `ACCOUNTS_MASTER_KEY`. No requiere
+archivo JSON ni variables `FAUCET_*`. El saldo inicial es cero.
 
-| Pieza | Detalle |
+| Ruta | Uso |
 |---|---|
-| `nomikos-treasury.json` | Keypair devnet (formato id.json). **NUNCA mainnet.** |
-| `faucet.sh fund` | Retry-loop de airdrop al treasury (rate-limited; 1 SOL ≈ 1M de peajes) |
-| Plan B (30 s) | Copiar el pubkey del treasury y pedir 1 SOL en https://faucet.solana.com |
-| `faucet.sh drip <pub> [lamports]` | Transfer manual desde el treasury |
-| API | `POST /api/dev/faucet` gotea `FAUCET_LAMPORTS` a la wallet de la cuenta autenticada (requiere `FAUCET_ENABLED=1` y chain devnet configurada) |
+| `GET /api/dev/faucet` | Muestra pubkey pública, balance y tamaño fijo del goteo (requiere Bearer de cuenta). |
+| Fondeo | Si hace falta, solicita fondos Devnet legítimos para esa pubkey. No se solicita airdrop automáticamente. |
+| `POST /api/dev/faucet` | Gotea 0.005 SOL a la wallet dPaaS de la cuenta autenticada, solo si su red es Devnet. |
 
-El goteo por API es un transfer devnet→devnet: sin rate-limits de faucet.
-Mientras el treasury tenga SOL, todo el ecosistema settlea real.
+La treasury no es la wallet dPaaS de una cuenta ni el cobrador x402. Es una
+wallet global que distribuye SOL Devnet de pruebas. La pubkey puede mostrarse;
+el keypair permanece cifrado. Nunca se fondea desde mainnet.

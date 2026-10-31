@@ -3,13 +3,10 @@
  * ejecuciones reales de tools de apps, pasando por el gateway x402.
  */
 import { createServer } from 'node:http';
-import { execSync } from 'node:child_process';
 import {
   test, expect, api, json, LoginSchema, InvoiceSchema,
-  randomEmail, randomPassword, settleInvoiceViaLedger,
+  randomEmail, randomPassword, settleInvoiceViaLedger, runLedger,
 } from './_helpers';
-
-const LEDGER_DB = process.env.LEDGER_DB ?? '../api/data/agent-os.db';
 
 test('sandbox/devnet y producción/mainnet aíslan facturas, tools y wallets', { timeout: 45_000 }, async () => {
   const server = createServer((_req, res) => {
@@ -36,7 +33,11 @@ test('sandbox/devnet y producción/mainnet aíslan facturas, tools y wallets', {
 
     // La app de prueba solo vive durante este test; el servicio mock no hace
     // escrituras y permite completar el tramo real POST /app/request → X-Payment.
-    execSync(`sqlite3 "${LEDGER_DB}" "INSERT INTO apps (slug,name,status,base_url,tools,created_at,updated_at) VALUES ('${slug}','E2E environment','installed','${baseUrl}','[]',${Date.now()},${Date.now()});"`, { stdio: 'pipe' });
+    const now = Date.now();
+    runLedger(
+      'INSERT INTO apps (slug,name,status,base_url,tools,created_at,updated_at) VALUES (?,?,?,?,?,?,?)',
+      [slug, 'E2E environment', 'installed', baseUrl, '[]', now, now],
+    );
 
     const requestTool = async (authHeaders: Record<string, string>, toolName: string) => {
       const body = JSON.stringify({
@@ -132,9 +133,18 @@ test('sandbox/devnet y producción/mainnet aíslan facturas, tools y wallets', {
     expect(noCrossNetworkWallet.status).toBe(400);
   } finally {
     if (accountId) {
-      execSync(`sqlite3 "${LEDGER_DB}" "DELETE FROM app_tool_calls WHERE account_id='${accountId}'; DELETE FROM x402_invoices WHERE account_id='${accountId}'; DELETE FROM x402_payouts WHERE account_id='${accountId}'; DELETE FROM sessions WHERE account_id='${accountId}'; DELETE FROM simulation_states WHERE account_id='${accountId}'; DELETE FROM devices WHERE account_id='${accountId}'; DELETE FROM account_services WHERE account_id='${accountId}'; DELETE FROM account_wallets WHERE account_id='${accountId}'; DELETE FROM account_connected_wallets WHERE account_id='${accountId}'; DELETE FROM account_chain_wallets WHERE account_id='${accountId}'; DELETE FROM account_chain WHERE account_id='${accountId}'; DELETE FROM account_llm_providers WHERE account_id='${accountId}'; DELETE FROM accounts WHERE id='${accountId}'; DELETE FROM apps WHERE slug='${slug}';"`, { stdio: 'pipe' });
+      for (const table of [
+        'app_tool_calls', 'x402_invoices', 'x402_payouts', 'sessions',
+        'simulation_states', 'devices', 'account_services', 'account_wallets',
+        'account_connected_wallets', 'account_chain_wallets', 'account_chain',
+        'account_llm_providers',
+      ]) {
+        runLedger(`DELETE FROM ${table} WHERE account_id = ?`, [accountId]);
+      }
+      runLedger('DELETE FROM accounts WHERE id = ?', [accountId]);
+      runLedger('DELETE FROM apps WHERE slug = ?', [slug]);
     } else {
-      execSync(`sqlite3 "${LEDGER_DB}" "DELETE FROM apps WHERE slug='${slug}';"`, { stdio: 'pipe' });
+      runLedger('DELETE FROM apps WHERE slug = ?', [slug]);
     }
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }

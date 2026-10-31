@@ -12,15 +12,15 @@ brain/
 ├── app/
 │   ├── main.py      — POST /v1/agentic-gateway (flujo ①-⑤) · GET /v1/health · /v1/tools
 │   ├── context.py   — AccountContext + fetch_account_context(bearer) + bearer_from_headers
-│   ├── config.py    — settings del .env raíz (AGENT_OS_API_URL, LLAMA_STACK_URL, LLM_MODEL,
-│   │                  OLLAMA_URL, GUARD_*, MUSE_BIN, MAX_TOOL_ITERATIONS)
+│   ├── config.py    — settings del .env raíz (AGENT_OS_API_URL, GUARD_*,
+│   │                  MUSE_BIN, MAX_TOOL_ITERATIONS)
 │   ├── llm.py       — run_agent(): SOLO cliente de cuenta (account:<provider>);
 │   │                  sin Bearer → 401, sin LLM activo → 400 LLM_NOT_CONFIGURED
 │   ├── tools.py     — 11 tools → TODAS vía guarded_call(ctx); ToolResult; RunEvents
 │   ├── x402.py      — guarded_call: 402 → delegated_pay_invoice (dPaaS de la cuenta)
 │   │                  → poll (4×3 s) → reintento con X-Payment → 200 recurso
-│   └── shields.py   — Llama Guard 3 (Ollama :11434, llama-guard3:1b) in/out;
-│                      exclusiones S8/S9/S14; retry ante respuesta vacía
+│   └── shields.py   — Llama Guard remoto vía endpoint OpenAI-compatible
+│                      in/out; exclusiones S8/S9/S14
 ├── run-stack.yaml   — distribución Llama Stack 0.7.3 (providers: nvidia-nim vía
 │                      NVIDIA_API_KEY + openai opcional; responses builtin; sqlite-vec)
 ├── .venv            — runtime del brain (fastapi, httpx, openai)
@@ -54,8 +54,9 @@ mainnet = producción). No se estiman tokens cuando el proveedor no reporta
 
 Backend observable en `backend`: `account:<provider>` (LLM ACTIVO de la
 cuenta, api_key de `account_llm_providers` desencriptada en `/me/context`).
-Ollama queda SOLO para shields Llama Guard (`GUARD_VIA_LLAMA_STACK=false`);
-ya no razona nada. Llama Stack fuera del arranque (`make up` ya no lo
+Llama Guard se ejecuta con `GUARD_PROVIDER`, `GUARD_API_URL`, `GUARD_API_KEY`
+y `GUARD_MODEL` desde el `.env` raíz; Ollama ya no forma parte del arranque.
+Llama Stack fuera del arranque (`make up` ya no lo
 levanta; `scripts/stack-up.sh` + `llm-health.sh` quedan para self-host).
 
 ## Las 15 tools (tools.py)
@@ -84,25 +85,21 @@ llamada devuelve un ToolResult de error y la conversación continúa.
    para el usuario.
 5. `X402Outcome` queda en `RunEvents` → `x402[]` de la respuesta.
 
-## Shields (shields.py) — lecciones ya aprendidas
+## Shields (shields.py)
 
-- Prompt oficial Llama Guard 3 (S1..S14); para output reconstruir
-  `User: <original> / Agent: <reply>` o el 1B responde vacío.
-- Sanitizar markdown (`*_#>` etc.) y truncar a 1500 chars antes del guard.
-- Ollama options: `temperature 0, num_predict 40, num_ctx 1024` (Vulkan OOM
-  con prompts ≥ ~400 tokens si num_ctx es alto).
-- `GUARD_EXCLUDED_CATEGORIES=S8,S9,S14` (IP software / "peajes" / code abuse
-  = falsos positivos del 1B en este dominio). S11 (self-harm) y demás siguen
-  bloqueando (verificado).
+- Prompt Llama Guard (S1..S14); para output reconstruir
+  `User: <original> / Agent: <reply>` como exige el formato oficial.
+- Sanitizar markdown y truncar a 1500 chars antes de enviar el texto al proveedor.
+- `GUARD_EXCLUDED_CATEGORIES=S8,S9,S14` calibra falsos positivos del dominio.
+  S11 (self-harm) y demás siguen bloqueando.
 
 ## Variables de entorno (../.env, único archivo central)
 
-`AGENT_OS_API_URL` (http://localhost:8080/api) · `OLLAMA_URL` ·
-`GUARD_ENABLED/LLAMA_GUARD_MODEL/GUARD_VIA_LLAMA_STACK/
-GUARD_EXCLUDED_CATEGORIES` (default `S6,S7,S8,S9,S14`) · `MUSE_BIN`
+`AGENT_OS_API_URL` (http://localhost:8080/api) · `GUARD_PROVIDER`,
+`GUARD_API_URL`, `GUARD_API_KEY`, `GUARD_MODEL` ·
+`GUARD_ENABLED/GUARD_EXCLUDED_CATEGORIES`
+(default `S6,S7,S8,S9,S14`) · `MUSE_BIN`
 (~/.local/bin/muse, tool local) · `MAX_TOOL_ITERATIONS=8`.
-Vestigiales (no se usan para inferir): `LLAMA_STACK_URL` (+
-`LLAMA_STACK_API_KEY=fake`, solo sonda de `/v1/health`) y `LLM_MODEL`.
 x402 sin config local: el gateway de `api` manda.
 
 ## Servicios de los que depende
@@ -110,7 +107,7 @@ x402 sin config local: el gateway de `api` manda.
 | Puerto | Qué | Uso en brain |
 |---|---|---|
 | 8080 | api (Rust) | contexto de cuenta, tools, x402, dPaaS |
-| 11434 | Ollama (CPU) | SOLO shields Llama Guard 3 (llama-guard3:1b); sin :8321 (retirado: la cuenta trae su LLM) |
+| proveedor configurado | `GUARD_API_URL` | Llama Guard hosted para shields in/out |
 
 ## Verificado end-to-end (no romper)
 

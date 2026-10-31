@@ -93,7 +93,7 @@ export interface OsUiState {
 }
 
 interface OsUiModule {
-  default: (url?: string) => Promise<void>;
+  default: (options?: { module_or_path: string }) => Promise<void>;
   osui_render: (
     stateJson: string,
     viewJson: string,
@@ -121,7 +121,7 @@ export async function initOsUi(): Promise<boolean> {
   try {
     // webpackIgnore: artefacto precompilado en public/, no del bundle.
     const m = (await import(/* webpackIgnore: true */ JS_URL)) as OsUiModule;
-    await m.default(WASM_URL);
+    await m.default({ module_or_path: WASM_URL });
     // Sonda: un render mínimo debe devolver bytes (caza roturas temprano).
     const probe = m.osui_render("null", "{}", BigInt(0), 0, 0, "");
     if (!(probe instanceof Uint8Array) || probe.length !== m.osui_frame_len()) {

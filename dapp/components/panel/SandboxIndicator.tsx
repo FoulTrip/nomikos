@@ -39,9 +39,9 @@ export default function SandboxIndicator() {
           ? t("localTitle")
           : t("remoteTitle")
       }
-      className="h-8 gap-1.5 rounded-full border-[#EDEDED] bg-white px-2 text-xs font-normal whitespace-nowrap sm:h-9 sm:px-2.5"
+      className="h-7 gap-1 rounded-full border-[#EDEDED] bg-white px-1.5 text-[11px] font-normal whitespace-nowrap sm:h-8 sm:px-2 sm:text-xs"
     >
-      <span className={cn("size-1.5 rounded-full", local ? "bg-emerald-500" : "bg-sky-500")} />
+      <span className={cn("size-1 rounded-full", local ? "bg-emerald-500" : "bg-sky-500")} />
       <span className={cn("hidden min-[480px]:inline", local ? "text-emerald-700" : "text-sky-700")}>
         {local ? t("local") : t("remote")}
       </span>

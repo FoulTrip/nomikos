@@ -20,9 +20,9 @@ export default function ViewLockButton() {
       onClick={() => setViewLocked(!locked)}
       title={label}
       aria-label={label}
-      className="size-9 rounded-full border border-[#EDEDED] shadow-[0_3px_16px_rgba(0,0,0,0.06)]"
+      className="size-8 rounded-full border border-[#EDEDED] shadow-sm"
     >
-      {locked ? <Unlock /> : <Crosshair />}
+      {locked ? <Unlock className="size-3.5" /> : <Crosshair className="size-3.5" />}
     </Button>
   );
 }

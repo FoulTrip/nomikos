@@ -1,9 +1,8 @@
 "use client";
 import { useLocale, useTranslations } from "next-intl";
 /**
- * Dashboard — lo que /panel muestra con el sandbox APAGADO: modelo y
- * proveedor, tokens, tools por apps y análisis x402, distinguido entre
- * "producción" y "sandbox", más la cuadrícula de documentación.
+ * Dashboard — métricas de tokens con periodo seleccionable, tools por apps
+ * y análisis x402, distinguido entre "producción" y "sandbox", más docs.
  *
  * 100% shadcn (Tabs, Card, Badge, Table, Progress, Skeleton, Separator)
  * + gráficas recharts. Los tokens son los contadores devueltos por el
@@ -33,6 +32,7 @@ import { DocIcon } from "./DocViewer";
 import { listDocs } from "@/lib/docs";
 
 type Scope = "prod" | "sandbox";
+type TokenPeriod = "7d" | "30d" | "90d";
 
 interface X402Summary {
   ok: boolean;
@@ -94,6 +94,7 @@ export default function Dashboard() {
   const t = useTranslations("dashboard");
   const locale = useLocale();
   const [scope, setScope] = useState<Scope>("prod");
+  const [tokenPeriod, setTokenPeriod] = useState<TokenPeriod>("7d");
   const [x402, setX402] = useState<X402Summary | null>(null);
   const [services, setServices] = useState<ServiceRow[] | null>(null);
   const [tools, setTools] = useState<ToolRow[] | null>(null);
@@ -178,7 +179,8 @@ export default function Dashboard() {
     const environment = scope === "prod" ? "production" : "sandbox";
     const load = async () => {
       try {
-        const res = await fetch(`/api/account/llm-usage?environment=${environment}`, { cache: "no-store" });
+        const days = tokenPeriod.slice(0, -1);
+        const res = await fetch(`/api/account/llm-usage?environment=${environment}&days=${days}`, { cache: "no-store" });
         const data = await res.json().catch(() => null);
         if (cancelled) return;
         if (!res.ok || !data?.ok) {
@@ -210,7 +212,7 @@ export default function Dashboard() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [scope]);
+  }, [scope, tokenPeriod]);
 
   const byApp = new Map<string, ToolRow[]>();
   const core = t("core");
@@ -229,10 +231,23 @@ export default function Dashboard() {
     usesByApp.set(row.app, (usesByApp.get(row.app) ?? 0) + row.uses);
   }
   const maxAppUses = Math.max(1, ...usesByApp.values());
+  const usageByProvider = new Map<string, { completion_calls: number; total_tokens: number }>();
+  for (const row of llmUsage?.usage ?? []) {
+    const current = usageByProvider.get(row.provider) ?? { completion_calls: 0, total_tokens: 0 };
+    current.completion_calls += row.completion_calls;
+    current.total_tokens += row.total_tokens;
+    usageByProvider.set(row.provider, current);
+  }
+  const mostUsedProvider = [...usageByProvider.entries()].sort(
+    ([, a], [, b]) => b.completion_calls - a.completion_calls || b.total_tokens - a.total_tokens,
+  )[0];
+  const modelUsage = [...(llmUsage?.usage ?? [])].sort(
+    (a, b) => b.completion_calls - a.completion_calls || b.total_tokens - a.total_tokens,
+  );
+  const mostUsedModel = modelUsage[0];
 
   const byStatus = x402?.invoices_by_status ?? {};
   const lamportsByStatus = x402?.invoices_lamports_by_status ?? {};
-  const settled = byStatus.settled ?? 0;
   const settledLamports = x402?.settled_lamports ?? 0;
   const settledSol = settledLamports / 1_000_000_000;
   const statusData = Object.entries(byStatus)
@@ -277,11 +292,12 @@ export default function Dashboard() {
     }
     return { primary: `${formatSol(sol)} SOL`, secondary: undefined };
   };
+  const tokenDays = Number(tokenPeriod.slice(0, -1));
   const tokensByDate = new Map((llmUsage?.daily_usage ?? []).map((day) => [day.date, day]));
   const todayUtc = new Date();
   todayUtc.setUTCHours(0, 0, 0, 0);
-  const tokenChartData = Array.from({ length: 14 }, (_, index) => {
-    const date = new Date(todayUtc.getTime() - (13 - index) * 24 * 60 * 60 * 1_000)
+  const tokenChartData = Array.from({ length: tokenDays }, (_, index) => {
+    const date = new Date(todayUtc.getTime() - (tokenDays - 1 - index) * 24 * 60 * 60 * 1_000)
       .toISOString()
       .slice(0, 10);
     const day = tokensByDate.get(date);
@@ -289,46 +305,144 @@ export default function Dashboard() {
       date,
       prompt_tokens: day?.prompt_tokens ?? 0,
       completion_tokens: day?.completion_tokens ?? 0,
+      total_tokens: day?.total_tokens ?? 0,
     };
   });
 
   return (
     <div className="absolute inset-0 overflow-y-auto bg-background">
-      <div className="mx-auto grid w-full max-w-5xl gap-4 p-4 pb-10 sm:p-6">
+      <div className="mx-auto grid w-full max-w-5xl gap-5 px-4 pt-4 pb-10 sm:px-6 sm:pt-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-lg font-semibold">{t("summary")}</h2>
           <Tabs value={scope} onValueChange={(v) => setScope(v as Scope)}>
             <TabsList aria-label={t("scope")}>
               <TabsTrigger value="prod">{t("prod")}</TabsTrigger>
               <TabsTrigger value="sandbox">{t("sandbox")}</TabsTrigger>
             </TabsList>
           </Tabs>
+          <Tabs value={tokenPeriod} onValueChange={(v) => setTokenPeriod(v as TokenPeriod)}>
+            <TabsList aria-label={t("period")}>
+              <TabsTrigger value="7d">7d</TabsTrigger>
+              <TabsTrigger value="30d">30d</TabsTrigger>
+              <TabsTrigger value="90d">90d</TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
 
-        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-          {/* Tokens */}
-          <Card className="lg:col-span-2">
-            <CardHeader className="flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-sm">{t("tokens")}</CardTitle>
-              <p className="text-right text-2xl font-bold tabular-nums">
-                {formatTokens(llmUsage?.total_tokens ?? 0)} <span className="text-sm font-medium text-muted-foreground">{t("tokensUnit")}</span>
-              </p>
-            </CardHeader>
-            <CardContent className="pt-2">
-              {llmUsageError && <p className="mb-2 text-xs text-muted-foreground">{t("tokenLoadError")}</p>}
-              <TokenUsageChart data={tokenChartData} />
-            </CardContent>
-          </Card>
+        <section aria-label={t("tokens")} className="grid items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {([
+            {
+              key: "prompt_tokens",
+              label: t("tokenPrompt"),
+              value: llmUsage?.prompt_tokens ?? 0,
+              color: "#6172F3",
+            },
+            {
+              key: "completion_tokens",
+              label: t("tokenCompletion"),
+              value: llmUsage?.completion_tokens ?? 0,
+              color: "#26A879",
+            },
+            {
+              key: "total_tokens",
+              label: t("tokenTotal"),
+              value: llmUsage?.total_tokens ?? 0,
+              color: "#343433",
+            },
+          ] as const).map((metric) => (
+            <Card key={metric.key} className="h-full gap-2 py-4">
+              <CardHeader className="gap-1 px-4">
+                <div className="flex items-center justify-between gap-2">
+                  <CardTitle className="text-sm">{metric.label}</CardTitle>
+                  <Badge variant="secondary" className="shrink-0 text-[10px] font-normal">
+                    {t("tokenPeriod", { days: tokenDays })}
+                  </Badge>
+                </div>
+                <p className="text-2xl font-bold leading-none tabular-nums">
+                  {formatTokens(metric.value)} <span className="text-xs font-medium text-muted-foreground">{t("tokensUnit")}</span>
+                </p>
+              </CardHeader>
+              <CardContent className="min-h-0 px-3 pb-2 pt-0">
+                {llmUsageError && <p className="mb-1 text-xs text-muted-foreground">{t("tokenLoadError")}</p>}
+                <TokenUsageChart
+                  data={tokenChartData}
+                  dataKey={metric.key}
+                  color={metric.color}
+                />
+              </CardContent>
+            </Card>
+          ))}
+        </section>
+
+        <Card className="h-full">
+          <CardHeader className="gap-1">
+            <CardTitle className="text-sm">{t("providerModelUsage")}</CardTitle>
+            <CardDescription>{t("providerModelUsageDescription")}</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="min-w-0 rounded-lg border px-3 py-2">
+                <p className="text-xs text-muted-foreground">{t("mostUsedProvider")}</p>
+                <p className="truncate text-sm font-semibold">{mostUsedProvider?.[0] ?? "—"}</p>
+                <p className="text-xs tabular-nums text-muted-foreground">
+                  {mostUsedProvider
+                    ? `${formatTokens(mostUsedProvider[1].completion_calls)} ${t("calls")} · ${formatTokens(mostUsedProvider[1].total_tokens)} ${t("tokensUnit")}`
+                    : t("noModelUsage")}
+                </p>
+              </div>
+              <div className="min-w-0 rounded-lg border px-3 py-2">
+                <p className="text-xs text-muted-foreground">{t("mostUsedModel")}</p>
+                <p className="truncate text-sm font-semibold">{mostUsedModel?.model ?? "—"}</p>
+                <p className="truncate text-xs tabular-nums text-muted-foreground">
+                  {mostUsedModel
+                    ? `${mostUsedModel.provider} · ${formatTokens(mostUsedModel.completion_calls)} ${t("calls")} · ${formatTokens(mostUsedModel.total_tokens)} ${t("tokensUnit")}`
+                    : t("noModelUsage")}
+                </p>
+              </div>
+            </div>
+            {modelUsage.length > 0 ? (
+              <div className="overflow-x-auto">
+                <Table className="min-w-[620px] table-fixed text-xs">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[17%] whitespace-nowrap px-2">{t("provider")}</TableHead>
+                      <TableHead className="w-[28%] whitespace-nowrap px-2">{t("model")}</TableHead>
+                      <TableHead className="w-[12%] whitespace-nowrap px-2 text-right">{t("calls")}</TableHead>
+                      <TableHead className="w-[14%] whitespace-nowrap px-2 text-right">{t("inputTokens")}</TableHead>
+                      <TableHead className="w-[14%] whitespace-nowrap px-2 text-right">{t("outputTokens")}</TableHead>
+                      <TableHead className="w-[15%] whitespace-nowrap px-2 text-right">{t("totalTokens")}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {modelUsage.map((row) => (
+                      <TableRow key={`${row.provider}:${row.model}`}>
+                        <TableCell className="truncate px-2 font-medium">{row.provider}</TableCell>
+                        <TableCell className="truncate px-2 font-mono" title={row.model}>{row.model}</TableCell>
+                        <TableCell className="whitespace-nowrap px-2 text-right tabular-nums">{formatTokens(row.completion_calls)}</TableCell>
+                        <TableCell className="whitespace-nowrap px-2 text-right tabular-nums">{formatTokens(row.prompt_tokens)}</TableCell>
+                        <TableCell className="whitespace-nowrap px-2 text-right tabular-nums">{formatTokens(row.completion_tokens)}</TableCell>
+                        <TableCell className="whitespace-nowrap px-2 text-right font-semibold tabular-nums">{formatTokens(row.total_tokens)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">{t("noModelUsage")}</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3">
 
           {/* Tools por apps */}
-          <Card>
+          <Card className="h-full">
             <CardHeader>
               <CardTitle className="text-sm">{t("toolsByApps")}</CardTitle>
               <CardDescription>
                 {t("toolsInventory")}
               </CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-3">
+            <CardContent className="grid flex-1 content-start gap-3">
               {tools === null ? (
                 <div className="grid gap-2">
                   <Skeleton className="h-8 w-full" />
@@ -337,12 +451,12 @@ export default function Dashboard() {
               ) : appGroups.length === 0 ? (
                 <p className="text-xs text-muted-foreground">{t("noTools")}</p>
               ) : (
-                <Table className="table-fixed">
+                <Table className="table-fixed text-[11px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[46%]">{t("app")}</TableHead>
-                      <TableHead className="w-[18%] text-right">{t("tools")}</TableHead>
-                      <TableHead className="w-[36%]">{t("uses")}</TableHead>
+                      <TableHead className="w-[46%] whitespace-nowrap px-2 text-[10px]">{t("app")}</TableHead>
+                      <TableHead className="w-[18%] whitespace-nowrap px-1 text-right text-[10px]">{t("tools")}</TableHead>
+                      <TableHead className="w-[36%] whitespace-nowrap px-2 text-[10px]">{t("uses")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -357,8 +471,8 @@ export default function Dashboard() {
                             : null;
                       return (
                         <TableRow key={app}>
-                          <TableCell>
-                            <span className="flex min-w-0 flex-wrap items-center gap-2 font-medium">
+                          <TableCell className="px-2">
+                            <span className="flex min-w-0 items-center gap-1 font-medium">
                               <span className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full border bg-white">
                                 {logo ? (
                                   <Image
@@ -375,14 +489,14 @@ export default function Dashboard() {
                                   <Blocks className="size-4 text-muted-foreground" aria-hidden="true" />
                                 )}
                               </span>
-                              <span className="truncate">{app}</span>
+                              <span className="truncate text-[10px]">{app}</span>
                               {addedApps.has(app) && (
-                                <Badge variant="secondary" className="px-1.5 py-0 text-[9px]">{t("inAccount")}</Badge>
+                                <Badge variant="secondary" className="shrink-0 px-1 py-0 text-[8px]">{t("inAccount")}</Badge>
                               )}
                             </span>
                           </TableCell>
-                          <TableCell className="text-right font-mono tabular-nums">{formatTokens(list.length)}</TableCell>
-                          <TableCell>
+                          <TableCell className="whitespace-nowrap px-1 text-right font-mono text-[10px] tabular-nums">{formatTokens(list.length)}</TableCell>
+                          <TableCell className="px-2">
                             {toolUsage === null ? (
                               <Skeleton className="h-7 w-full" />
                             ) : (
@@ -406,14 +520,14 @@ export default function Dashboard() {
           </Card>
 
           {/* x402 */}
-          <Card>
+          <Card className="h-full">
             <CardHeader>
               <CardTitle className="text-sm">{t("x402")}</CardTitle>
               <CardDescription>
                 {scope === "prod" ? t("tolls") : t("tollsSandbox")}
               </CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-3">
+            <CardContent className="grid flex-1 content-start gap-3">
               {x402 === null ? (
                 <div className="grid gap-2">
                   <Skeleton className="h-8 w-full" />
@@ -421,23 +535,16 @@ export default function Dashboard() {
                 </div>
               ) : (
                 <>
-                  <div className="grid grid-cols-[repeat(auto-fit,minmax(88px,1fr))] gap-2 text-center">
-                    <div className="rounded-lg border p-2">
-                      <p className="text-xl font-bold tabular-nums">{formatTokens(x402.invoices_total ?? 0)}</p>
-                      <p className="truncate text-[11px] text-muted-foreground">{t("invoices")}</p>
-                    </div>
-                    <div className="rounded-lg border p-2">
-                      <p className="text-xl font-bold tabular-nums">{formatTokens(settled)}</p>
-                      <p className="truncate text-[11px] text-muted-foreground">{t("settled")}</p>
-                    </div>
-                    <div className="rounded-lg border p-2">
-                      <p className="whitespace-nowrap text-xs font-bold leading-tight tracking-tight tabular-nums sm:text-sm md:text-base">
-                        {fiatValue === null ? t("fiatUnavailable") : formatFiat(fiatValue)}
-                      </p>
-                      <p className="text-[11px] tabular-nums text-muted-foreground">
-                        {formatSol(settledSol)} SOL
-                      </p>
-                      <p className="truncate text-[11px] text-muted-foreground">{t("spend")}</p>
+                  <div className="flex justify-start">
+                    <div className="flex min-w-40 items-center gap-3 rounded-lg border px-3 py-2">
+                      <div className="text-left">
+                        <p className="whitespace-nowrap text-sm font-bold leading-tight tracking-tight tabular-nums">
+                          {fiatValue === null ? t("fiatUnavailable") : formatFiat(fiatValue)}
+                        </p>
+                        <p className="text-[11px] tabular-nums text-muted-foreground">
+                          {formatSol(settledSol)} SOL
+                        </p>
+                      </div>
                     </div>
                   </div>
                   <Separator />
@@ -451,6 +558,53 @@ export default function Dashboard() {
                       title={t("dailyUse", { pct: dailyPct.toFixed(0) })}
                     />
                   )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="h-full">
+            <CardHeader>
+              <CardTitle className="text-sm">{t("dailyBudget")}</CardTitle>
+              <CardDescription>{t("dailyBudgetDescription")}</CardDescription>
+            </CardHeader>
+            <CardContent className="grid flex-1 content-start gap-4">
+              {x402 === null ? (
+                <div className="grid gap-3">
+                  <Skeleton className="h-8 w-32" />
+                  <Skeleton className="h-6 w-full" />
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-end justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground">{t("dpaasBalance")}</p>
+                      <p className="mt-1 truncate text-2xl font-bold tabular-nums">
+                        {x402.dpaas?.balance_lamports == null
+                          ? "—"
+                          : `${formatSol(x402.dpaas.balance_lamports / 1_000_000_000)} ${t("sol")}`}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="shrink-0 capitalize">
+                      {x402.dpaas?.network ?? "—"}
+                    </Badge>
+                  </div>
+                  <Separator />
+                  <div className="grid gap-2">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="text-muted-foreground">{t("dailySpent")}</span>
+                      <span className="font-medium tabular-nums">
+                        {formatSol(dailyUsed / 1_000_000_000)} / {dailyLimit == null
+                          ? t("noDailyLimit")
+                          : `${formatSol(dailyLimit / 1_000_000_000)} ${t("sol")}`}
+                      </span>
+                    </div>
+                    {dailyPct !== null ? (
+                      <Progress value={dailyPct} aria-label={t("dailyUse", { pct: dailyPct.toFixed(0) })} />
+                    ) : (
+                      <p className="text-xs text-muted-foreground">{t("noDailyLimitDescription")}</p>
+                    )}
+                  </div>
                 </>
               )}
             </CardContent>

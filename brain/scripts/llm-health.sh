@@ -1,70 +1,89 @@
 #!/usr/bin/env bash
-# llm-health.sh — salud de los backends LLM del orquestador (brain).
-#
-# El gateway agéntico elige backend en cascada: LLM de la CUENTA →
-# llama-stack (NIM real) → ollama local. Hoy la key NIM está muerta
-# (403 en todos los modelos) y el razonamiento global corre en ollama.
-# Este script dice qué está vivo ANTES de flipear:
-#
-#   ./llm-health.sh                          # ollama + llama-stack
-#   NVIDIA_API_KEY=nvdi-… ./llm-health.sh    # + prueba NIM directo
-#
-# Flip cuando renueves la key (documentado en context.md):
-#   cd brain && NVIDIA_API_KEY=… .venv-stack/bin/llama stack run run-stack.yaml &
-#   # y en brain/.env: LLM_MODEL=nvidia/meta/muse-glimmer-30b → reiniciar uvicorn
-#   npm run test:e2e -- tests/06.brain.agentic.e2e.ts   # debe volver a verde
+# Comprueba el shield configurado en el .env raíz y el health del brain.
 set -euo pipefail
 
-G() { printf '  %s\n' "$*"; }
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_ENV="$(cd -- "$SCRIPT_DIR/../.." && pwd)/.env"
 
-echo "── 1/3 ollama (:11434 — backend global de hoy):"
-if TAGS=$(curl -s -m 5 http://localhost:11434/api/tags); then
-  echo "$TAGS" | python3 -c "
-import json,sys
+python3 - "$ROOT_ENV" <<'PY'
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+env_values = {}
+env_path = Path(sys.argv[1])
+if env_path.exists():
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        value = value.strip().strip("\"'")
+        env_values[name.strip()] = value
+
+def setting(name):
+    value = os.environ.get(name, "").strip() or env_values.get(name, "")
+    return re.sub(
+        r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}",
+        lambda match: os.environ.get(match.group(1), env_values.get(match.group(1), "")),
+        value,
+    ).strip()
+
+provider = setting("GUARD_PROVIDER")
+url = setting("GUARD_API_URL")
+key = setting("GUARD_API_KEY")
+model = setting("GUARD_MODEL")
+if not all((provider, url, key, model)):
+    print("Llama Guard: faltan GUARD_PROVIDER, GUARD_API_URL, GUARD_API_KEY o GUARD_MODEL")
+    sys.exit(1)
+
+payload = {
+    "model": model,
+    "messages": [{"role": "user", "content": "Classify this harmless greeting. Reply with safe or unsafe only. User: hola"}],
+    "temperature": 0,
+    "max_tokens": 16,
+    "stream": False,
+}
+request = urllib.request.Request(
+    url,
+    data=json.dumps(payload).encode(),
+    headers={
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    },
+    method="POST",
+)
 try:
-    ms = [m['name'] for m in json.load(sys.stdin)['models']]
-    print('  OK · modelos:', ', '.join(ms[:5]) or '(ninguno)')
+    with urllib.request.urlopen(request, timeout=30) as response:
+        data = json.load(response)
+except urllib.error.HTTPError as error:
+    print(f"Llama Guard: el proveedor respondió HTTP {error.code}")
+    sys.exit(1)
+except Exception as error:
+    print(f"Llama Guard: proveedor no disponible ({type(error).__name__})")
+    sys.exit(1)
+
+try:
+    verdict = data["choices"][0]["message"]["content"]
+except (KeyError, IndexError, TypeError):
+    print("Llama Guard: respuesta incompatible con Chat Completions")
+    sys.exit(1)
+if not isinstance(verdict, str) or not re.match(r"\s*safe\b", verdict, re.IGNORECASE):
+    print("Llama Guard: el smoke call no devolvió el veredicto safe esperado")
+    sys.exit(1)
+print(f"Llama Guard listo · proveedor {provider} · modelo {model}")
+
+try:
+    with urllib.request.urlopen("http://127.0.0.1:8322/v1/health", timeout=3) as response:
+        health = json.load(response)
+    guard = health.get("guard", {})
+    ready = guard.get("configured") and guard.get("provider") == provider and guard.get("model") == model
+    print("Brain:", "ready" if ready else "guard config mismatch")
 except Exception:
-    print('  respuesta no entendida')
-"
-else
-  G "DOWN — arranca: ~/.local/bin/ollama serve && ollama pull llama3.2:1b"
-fi
-
-echo "── 2/3 llama-stack (:8321 — NIM real si hay key):"
-if curl -s -m 5 http://localhost:8321/v1/models -o /tmp/opencode/stack-models.json 2>/dev/null; then
-  if grep -q '"data"' /tmp/opencode/stack-models.json 2>/dev/null; then
-    python3 -c "
-import json
-d = json.load(open('/tmp/opencode/stack-models.json'))
-print('  OK ·', len(d.get('data', [])), 'modelos vía stack (NIM con key viva)')
-" 2>/dev/null || G "OK (respuesta no estándar)"
-  else
-    G "arriba pero sin modelos — la key NIM llega por env (NVIDIA_API_KEY) al lanzarlo"
-  fi
-else
-  G "DOWN — lánzalo: cd brain && NVIDIA_API_KEY=… .venv-stack/bin/llama stack run run-stack.yaml"
-fi
-
-echo "── 3/3 NIM directo (integrate.api.nvidia.com):"
-if [ -n "${NVIDIA_API_KEY:-}" ]; then
-  CODE=$(curl -s -m 8 -o /tmp/opencode/nim-models.json -w "%{http_code}" \
-    https://integrate.api.nvidia.com/v1/models \
-    -H "Authorization: Bearer $NVIDIA_API_KEY")
-  if [ "$CODE" = "200" ]; then
-    python3 -c "
-import json
-d = json.load(open('/tmp/opencode/nim-models.json'))
-print('  OK · key viva ·', len(d.get('data', [])), 'modelos — ¡el flip está listo!')
-"
-  else
-    G "HTTP $CODE — la key sigue muerta/inválida (403 = cuenta/plan; renuévala en build.nvidia.com)"
-  fi
-else
-  G "sin NVIDIA_API_KEY en el entorno — pásala para probarla aquí mismo"
-fi
-
-echo
-echo "Diagnóstico del flujo agéntico: brain responde igual sin key (fallback"
-echo "a ollama); las suites 05/12 lo ejercitan; la 06 (razonamiento fluido)"
-echo "requiere la key viva."
+    print("Brain no responde en localhost:8322 (el proveedor sí pasó)")
+PY

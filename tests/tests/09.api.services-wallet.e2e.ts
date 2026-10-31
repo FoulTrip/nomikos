@@ -248,7 +248,7 @@ test('reconectar la misma wallet NO duplica (upsert + EIP-55 insensible)', async
 
 test('dPaaS automática: registro genera devnet+mainnet; summary lista para fondear', async ({ account }) => {
   const H = { Authorization: `Bearer ${account.token}`, 'Content-Type': "application/json" };
-  // Solana con fondos conocidos (treasury e2e no aplica; solo forma): conectamos
+  // Conectamos una wallet pública de forma; no hacemos ninguna transacción.
   await api('/accounts/me/connected-wallets', {
     method: 'POST', headers: H,
     body: JSON.stringify({ provider: 'phantom', chain: 'solana', pubkey: '9EgkxJXATAppZgRViFFBNmhSeQbXj664zKV9ErCm6cVS' }),

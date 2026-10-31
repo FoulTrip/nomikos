@@ -33,14 +33,14 @@ imprescindible: [`context.md`](context.md).
 9. **SOLANA SIN SDK**: RPC JSON-RPC a mano (`SolanaClient`), firma ed25519 con
    `ed25519-dalek`, base58 en `b58.rs`, tx legacy en
    `solana::build_transfer_message`. No agregar crates de Solana.
-10. **R2 SIN SDK**: firma SigV4 a mano en `r2.rs`. OJO: hashes hex **minúsculas**
-    (`hex_string`), `x-amz-content-sha256` SIEMPRE presente, host con región
-    opcional (`R2_REGION`). `device::get_model` es 100 % desde R2 — NO
-    reintroducir fallback a archivo local.
+10. **Object storage SIN SDK**: firma SigV4 a mano en `r2.rs` para RustFS local y
+    R2. OJO: hashes hex **minúsculas** (`hex_string`), `x-amz-content-sha256`
+    SIEMPRE presente y región SigV4 según backend. `device::get_model` descarga
+    del bucket seleccionado; NO reintroducir fallback a archivo local.
 11. **Logging**: `tracing` (`tracing::info/warn/error`). Sin `println!`.
     Nombres de módulo en el logger: `agent_os_api::<módulo>`.
 12. **Compilar y probar antes de dar por buena una tarea**:
-    `cargo build && cargo test` (12 tests deben pasar).
+    `cargo build && cargo test` (15 tests deben pasar).
 
 ## Qué NO hacer
 

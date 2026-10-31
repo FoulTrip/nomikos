@@ -74,6 +74,22 @@ impl Db {
                  updated_at       INTEGER NOT NULL
              );
 
+             -- Firmantes globales (p. ej. pagos system o tesorerías legacy). El keypair se
+             -- guarda cifrado con ACCOUNTS_MASTER_KEY; solo la pubkey queda visible.
+             CREATE TABLE IF NOT EXISTS system_wallets (
+                 network       TEXT NOT NULL,
+                 role          TEXT NOT NULL,
+                 wallet_pubkey TEXT NOT NULL,
+                 keypair_enc   TEXT NOT NULL,
+                 created_at    INTEGER NOT NULL,
+                 PRIMARY KEY (network, role)
+             );
+
+             CREATE TABLE IF NOT EXISTS devnet_faucet_claims (
+                 account_id      TEXT PRIMARY KEY REFERENCES accounts(id),
+                 last_request_at INTEGER NOT NULL
+             );
+
              CREATE TABLE IF NOT EXISTS x402_invoices (
                  id                  TEXT PRIMARY KEY,
                  resource            TEXT NOT NULL,
@@ -250,6 +266,17 @@ impl Db {
                  installed_at    INTEGER,
                  created_at      INTEGER NOT NULL,
                  updated_at      INTEGER NOT NULL
+             );
+
+             -- Asignación de cada DApp a la flota de una cuenta. Si no hay
+             -- fila, la app queda visible para todos por compatibilidad.
+             CREATE TABLE IF NOT EXISTS account_app_visibility (
+                 account_id      TEXT NOT NULL REFERENCES accounts(id),
+                 app_slug        TEXT NOT NULL REFERENCES apps(slug),
+                 mode            TEXT NOT NULL DEFAULT 'all' CHECK (mode IN ('all', 'selected')),
+                 device_ids_json TEXT NOT NULL DEFAULT '[]',
+                 updated_at      INTEGER NOT NULL,
+                 PRIMARY KEY (account_id, app_slug)
              );
 
              CREATE TABLE IF NOT EXISTS simulation_states (

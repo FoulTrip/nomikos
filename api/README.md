@@ -73,13 +73,13 @@ Herramientas de agente relacionadas:
      igual que el dapp: `SOLANA_WALLET` (pubkey o ruta) → `keypair_path` del
      CLI (`~/.config/solana/cli/config.yml`) → `~/.config/solana/id.json`.
 2. **Estado del dispositivo** — nombre + **ficha técnica** viven en la DB
-   (seeds en el primer arranque) junto a los metadatos del modelo 3D (key R2,
-   tamaño, ETag, URL pública).
-3. **Modelo 3D** — `GET /api/device/model` descarga el GLB del bucket R2
-   (firma SigV4 a mano, sin dependencias `object_store`) y como *fallback*
-   sirve el archivo local `DEVICE_MODEL_FILE`. `POST
-   /api/device/model/upload` empuja el archivo local al bucket y persiste los
-   metadatos.
+   (seeds en el primer arranque) junto a los metadatos del modelo 3D (key,
+   tamaño, ETag, URL pública opcional).
+3. **Modelo 3D** — `GET /api/device/model` siempre descarga el GLB del object
+   store configurado (RustFS local o Cloudflare R2, firma SigV4 a mano, sin
+   dependencias `object_store`). Nunca sirve el archivo local como fallback.
+   `POST /api/device/model/upload` publica el archivo fuente al bucket y
+   persiste los metadatos.
 4. **x402** — facturas de micro-peajes (`pending → verifying → settled|failed`)
    verificadas on-chain en background por el *settler*; liquidaciones
    salientes encoladas con `POST /api/x402/pay` se firman (ed25519-dalek) y
@@ -89,15 +89,15 @@ Herramientas de agente relacionadas:
 
 | Método | Ruta | Descripción |
 |---|---|---|
-| GET | `/api/health` | Vista general (uptime, módulos, R2 activo) |
+| GET | `/api/health` | Vista general (uptime, módulos, object store activo) |
 | GET | `/api/navbar` | **Datos del navbar**: dispositivo + ERP (rojo/verde) + Solana (red/balance) |
 | GET | `/api/modules` | Índice de módulos (multimedia marcado omitido) |
 | GET | `/api/erp/status` | Fila de servicio del ERP Medusa.js |
 | GET | `/api/solana/status` | Fila de servicio Solana (red, wallet, balance) |
 | GET | `/api/device` | Dispositivo + ficha técnica + metadatos del modelo |
-| GET | `/api/device/model` | **Sirve el GLB** (R2 primero, archivo local de fallback) |
-| GET | `/api/device/model/head` | 200/404: ¿hay GLB disponible por alguna vía? |
-| POST | `/api/device/model/upload` | Empuja `DEVICE_MODEL_FILE` al bucket R2 |
+| GET | `/api/device/model` | **Sirve el GLB** desde el object store configurado |
+| GET | `/api/device/model/head` | 200/404: ¿existe el objeto en el bucket? |
+| POST | `/api/device/model/upload` | Publica `DEVICE_MODEL_FILE` al bucket seleccionado |
 | POST | `/api/x402/invoices` | Crea factura `{resource, amount_lamports}` |
 | GET | `/api/x402/invoices` | Lista últimas 100 facturas |
 | GET | `/api/x402/invoices/{id}` | Obtiene una factura |
@@ -157,10 +157,12 @@ Ver `.env.example` (copiar a `.env`). Resumen:
 | `X402_SETTLE_INTERVAL_SECS` | `15` | periodo del settler |
 | `X402_MAX_VERIFY_ATTEMPTS` | `10` | agotar → factura `failed` |
 | `DEVICE_NAME` | `ESP32-S3-Touch-AMOLED-1.43` | nombre del dispositivo |
-| `DEVICE_MODEL_FILE` | GLB del dapp | modelo 3D local (fallback) |
-| `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET` | — | credenciales R2 (todas o ninguna) |
-| `R2_MODEL_KEY` | `models/…glb` | key del objeto |
-| `R2_PUBLIC_URL_BASE` | — | URL pública (p. ej. `pub-….r2.dev`) |
+| `OBJECT_STORE_BACKEND` | `local` | `local` usa RustFS; `r2` usa Cloudflare R2 |
+| `DEVICE_MODEL_FILE` | GLB del dapp | fuente para subir; no es una ruta de lectura |
+| `OBJECT_STORE_MODEL_KEY` | `models/…glb` | key del objeto (acepta el nombre antiguo `R2_MODEL_KEY`) |
+| `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET` | — | obligatorias solo con `OBJECT_STORE_BACKEND=r2` |
+| `R2_REGION` / `R2_API_TOKEN` | — | región del endpoint y lectura opcional vía Cloudflare API |
+| `R2_PUBLIC_URL_BASE` | — | URL pública opcional para metadatos; el visor usa la API |
 
 ## Ejecución
 
@@ -175,18 +177,17 @@ cargo test           # base58, SigV4 (fechas), mensaje de transferencia, fmt SOL
   endpoints del dapp; con esta API Rust pueden apuntar a `…:8080/api/navbar`
   para el mismo dato unificado. Las fichas ("Ficha técnica") salen de
   `/api/device` (DB, seeds).
-- **Modelo 3D** — en el dapp, `components/DeviceViewer.tsx` lee
-  `NEXT_PUBLIC_MODEL_URL`; apúntalo al modelo servido por esta API, por
-  ejemplo `http://127.0.0.1:8080/api/device/model` (o directo a R2 con
-  `R2_PUBLIC_URL_BASE`).
+- **Modelo 3D** — en el dapp, `components/DeviceViewer.tsx` solicita el
+  endpoint de la API (`/api/device/model`). La API descarga el GLB del bucket
+  local RustFS o de R2, según `OBJECT_STORE_BACKEND`.
 
 ## Stack
 
 - **axum 0.8** (rutas `{id}`), tokio multi-thread, tower-http (CORS, tracing).
-- **reqwest 0.12** (rustls) — health Medusa + JSON-RPC Solana + R2.
+- **reqwest 0.12** (rustls) — health Medusa + JSON-RPC Solana + object storage.
 - **rusqlite 0.31 (bundled)** — WAL, migrations embebidas, seeds.
 - **ed25519-dalek 2** — firma de transferencias SOL (tx legacy a mano:
   header `[1,0,1]`, `SystemProgram::Transfer`, compact-u16, base64).
-- **sha2/hmac** — SigV4 firmado a mano para R2 (`region=auto`) porque
+- **sha2/hmac** — SigV4 firmado a mano para R2 (`region=auto`) y RustFS local porque
   `object_store` añade checksums que R2 rechaza.
 - **base58 propio** (sin dependencias) para pubkeys/blockhashes/firmas.

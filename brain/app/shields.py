@@ -1,28 +1,13 @@
-"""Llama Guard 3 — shields de entrada y salida.
+"""Llama Guard remoto para moderar entrada y salida.
 
-Dos backends:
-  1. Llama Stack moderation API (OpenAI-compatible ``/v1/moderations``),
-     cuando el shield está registrado en la distribución.
-  2. Ollama directo con el modelo ``llama-guard3:1b`` (fallback autónomo,
-     corre en CPU).
-
-Protocolo: prompt oficial de Llama Guard 3 → el modelo responde ``safe`` o
-``unsafe`` + categorías violadas (S1..S14).
-
-Falsos positivos (lección documentada por Red Hat con estos shields): el
-modelo 1B a veces flaggea categorías que no aplican al dominio (p.ej. S9
-"Indiscriminate Weapons" ante texto de micro-peajes/blockchain). La práctica
-recomendada es una lista de exclusión por categoría
-(``GUARD_EXCLUDED_CATEGORIES``): si todas las categorías violadas están en
-la lista, el contenido se considera seguro para este dominio.
+Proveedor, endpoint, clave y modelo vienen del .env central. El adaptador
+usa el formato OpenAI Chat Completions y espera la respuesta safe/unsafe.
 """
-
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import httpx
 
@@ -30,10 +15,10 @@ from .config import settings
 
 log = logging.getLogger("agent-brain.guard")
 
-# Categorías oficiales de Llama Guard 3 (unsafe content categories)
+# Categorías oficiales de Llama Guard 4 (unsafe content categories)
 _GUARD_CATEGORIES = """S1: Violent Crimes.
 S2: Non-Violent Crimes.
-S3: Sex Crimes.
+S3: Sex-Related Crimes.
 S4: Child Sexual Exploitation.
 S5: Defamation.
 S6: Specialized Advice.
@@ -41,17 +26,17 @@ S7: Privacy.
 S8: Intellectual Property.
 S9: Indiscriminate Weapons.
 S10: Hate.
-S11: Self-Harm.
+S11: Suicide & Self-Harm.
 S12: Sexual Content.
 S13: Elections.
-S14: Code Interpreter Abuse."""
+S14: Code Interpreter Abuse (text only)."""
 
 
 @dataclass
 class GuardVerdict:
     verdict: str  # "safe" | "unsafe" | "unknown" | "disabled"
     categories: list[str]
-    backend: str  # "llama-stack" | "ollama" | "disabled" | "error"
+    backend: str  # proveedor configurado | "disabled" | "error"
     raw: str = ""
     excluded_applied: bool = False
 
@@ -61,7 +46,7 @@ class GuardVerdict:
 
 
 def _prompt(user_text: str, output: bool, original_user_text: str = "") -> str:
-    """Prompt oficial del protocolo Llama Guard 3.
+    """Prompt oficial del protocolo Llama Guard 4.
 
     Para el shield de salida, la conversación debe incluir la pregunta del
     usuario Y la respuesta del agente (`Agent: …`), que es lo que se evalúa.
@@ -95,7 +80,7 @@ def _parse_guard_reply(text: str) -> GuardVerdict:
 
 
 def _apply_exclusions(v: GuardVerdict, backend: str) -> GuardVerdict:
-    """Política de exclusiones (defensa contra falsos positivos del 1B):
+    """Política de exclusiones para falsos positivos del dominio:
     si TODAS las categorías violadas están en GUARD_EXCLUDED_CATEGORIES,
     el contenido se considera seguro para este dominio."""
     v.backend = backend
@@ -112,8 +97,7 @@ def _apply_exclusions(v: GuardVerdict, backend: str) -> GuardVerdict:
 
 
 def _sanitize_for_guard(text: str) -> str:
-    """Limpieza ligera antes del shield: el modelo 1B se atasca con
-    markdown (``**``, ``#``, backticks) y emite respuestas vacías."""
+    """Limpieza ligera de markdown antes de enviar texto al shield remoto."""
     import re as _re
 
     text = _re.sub(r"[*_#>`~\[\]|]+", " ", text)
@@ -121,79 +105,53 @@ def _sanitize_for_guard(text: str) -> str:
     return text.strip()
 
 
-async def _via_ollama(text: str, output: bool, original_user_text: str = "") -> GuardVerdict:
-    """Llama Guard 3 corriendo en Ollama (CPU-friendly), con 1 reintento
-    ante respuesta vacía (el 1B es inestable con texto en español).
-    El input se trunca y sanitiza (práctica Red Hat: limitar tamaño para
-    inferencia rápida del shield)."""
-    # Truncar + sanitizar: el shield evalúa intención, no formato.
-    text = _sanitize_for_guard(text[:1500])
+async def _via_configured_provider(text: str, output: bool, original_user_text: str = "") -> GuardVerdict:
+    """Clasifica entrada/salida con un endpoint OpenAI-compatible configurado."""
+    safe_text = _sanitize_for_guard(text[:1500])
+    safe_original = _sanitize_for_guard(original_user_text[:1500])
     payload = {
-        "model": settings.llama_guard_model,
-        "messages": [{"role": "user", "content": _prompt(text, output, original_user_text)}],
+        "model": settings.guard_model,
+        "messages": [{
+            "role": "user",
+            "content": _prompt(safe_text, output, safe_original),
+        }],
+        "temperature": 0,
+        "max_tokens": 64,
         "stream": False,
-        "options": {"temperature": 0, "num_predict": 40, "num_ctx": 1024},
     }
-    reply = ""
-    for attempt in (1, 2):
-        async with httpx.AsyncClient(timeout=90) as client:
-            res = await client.post(f"{settings.ollama_url}/api/chat", json=payload)
-            res.raise_for_status()
-            reply = res.json().get("message", {}).get("content", "")
-        if reply.strip():
-            break
-        log.warning("Llama Guard respondió vacío (intento %d), reintentando", attempt)
-        await asyncio.sleep(1)
-
-    if not reply.strip():
-        return GuardVerdict("unknown", [], "ollama")
-    return _apply_exclusions(_parse_guard_reply(reply), "ollama")
-
-
-async def _via_llama_stack(text: str) -> GuardVerdict:
-    """Moderation API OpenAI-compatible expuesta por Llama Stack."""
-    async with httpx.AsyncClient(timeout=15) as client:
-        res = await client.post(
-            f"{settings.llama_stack_url}/moderations",
-            headers={"Authorization": f"Bearer {settings.llama_stack_api_key}"},
-            json={"input": text},
+    async with httpx.AsyncClient(timeout=45) as client:
+        response = await client.post(
+            settings.guard_api_url,
+            headers={"Authorization": f"Bearer {settings.guard_api_key}"},
+            json=payload,
         )
-        res.raise_for_status()
-        data = res.json()
-    results = data.get("results") or data.get("data") or []
-    if not results:
-        return GuardVerdict("unknown", [], "llama-stack")
-    r = results[0]
-    flagged = bool(r.get("flagged"))
-    cats = [k for k, v in (r.get("categories") or {}).items() if v]
-    v = GuardVerdict("unsafe" if flagged else "safe", cats, "llama-stack")
-    return _apply_exclusions(v, "llama-stack")
+        response.raise_for_status()
+        reply = response.json().get("choices", [{}])[0].get("message", {}).get("content", "")
 
+    if not isinstance(reply, str) or not reply.strip():
+        return GuardVerdict("unknown", [], settings.guard_provider)
+    return _apply_exclusions(_parse_guard_reply(reply), settings.guard_provider)
 
 async def run_llama_guard(
     text: str, *, output: bool = False, original_user_text: str = ""
 ) -> GuardVerdict:
-    """Corre Llama Guard sobre un texto. Devuelve el veredicto.
+    """Ejecuta el shield remoto de entrada o salida y devuelve su veredicto.
 
-    ``original_user_text`` se usa en el shield de salida para reconstruir la
-    conversación (User + Agent) según el protocolo.
-
-    Orden de intentos: Llama Stack (si está habilitado) → Ollama →
-    ``unknown`` (fail-open con warning; en producción usar fail-closed).
+    original_user_text reconstruye el turno User/Agent del shield de salida.
+    Si falta configuración o falla el proveedor, conserva el comportamiento fail-open actual.
     """
     if not settings.guard_enabled:
         return GuardVerdict("disabled", [], "disabled")
-
-    # 1) Llama Stack moderation API
-    if settings.guard_via_llama_stack:
-        try:
-            return await _via_llama_stack(text)
-        except Exception as e:  # noqa: BLE001
-            log.warning("Llama Stack moderation falló (%s); cae a Ollama", e)
-
-    # 2) Ollama directo con llama-guard3
-    try:
-        return await _via_ollama(text, output, original_user_text)
-    except Exception as e:  # noqa: BLE001
-        log.warning("Llama Guard vía Ollama falló: %s — continue (fail-open)", e)
+    if not all((settings.guard_provider, settings.guard_api_url, settings.guard_api_key, settings.guard_model)):
+        log.error("Falta GUARD_PROVIDER, GUARD_API_URL, GUARD_API_KEY o GUARD_MODEL")
         return GuardVerdict("unknown", [], "error")
+
+    try:
+        return await _via_configured_provider(text, output, original_user_text)
+    except httpx.HTTPStatusError as exc:
+        log.warning("Llama Guard devolvió HTTP %s; continúa fail-open", exc.response.status_code)
+    except httpx.RequestError as exc:
+        log.warning("Proveedor de Llama Guard no disponible (%s); continúa fail-open", type(exc).__name__)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Llama Guard no pudo procesar la respuesta (%s); continúa fail-open", type(exc).__name__)
+    return GuardVerdict("unknown", [], "error")

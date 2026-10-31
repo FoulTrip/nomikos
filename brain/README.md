@@ -1,22 +1,20 @@
 # agent-brain — Capa Cognitiva del Agente OS
 
-Orquestador agéntico en Python (**Llama Stack + Llama Guard**) que implementa el cerebro Zero-UI del sistema:
+Orquestador agéntico en Python (**LLM por cuenta + Llama Guard configurable**) que implementa el cerebro Zero-UI del sistema:
 
 ```
 ESP32 / agent-dapp ──(voz/texto)──► agent-brain (:8322)
                                         │
-        ① Shield entrada ────────────── Llama Guard 3 (Ollama local, CPU)
+        ① Shield entrada ────────────── Llama Guard (proveedor del .env)
                                         │
-        ② Razonamiento ─────────────── Llama Stack (:8321) → NVIDIA NIM
-                                        │   modelo: meta/muse-glimmer-30b
-                                        │   (Muse de Meta vía NIM, reasoning + tool-calls)
+        ② Razonamiento ─────────────── LLM activo de la cuenta
                                         ▼
         ③ Tools ────────────────────── agent-os-api (Rust :8080)
                                         │   ├── x402 Solana (micro-peajes, firma delegada)
                                         │   ├── Solana RPC (Devnet)
                                         │   └── Cloudflare R2 (modelo 3D)
                                         ▼
-        ④ Shield salida ────────────── Llama Guard 3 valida la respuesta
+        ④ Shield salida ────────────── Llama Guard valida la respuesta
                                         │
                                         ▼
                                   respuesta al dispositivo
@@ -27,11 +25,10 @@ ESP32 / agent-dapp ──(voz/texto)──► agent-brain (:8322)
 | Capa | Implementación | Estado |
 |---|---|---|
 | Gateway | FastAPI `:8322` — `POST /v1/agentic-gateway` | ✅ probado end-to-end |
-| Inference | **Llama Stack 0.7.3** (`:8321`) → provider `remote::nvidia` (NIM) | ✅ real |
-| Modelo | `nvidia/meta/muse-glimmer-30b` — Muse de Meta vía NIM (tool-calling) | ✅ probado |
+| Inference | LLM activo configurado por la cuenta (NIM, OpenAI o compatible) | ✅ real |
 | OpenAI | provider registrado — se activa con `OPENAI_API_KEY` | 🔌 listo |
 | Muse CLI | tool `ask_muse` (`muse exec` headless) — actualmente 402 billing Meta | ⚠️ requiere pago |
-| Shields | **Llama Guard 3** `llama-guard3:1b` en Ollama local (CPU) | ✅ bloquea S11 real; exclusiones S8/S9/S14 |
+| Shields | Llama Guard en endpoint OpenAI-compatible definido en `.env` | ✅ entrada y salida; modelo configurable |
 | x402 | Firma delegada: invoice → `POST /api/x402/pay` → verify → ejecutar | ✅ modo manual sin payer |
 
 ## Endpoints
@@ -39,7 +36,7 @@ ESP32 / agent-dapp ──(voz/texto)──► agent-brain (:8322)
 | Endpoint | Función |
 |---|---|
 | `POST /v1/agentic-gateway` | Flujo completo: `{device_id, text, solana_tx_signature?}` → `{ok, reply, tools_used, shield_in, shield_out, x402, backend, model, iterations}` |
-| `GET /v1/health` | Salud + conectividad (agent-os-api, Llama Stack, Ollama) |
+| `GET /v1/health` | Salud + conectividad con agent-os-api y configuración del guard NIM |
 | `GET /v1/tools` | Las 11 herramientas del agente con sus schemas |
 
 ## Herramientas del agente (tools → agent-os-api)
@@ -54,16 +51,10 @@ ESP32 / agent-dapp ──(voz/texto)──► agent-brain (:8322)
 ## Setup
 
 ```bash
-# 1. Ollama (Llama Guard en CPU) + modelos
-~/.local/bin/ollama serve &
-~/.local/bin/ollama pull llama-guard3:1b   # shield (1.6 GB)
-~/.local/bin/ollama pull llama3.2:1b      # fallback inference (opcional)
+# 1. Define GUARD_PROVIDER, GUARD_API_URL, GUARD_API_KEY y GUARD_MODEL
+#    en el .env central. Por defecto usa Llama Guard 4 de NVIDIA NIM.
 
-# 2. Llama Stack (providers: NVIDIA NIM + OpenAI)
-cd agent-brain
-NVIDIA_API_KEY=nvapi-... .venv-stack/bin/llama stack run run-stack.yaml
-
-# 3. agent-brain
+# 2. agent-brain
 source .venv/bin/activate
 uvicorn app.main:app --port 8322
 ```
@@ -71,19 +62,20 @@ uvicorn app.main:app --port 8322
 ## Configuración clave (.env)
 
 ```env
-LLAMA_STACK_URL=http://localhost:8321/v1
-LLM_MODEL=nvidia/meta/muse-glimmer-30b   # router exige prefijo provider
-GUARD_EXCLUDED_CATEGORIES=S8,S9,S14       # calibración anti falsos positivos (práctica Red Hat)
+GUARD_PROVIDER=nvidia-nim
+GUARD_API_URL=https://integrate.api.nvidia.com/v1/chat/completions
+GUARD_API_KEY=${NVIDIA_API_KEY}
+GUARD_MODEL=meta/llama-guard-4-12b
+GUARD_EXCLUDED_CATEGORIES=S8,S9,S14       # calibración de falsos positivos del dominio
 X402_AUTO_PAY=true
 X402_PROTECTED_TOOLS=get_device,get_navbar_status
 ```
 
 ## Lecciones de implementación (documentadas)
 
-1. **Falsos positivos del Llama Guard 1B** en dominios técnicos (S8 por nombres de software, S9 por "peajes") → exclusion list por categoría, como recomienda Red Hat para workflows legítimos.
-2. **Prompt de salida del guard** debe reconstruir la conversación `User: … / Agent: …` (si solo va `User:`, el 1B emite vacío).
-3. **Ollama + Vulkan OOM** con prompts ≥ ~400 tokens → `num_ctx: 1024` en las options del shield.
-4. **markdown en el output** atasca al 1B → sanitización ligera antes del shield.
+1. **Falsos positivos del shield** en dominios técnicos → lista de exclusión por categoría para el dominio.
+2. **Prompt de salida del guard** debe reconstruir el turno User/Agent completo.
+3. Se truncan a 1500 caracteres y se sanitizan los textos antes de enviarlos al proveedor externo.
 5. Modelos NIM EOL: `llama-3.1-8b` y `llama-3.3-70b` dieron 410 Gone → usar modelos vivos del catálogo (`muse-glimmer-30b` verificado con tool-calling).
 
 ## Pruebas ejecutadas

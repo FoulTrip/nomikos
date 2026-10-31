@@ -2,10 +2,9 @@
 
 import { useLocale, useTranslations } from "next-intl";
 import {
-  Area,
-  AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
-  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -45,7 +44,13 @@ function TokenUsageTooltip({
       <p className="font-semibold">{date}</p>
       {payload.map((item) => (
         <p key={item.dataKey} className="flex items-center justify-between gap-5 text-muted-foreground">
-          <span>{item.dataKey === "prompt_tokens" ? t("tokenPrompt") : t("tokenCompletion")}</span>
+          <span>
+            {item.dataKey === "prompt_tokens"
+              ? t("tokenPrompt")
+              : item.dataKey === "total_tokens"
+                ? t("tokenTotal")
+                : t("tokenCompletion")}
+          </span>
           <span className="font-mono font-medium text-foreground">
             {new Intl.NumberFormat(locale).format(Number(item.value ?? 0))}
           </span>
@@ -55,79 +60,51 @@ function TokenUsageTooltip({
   );
 }
 
-/** Área apilada: tokens de entrada y salida por día durante los últimos 14 días. */
+/** Gráfico diario compacto para comparar entrada, salida y total en tarjetas separadas. */
 export function TokenUsageChart({
   data,
+  dataKey,
+  color,
 }: {
-  data: { date: string; prompt_tokens: number; completion_tokens: number }[];
+  data: {
+    date: string;
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  }[];
+  dataKey: "prompt_tokens" | "completion_tokens" | "total_tokens";
+  color: string;
 }) {
-  const t = useTranslations("dashboard");
   const locale = useLocale();
   const dateLabel = (value: string) =>
     new Intl.DateTimeFormat(locale, { month: "short", day: "numeric", timeZone: "UTC" }).format(
       new Date(`${value}T00:00:00Z`),
     );
-  const compactNumber = (value: number) =>
-    new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 }).format(value);
-
   return (
-    <div className="h-56 w-full min-w-0">
+    <div className="h-32 w-full min-w-0">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-          <defs>
-            <linearGradient id="tokenPromptFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#6172F3" stopOpacity={0.24} />
-              <stop offset="100%" stopColor="#6172F3" stopOpacity={0.02} />
-            </linearGradient>
-            <linearGradient id="tokenCompletionFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#26A879" stopOpacity={0.2} />
-              <stop offset="100%" stopColor="#26A879" stopOpacity={0.02} />
-            </linearGradient>
-          </defs>
+        <BarChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: 4 }}>
           <CartesianGrid stroke={GRID} vertical={false} />
           <XAxis
             dataKey="date"
             tickFormatter={dateLabel}
-            tick={{ fill: TICK, fontSize: 11 }}
+            tick={{ fill: TICK, fontSize: 9 }}
             tickLine={false}
             axisLine={false}
-            minTickGap={20}
-            interval="preserveStartEnd"
-          />
-          <YAxis
-            tickFormatter={compactNumber}
-            tick={{ fill: TICK, fontSize: 11 }}
-            tickLine={false}
-            axisLine={false}
-            allowDecimals={false}
-            width={44}
+            minTickGap={12}
+            interval={
+              data.length > 60 ? 13 : data.length > 30 ? 5 : data.length > 9 ? 2 : "preserveStartEnd"
+            }
           />
           <Tooltip content={<TokenUsageTooltip />} />
-          <Legend
-            iconType="circle"
-            iconSize={7}
-            formatter={(value) => value === "prompt_tokens" ? t("tokenPrompt") : t("tokenCompletion")}
-            wrapperStyle={{ fontSize: 11, color: TICK }}
+          <Bar
+            dataKey={dataKey}
+            fill={color}
+            radius={[4, 4, 0, 0]}
+            maxBarSize={18}
+            isAnimationActive={false}
           />
-          <Area
-            type="monotone"
-            dataKey="prompt_tokens"
-            stackId="tokens"
-            stroke="#6172F3"
-            strokeWidth={2}
-            fill="url(#tokenPromptFill)"
-            activeDot={{ r: 4 }}
-          />
-          <Area
-            type="monotone"
-            dataKey="completion_tokens"
-            stackId="tokens"
-            stroke="#26A879"
-            strokeWidth={2}
-            fill="url(#tokenCompletionFill)"
-            activeDot={{ r: 4 }}
-          />
-        </AreaChart>
+        </BarChart>
       </ResponsiveContainer>
     </div>
   );
@@ -203,14 +180,16 @@ export function InvoiceStatusBreakdown({
         return (
           <div key={status} className="grid min-w-0 gap-1.5">
             <div className="flex min-w-0 items-center justify-between gap-2">
-              <Badge variant="outline" className="min-w-0 gap-1.5 text-[10px]">
-                <Icon className={`size-3.5 shrink-0 ${state.iconClass}`} aria-hidden="true" />
-                <span className="truncate">{state.label}</span>
-              </Badge>
-              <div className="grid shrink-0 justify-items-end gap-0.5 text-right">
-                <span className="font-mono text-xs tabular-nums">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <Badge variant="outline" className="min-w-0 gap-1.5 text-[10px]">
+                  <Icon className={`size-3.5 shrink-0 ${state.iconClass}`} aria-hidden="true" />
+                  <span className="truncate">{state.label}</span>
+                </Badge>
+                <Badge variant="secondary" className="shrink-0 px-1.5 font-mono text-[10px] tabular-nums">
                   {new Intl.NumberFormat(locale).format(count)}
-                </span>
+                </Badge>
+              </div>
+              <div className="grid shrink-0 justify-items-end gap-0.5 text-right">
                 <span className="text-xs font-medium tabular-nums">{amount.primary}</span>
                 {amount.secondary && (
                   <span className="text-[10px] text-muted-foreground tabular-nums">

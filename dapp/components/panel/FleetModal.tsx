@@ -94,6 +94,14 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
   const tc = useTranslations("common");
   const sandbox = useSandbox();
   const [tab, setTab] = useState<Tab>("fleet");
+  const [sandboxRuntime, setSandboxRuntime] = useState<{
+    docker: boolean;
+    apiReady: boolean;
+    brainReady: boolean;
+    modelReady: boolean;
+  } | null>(null);
+  const [runtimeBusy, setRuntimeBusy] = useState(false);
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
 
   // ── Mi flota ──
   const [devices, setDevices] = useState<FleetDevice[] | null>(null);
@@ -128,14 +136,70 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
   const [claiming, setClaiming] = useState(false);
   const [claimedDev, setClaimedDev] = useState<FleetDevice | null>(null);
   const [claimError, setClaimError] = useState<string | null>(null);
+  const [claimNotice, setClaimNotice] = useState<string | null>(null);
 
   const doClaim = async (code: string) => {
     const c = code.trim().toUpperCase();
     if (!c) return;
     setClaiming(true);
     setClaimError(null);
+    setClaimNotice(null);
     setClaimedDev(null);
     try {
+      if (sandbox) {
+        const claimSandbox = async (claimCode: string) => {
+          const res = await fetch("/api/account/simulation", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "claim", claim_code: claimCode }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            throw new Error(data.error ?? `HTTP ${res.status}`);
+          }
+          return data.simulation as {
+            stage: "boot" | "claim" | "online";
+            claimed: boolean;
+            claim_code: string | null;
+            device_id: string | null;
+          };
+        };
+
+        let simulation = await claimSandbox(c);
+        let codeRenewed = false;
+        if (
+          simulation.stage === "claim" &&
+          simulation.claim_code &&
+          simulation.claim_code !== c
+        ) {
+          // Un código Sandbox vencido se renueva en el API. Reintentar con el
+          // nuevo código completa el emparejado con un solo clic en Flota.
+          setClaimCode(simulation.claim_code);
+          simulation = await claimSandbox(simulation.claim_code);
+          codeRenewed = true;
+        }
+        if (simulation.stage !== "online" || !simulation.claimed || !simulation.device_id) {
+          throw new Error(t("sandboxClaimIncomplete"));
+        }
+
+        const fleetRes = await fetch("/api/account/devices", { cache: "no-store" });
+        const fleetData = await fleetRes.json();
+        if (!fleetRes.ok || !fleetData.ok) {
+          throw new Error(fleetData.error ?? `HTTP ${fleetRes.status}`);
+        }
+        const device = (fleetData.devices as FleetDevice[]).find(
+          (item) => item.id === simulation.device_id,
+        );
+        if (!device) throw new Error(t("sandboxDeviceMissing"));
+
+        setClaimedDev(device);
+        setClaimCode("");
+        if (codeRenewed) setClaimNotice(t("sandboxCodeRenewed"));
+        loadFleet();
+        return;
+      }
+
+      // Producción conserva el canje del código de una placa física vía API.
       const res = await fetch("/api/account/devices/claim", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -168,6 +232,38 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
   const [manifestState, setManifestState] = useState<"idle" | "checking" | "available" | "pending">("idle");
   const [boardId, setBoardId] = useState(BOARDS[0].id);
   const consoleRef = useRef<HTMLPreElement | null>(null);
+
+  const detectSandboxRuntime = useCallback(async () => {
+    setRuntimeBusy(true);
+    setRuntimeError(null);
+    try {
+      const res = await fetch("/api/sandbox/runtime", { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setSandboxRuntime(data);
+    } catch (e) {
+      setRuntimeError(e instanceof Error ? e.message : tc("networkError"));
+    } finally {
+      setRuntimeBusy(false);
+    }
+  }, [tc]);
+
+  const prepareSandboxSimulator = async () => {
+    setRuntimeBusy(true);
+    setRuntimeError(null);
+    try {
+      const res = await fetch("/api/sandbox/runtime", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error ?? `HTTP ${res.status}`);
+      }
+      await detectSandboxRuntime();
+    } catch (e) {
+      setRuntimeError(e instanceof Error ? e.message : tc("networkError"));
+    } finally {
+      setRuntimeBusy(false);
+    }
+  };
 
   const pushLine = useCallback((raw: string) => {
     const text = raw.replace(/\r/g, "");
@@ -287,6 +383,10 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, boardId]);
 
+  useEffect(() => {
+    if (tab === "install" && sandbox) void detectSandboxRuntime();
+  }, [tab, sandbox, detectSandboxRuntime]);
+
   const loadEspWebTools = () => {
     if (document.getElementById("esp-web-tools")) return;
     const s = document.createElement("script");
@@ -396,7 +496,7 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
           <Card className="gap-0 py-0 shadow-none">
             <CardHeader className="gap-1 px-4 py-3">
               <CardTitle className="text-sm">{t("tabPair")}</CardTitle>
-              <CardDescription>{t("pairHint")}</CardDescription>
+              <CardDescription>{sandbox ? t("sandboxPairHint") : t("pairHint")}</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3 px-4 pb-4">
               <div className="grid gap-2">
@@ -417,13 +517,21 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
                 <div className="flex items-center gap-2 text-sm text-emerald-700">
                   <CircleCheck className="size-4 shrink-0" />
                   <span className="min-w-0 flex-1">
-                    {t("claimed", { name: claimedDev.name })}
+                    {claimedDev.execution_environment === "sandbox"
+                      ? t("sandboxClaimed", { name: claimedDev.name })
+                      : t("claimed", { name: claimedDev.name })}
                   </span>
                   <Badge variant="outline">
                     {claimedDev.execution_environment === "sandbox"
                       ? t("sandboxMode")
                       : t("productionMode")}
                   </Badge>
+                </div>
+              )}
+              {claimNotice && (
+                <div role="status" className="flex items-center gap-2 text-sm text-emerald-700">
+                  <CircleCheck className="size-4 shrink-0" />
+                  <span>{claimNotice}</span>
                 </div>
               )}
               {claimError && (
@@ -447,6 +555,77 @@ export default function FleetModal({ onClose }: { onClose: () => void }) {
         </TabsContent>
 
         <TabsContent value="install" className="mt-0 grid gap-3">
+          {sandbox && (
+            <Card className="gap-0 py-0 shadow-none">
+              <CardHeader className="gap-1 px-4 py-3">
+                <CardTitle className="text-sm">{t("sandboxSetupTitle")}</CardTitle>
+                <CardDescription>{t("sandboxSetupHint")}</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3 px-4 pb-4">
+                {sandboxRuntime && (
+                  <div className="grid gap-1 text-sm">
+                    <p>
+                      {t("dockerStatus", {
+                        status: sandboxRuntime.docker ? t("detected") : t("notDetected"),
+                      })}
+                    </p>
+                    <p className="text-muted-foreground">
+                      {t("servicesStatus", {
+                        api: sandboxRuntime.apiReady ? t("ready") : t("offline"),
+                        brain: sandboxRuntime.brainReady ? t("ready") : t("offline"),
+                      })}
+                    </p>
+                    <p className="text-muted-foreground">
+                      {t("modelStatus", {
+                        status: sandboxRuntime.modelReady ? t("ready") : t("pending"),
+                      })}
+                    </p>
+                  </div>
+                )}
+                {sandboxRuntime && (!sandboxRuntime.docker || !sandboxRuntime.apiReady || !sandboxRuntime.brainReady) && (
+                  <CardDescription>{t("dockerStartHint")}</CardDescription>
+                )}
+                {runtimeError && (
+                  <Alert variant="destructive">
+                    <TriangleAlert />
+                    <AlertDescription>{runtimeError}</AlertDescription>
+                  </Alert>
+                )}
+                <div className="flex flex-wrap justify-end gap-2">
+                  {sandboxRuntime?.docker && sandboxRuntime.apiReady && !sandboxRuntime.modelReady && (
+                    <Button
+                      type="button"
+                      onClick={prepareSandboxSimulator}
+                      disabled={runtimeBusy}
+                    >
+                      {runtimeBusy && <LoaderCircle className="animate-spin" />}
+                      {runtimeBusy ? t("preparingSimulator") : t("prepareSimulator")}
+                    </Button>
+                  )}
+                  {sandboxRuntime?.modelReady && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => window.location.reload()}
+                    >
+                      <RefreshCw />
+                      {t("reloadSimulator")}
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={detectSandboxRuntime}
+                    disabled={runtimeBusy}
+                  >
+                    {runtimeBusy ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
+                    {runtimeBusy ? t("detectingDocker") : t("detectDocker")}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <Card className="gap-0 py-0 shadow-none">
             <CardHeader className="gap-1 px-4 py-3">
               <CardTitle className="text-sm">{t("stepBoard")}</CardTitle>

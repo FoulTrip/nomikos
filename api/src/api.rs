@@ -8,7 +8,7 @@ use crate::modules::{
     voice, x402,
 };
 use crate::state::SharedState;
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::response::IntoResponse;
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
@@ -25,7 +25,7 @@ pub fn router(state: SharedState) -> Router {
         .route("/api/agent/state", get(agent_state))
         .route("/api/agent/tools", get(agent_tools))
         .route("/api/agent/call", post(agent_call))
-        // [ Dispositivo + R2 ]
+        // [ Dispositivo + object storage ]
         .route("/api/device", get(device::get_device_handler))
         .route("/api/device/model", get(device::get_model))
         .route("/api/device/model/head", get(device::model_head))
@@ -96,6 +96,10 @@ pub fn router(state: SharedState) -> Router {
         .route(
             "/api/accounts/me/services",
             get(accounts::list_services_handler).post(accounts::add_service_handler),
+        )
+        .route(
+            "/api/accounts/me/apps/{slug}/visibility",
+            get(apps::get_visibility_handler).put(apps::put_visibility_handler),
         )
         // [ NomikOS Fase 1 — flota de dispositivos ]
         .route("/api/devices/enroll", post(devices::enroll_handler))
@@ -221,7 +225,10 @@ async fn health(State(state): State<SharedState>) -> impl IntoResponse {
             "erp_medusa": state.cfg.payload_url,
             "x402_solana": state.cfg.solana_network_label(),
             "multimedia_spotify_mpd": null, // omitido por diseño
-            "cloudflare_r2": state.r2.is_some(),
+            "object_store": state.object_store.as_ref().map(|store| store.backend().as_str()),
+            "cloudflare_r2": state.object_store.as_ref().is_some_and(|store| {
+                store.backend() == crate::config::ObjectStoreBackend::CloudflareR2
+            }),
         }
     }))
 }
@@ -244,6 +251,13 @@ pub async fn navbar_value(state: &SharedState) -> AppResult<Value> {
     });
 
     let sol_json = sol.map(|s| {
+        let wallet_role = if s.wallet.as_deref().is_some()
+            && s.wallet.as_deref() == state.cfg.x402_payee.as_deref()
+        {
+            "x402_payee"
+        } else {
+            "observer"
+        };
         json!({
             "label": s.label,              // "Solana · Devnet"
             "running": s.running,
@@ -252,6 +266,8 @@ pub async fn navbar_value(state: &SharedState) -> AppResult<Value> {
             "balance_sol": s.balance_lamports.map(solana::fmt_sol),
             "balance_lamports": s.balance_lamports,
             "wallet": s.wallet,
+            "wallet_scope": "global",
+            "wallet_role": wallet_role,
             "slot": s.slot,
             "version": s.version,
             "endpoint": s.endpoint,
@@ -340,8 +356,85 @@ async fn erp_status(State(state): State<SharedState>) -> AppResult<impl IntoResp
     Ok(Json(service_value(&state, "erp").await?))
 }
 
-async fn solana_status(State(state): State<SharedState>) -> AppResult<impl IntoResponse> {
-    Ok(Json(service_value(&state, "solana").await?))
+#[derive(Deserialize)]
+struct SolanaStatusQuery {
+    network: Option<String>,
+}
+
+async fn solana_status(
+    State(state): State<SharedState>,
+    Query(query): Query<SolanaStatusQuery>,
+) -> AppResult<impl IntoResponse> {
+    let network = query
+        .network
+        .as_deref()
+        .unwrap_or(&state.cfg.solana_network)
+        .trim()
+        .to_lowercase();
+    if !matches!(network.as_str(), "local" | "devnet" | "testnet" | "mainnet") {
+        return Err(AppError::bad_request(
+            "network debe ser local, devnet, testnet o mainnet",
+        ));
+    }
+
+    let mut value = if network == state.cfg.solana_network {
+        service_value(&state, "solana").await?
+    } else {
+        let endpoint = state
+            .cfg
+            .solana_urls
+            .get(&network)
+            .cloned()
+            .ok_or_else(|| AppError::unavailable(format!("RPC no configurado para {network}")))?;
+        let client = solana::SolanaClient::new(state.http.clone(), endpoint.clone());
+        let (version, slot) = tokio::join!(client.get_version(), client.get_slot());
+        let version = version.ok();
+        let slot = slot.ok();
+        let running = version.is_some() || slot.is_some();
+        let wallet = solana::resolve_wallet(&state.cfg);
+        let balance_lamports = if running {
+            match wallet.as_deref() {
+                Some(wallet) => client.get_balance(wallet).await.ok(),
+                None => None,
+            }
+        } else {
+            None
+        };
+        let mut chars = network.chars();
+        let label = chars
+            .next()
+            .map(|first| first.to_uppercase().to_string() + chars.as_str())
+            .unwrap_or_default();
+        json!({
+            "id": "solana",
+            "label": format!("Solana · {label}"),
+            "running": running,
+            "network": label,
+            "endpoint": endpoint,
+            "version": version,
+            "slot": slot,
+            "wallet": wallet,
+            "balance_lamports": balance_lamports,
+            "detail": if running {
+                format!("validator {version:?} · slot {:?}", slot.unwrap_or_default())
+            } else {
+                "sin conexión con el RPC".to_string()
+            },
+            "updated_at": now_ms(),
+        })
+    };
+    if let Some(obj) = value.as_object_mut() {
+        let wallet = obj.get("wallet").and_then(Value::as_str).map(str::to_owned);
+        let payee = state.cfg.x402_payee.as_deref();
+        let wallet_role = if wallet.as_deref().is_some() && wallet.as_deref() == payee {
+            "x402_payee"
+        } else {
+            "observer"
+        };
+        obj.insert("wallet_scope".into(), json!("global"));
+        obj.insert("wallet_role".into(), json!(wallet_role));
+    }
+    Ok(Json(value))
 }
 
 /// URLs RPC de Solana por red (local/devnet/testnet/mainnet).

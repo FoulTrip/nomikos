@@ -3,11 +3,11 @@
 ``POST /v1/agentic-gateway`` orquesta el flujo Zero-UI completo:
 
   ① Identidad — Bearer → contexto de la cuenta (llm/chain/wallet) en la API.
-  ② Shield entrada — Llama Guard 3 clasifica el texto del dispositivo.
+  ② Shield entrada — el Llama Guard configurado clasifica el texto.
   ③ Razonamiento — LLM de la cuenta (o global) con tool-calling.
   ④ x402 reactivo — cada tool pasa el guard: 402 → pago delegado (dPaaS)
      de la cuenta → reintento con X-Payment (el usuario nunca firma).
-  ⑤ Shield salida — Llama Guard 3 valida la respuesta antes de emitirla.
+  ⑤ Shield salida — el Llama Guard configurado valida la respuesta.
 """
 
 from __future__ import annotations
@@ -94,7 +94,7 @@ async def agentic_gateway(req: AgenticRequest, request: Request) -> AgenticRespo
             status_code=401,
         )
 
-    # ② Shield entrada: Llama Guard
+    # ② Shield entrada: Llama Guard del proveedor configurado
     shield_in = await run_llama_guard(req.text, output=False)
     if shield_in.verdict == "unsafe":
         log.warning("⛔ Llama Guard bloqueó el input: %s", shield_in.categories)
@@ -176,7 +176,7 @@ async def agentic_gateway(req: AgenticRequest, request: Request) -> AgenticRespo
             verification["refusal_detected"] = True
             log.info("S2 refusal en %s → escalado=%s", run_id, ok_esc)
 
-    # ⑤ Shield salida: Llama Guard valida la respuesta del agente
+    # ⑤ Shield salida: Llama Guard del proveedor configurado
     shield_out = await run_llama_guard(run.reply, output=True, original_user_text=req.text)
     if shield_out.verdict == "unsafe":
         log.warning("⛔ Llama Guard bloqueó el output: %s", shield_out.categories)
@@ -229,29 +229,12 @@ async def health() -> dict:
     except Exception as e:  # noqa: BLE001
         out["api"] = {"ok": False, "error": str(e)[:120]}
 
-    # Llama Stack
-    try:
-        async with httpx.AsyncClient(timeout=3) as client:
-            res = await client.get(
-                f"{settings.llama_stack_url}/models",
-                headers={"Authorization": f"Bearer {settings.llama_stack_api_key}"},
-            )
-        out["llama_stack"] = {"ok": res.status_code == 200, "url": settings.llama_stack_url}
-    except Exception:  # noqa: BLE001
-        out["llama_stack"] = {"ok": False, "url": settings.llama_stack_url}
-
-    # Ollama (Llama Guard + fallback)
-    try:
-        async with httpx.AsyncClient(timeout=3) as client:
-            res = await client.get(f"{settings.ollama_url}/api/tags")
-        models = [m.get("name") for m in res.json().get("models", [])] if res.status_code == 200 else []
-        out["ollama"] = {"ok": res.status_code == 200, "models": models}
-    except Exception:  # noqa: BLE001
-        out["ollama"] = {"ok": False}
-
     out["guard"] = {
         "enabled": settings.guard_enabled,
-        "model": settings.llama_guard_model,
+        "backend": settings.guard_provider or "unconfigured",
+        "provider": settings.guard_provider,
+        "model": settings.guard_model,
+        "configured": all((settings.guard_provider, settings.guard_api_url, settings.guard_api_key, settings.guard_model)),
         "excluded": settings.guard_excluded_categories,
     }
     return out

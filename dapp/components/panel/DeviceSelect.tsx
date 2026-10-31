@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { Check, Cpu, LoaderCircle, RefreshCw } from "lucide-react";
+import { Cpu, LoaderCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface AccountDevice {
@@ -10,6 +10,7 @@ interface AccountDevice {
   name: string;
   board: string;
   online: boolean;
+  agent_version?: string | null;
   execution_environment: "sandbox" | "production";
 }
 
@@ -22,6 +23,20 @@ const SIMULATOR_DEVICE = {
   execution_environment: "sandbox" as const,
 };
 const SELECTION_KEY = "nomikos-selected-sandbox-device";
+
+interface DeviceBadge {
+  label: string;
+  state?: "online" | "offline";
+}
+
+function isNomikosSimulator(device: AccountDevice): boolean {
+  const board = device.board.trim().toLowerCase().replace(/[\s_]+/g, "-");
+  const name = device.name.trim().toLowerCase();
+  return (
+    device.agent_version === "nomikos-sim-0.1" ||
+    (name === "nomikos sim (docker)" && board === "esp32-s3-amoled-143")
+  );
+}
 
 function DevicePreview({ board }: { board: string }) {
   const isRoundDisplay = /esp32|amoled|round/i.test(board);
@@ -54,6 +69,7 @@ function DevicePreview({ board }: { board: string }) {
 export default function DeviceSelect() {
   const t = useTranslations("panel.device");
   const [devices, setDevices] = useState<AccountDevice[]>([]);
+  const [accountSimulator, setAccountSimulator] = useState<AccountDevice | null>(null);
   const [selectedId, setSelectedId] = useState(SIMULATOR_ID);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -80,10 +96,14 @@ export default function DeviceSelect() {
           | null;
         if (!res.ok || data?.ok !== true) throw new Error("device list unavailable");
         if (current) {
-          setDevices(
-            (data.devices ?? []).filter(
-              (device) => device.execution_environment === "sandbox",
-            ),
+          const sandboxDevices = (data.devices ?? []).filter(
+            (device) => device.execution_environment === "sandbox",
+          );
+          const simulators = sandboxDevices.filter(isNomikosSimulator);
+          setAccountSimulator(simulators[0] ?? null);
+          setDevices(sandboxDevices.filter((device) => !isNomikosSimulator(device)));
+          setSelectedId((currentId) =>
+            simulators.some((device) => device.id === currentId) ? SIMULATOR_ID : currentId,
           );
         }
       } catch {
@@ -110,35 +130,66 @@ export default function DeviceSelect() {
   const deviceOption = (
     device: AccountDevice,
     label: string,
-    detail: string,
+    badges: DeviceBadge[],
   ) => {
     const isSelected = selectedId === device.id;
     return (
-      <button
+      <div
         key={device.id}
-        type="button"
-        onClick={() => choose(device.id)}
-        aria-pressed={isSelected}
-        className={`flex w-full items-center gap-3 rounded-xl border p-2 text-left transition-colors ${
+        role="group"
+        aria-label={label}
+        className={`grid w-full grid-cols-[68px_minmax(0,1fr)] gap-x-3 gap-y-2 rounded-xl border p-2 transition-colors ${
           isSelected
             ? "border-[#343433]/55 bg-[#F6F4EF]"
-            : "border-[#EDEDED] bg-white hover:bg-[#FAF9F7]"
+            : "border-[#EDEDED] bg-white"
         }`}
       >
-        <DevicePreview board={device.board} />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold">{label}</span>
-          <span className="mt-1 block truncate text-xs text-muted-foreground">{detail}</span>
-        </span>
-        {isSelected ? (
-          <Check className="size-4 shrink-0 text-foreground" />
-        ) : (
-          <span
-            className={`size-2 shrink-0 rounded-full ${device.online ? "bg-emerald-500" : "bg-zinc-300"}`}
-            aria-label={device.online ? t("online") : t("offline")}
-          />
-        )}
-      </button>
+        <div className="row-span-2">
+          <DevicePreview board={device.board} />
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold">{label}</p>
+          <span className="mt-1 flex flex-wrap gap-1.5">
+            {badges.map((badge) => (
+              <span
+                key={`${badge.label}-${badge.state ?? "label"}`}
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                  badge.state === "online"
+                    ? "bg-emerald-50 text-emerald-700"
+                    : badge.state === "offline"
+                      ? "bg-zinc-100 text-zinc-600"
+                      : "bg-[#EDEBE6] text-[#55534E]"
+                }`}
+              >
+                {badge.state && (
+                  <span
+                    aria-hidden="true"
+                    className={`size-1.5 rounded-full ${
+                      badge.state === "online" ? "bg-emerald-500" : "bg-zinc-400"
+                    }`}
+                  />
+                )}
+                {badge.label}
+              </span>
+            ))}
+          </span>
+        </div>
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => choose(device.id)}
+            aria-pressed={isSelected}
+            disabled={isSelected}
+            className={`min-w-[84px] rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-default ${
+              isSelected
+                ? "bg-[#E9E6DF] text-[#625F58]"
+                : "bg-[#171717] text-white hover:bg-[#343433]"
+            }`}
+          >
+            {isSelected ? t("inUse") : t("use")}
+          </button>
+        </div>
+      </div>
     );
   };
 
@@ -170,34 +221,54 @@ export default function DeviceSelect() {
       <p className="px-1 pt-1 text-[11px] font-medium text-muted-foreground">
         {t("simulatorGroup")}
       </p>
-      {deviceOption(SIMULATOR_DEVICE, t("simulator"), SIMULATOR_DEVICE.board)}
+      {deviceOption(
+        { ...SIMULATOR_DEVICE, online: accountSimulator?.online ?? SIMULATOR_DEVICE.online },
+        SIMULATOR_DEVICE.board,
+        [
+          { label: "NomikOS" },
+          {
+            label: (accountSimulator?.online ?? SIMULATOR_DEVICE.online)
+              ? t("online")
+              : t("offline"),
+            state: (accountSimulator?.online ?? SIMULATOR_DEVICE.online)
+              ? "online"
+              : "offline",
+          },
+        ],
+      )}
 
-      <p className="px-1 pt-2 text-[11px] font-medium text-muted-foreground">
-        {t("accountDevices")}
-      </p>
-      {loading && devices.length === 0 ? (
+      {devices.length > 0 && (
+        <>
+          <p className="px-1 pt-2 text-[11px] font-medium text-muted-foreground">
+            {t("accountDevices")}
+          </p>
+          <div className="grid gap-2">
+            {devices.map((device) =>
+              deviceOption(
+                device,
+                device.name,
+                [
+                  { label: device.board },
+                  {
+                    label: device.online ? t("online") : t("offline"),
+                    state: device.online ? "online" : "offline",
+                  },
+                ],
+              ),
+            )}
+          </div>
+        </>
+      )}
+      {loading && devices.length === 0 && (
         <p className="flex items-center justify-center gap-2 rounded-xl border border-dashed py-5 text-xs text-muted-foreground">
           <LoaderCircle className="size-4 animate-spin" />
           {t("loading")}
         </p>
-      ) : error ? (
+      )}
+      {error && (
         <p className="rounded-xl border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
           {t("loadError")}
         </p>
-      ) : devices.length === 0 ? (
-        <p className="rounded-xl border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
-          {t("empty")}
-        </p>
-      ) : (
-        <div className="grid gap-2">
-          {devices.map((device) =>
-            deviceOption(
-              device,
-              device.name,
-              `${device.board} · ${device.online ? t("online") : t("offline")}`,
-            ),
-          )}
-        </div>
       )}
     </section>
   );

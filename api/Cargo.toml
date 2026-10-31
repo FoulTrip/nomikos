@@ -2,7 +2,7 @@
 name = "agent-os-api"
 version = "0.1.0"
 edition = "2021"
-description = "API del Agente OS: módulos ERP (Medusa.js / Kodetap), x402 Solana y estado del dispositivo (R2)"
+description = "API del Agente OS: módulos ERP (Medusa.js / Kodetap), x402 Solana y estado del dispositivo (object storage)"
 
 [dependencies]
 axum = "0.8"

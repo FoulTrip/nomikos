@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import {
   Bounds,
@@ -182,7 +182,6 @@ function DeviceChatInput() {
 }
 
 export default function DeviceViewer() {
-  const [autoRotate, setAutoRotate] = useState(true);
   const locked = useViewLocked();
   const modal = useModalOpen();
   const overScreen = useOverScreen();
@@ -194,7 +193,12 @@ export default function DeviceViewer() {
       {/* shadows="percentage": R3F mapea `true` → PCFSoftShadowMap, enum
           removido en three 0.186 (warning); PCFShadowMap es el fallback
           que three usa de todos modos. */}
-      <Canvas shadows="percentage" dpr={[1, 2]} camera={{ position: [30, 22, 80], fov: 40 }}>
+      <Canvas
+        frameloop="demand"
+        shadows="percentage"
+        dpr={[1, 2]}
+        camera={{ position: [30, 22, 80], fov: 40 }}
+      >
         <color attach="background" args={["#FFFFFF"]} />
 
         {/* Iluminación local (sin descargas externas) */}
@@ -243,7 +247,7 @@ export default function DeviceViewer() {
         </Suspense>
 
         {/* Rotación con el ratón, zoom con la rueda, pan con clic derecho */}
-        {/* Auto-rotate hasta que el usuario interactúa con los controles */}
+        {/* Render por demanda: el modelo queda quieto hasta que el usuario lo manipula. */}
         {/* Bloqueado: sin rotación ni paneo (el zoom sigue para acercar) */}
         {/* Modal abierto: todo quieto (la rueda es del desplegable) */}
         {/* Sobre la pantalla: la rueda scrollea la lista del OS, no zoom */}
@@ -251,12 +255,9 @@ export default function DeviceViewer() {
           makeDefault
           enableDamping
           dampingFactor={0.08}
-          autoRotate={autoRotate && !locked}
           enableRotate={interactive}
           enablePan={interactive}
           enableZoom={!modal && !overScreen}
-          onStart={() => setAutoRotate(false)}
-          autoRotateSpeed={1.2}
           minDistance={15}
           maxDistance={250}
         />

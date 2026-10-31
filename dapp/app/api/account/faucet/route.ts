@@ -1,7 +1,6 @@
 /**
- * POST /api/account/faucet — Faucet Devnet (NomikOS W6): gotea SOL
- * del treasury del ecosistema a la wallet dPaaS de la cuenta, para que
- * los peajes x402 liquiden on-chain de verdad (solo devnet).
+ * POST /api/account/faucet — solicita Devnet SOL de prueba directamente
+ * para la wallet dPaaS Devnet automática de la cuenta.
  */
 import { forwardToApi } from "@/lib/account-proxy";
 

@@ -4,18 +4,24 @@
  * Modularidad: cliente único + schemas zod (contratos de la API).
  * Mantenibilidad: URLs desde env, fixtures con setup/teardown.
  */
-import { execSync } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
+import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { generateKeyPairSync } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test as base, expect } from 'e2e';
 import { z } from 'zod';
 
 // ── URLs del ecosistema (env override para CI/despliegues) ──
 export const API_URL = process.env.API_URL ?? 'http://localhost:8080/api';
 export const BRAIN_URL = process.env.BRAIN_URL ?? 'http://localhost:8322';
-const LEDGER_DB = process.env.LEDGER_DB ?? '../api/data/agent-os.db';
+const LEDGER_DB = process.env.LEDGER_DB
+  ? path.resolve(process.env.LEDGER_DB)
+  : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../api/data/agent-os.db');
+const WORKSPACE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+let dockerSqliteAvailable: boolean | undefined;
 
 // ── Cliente fetch con prefijo y helpers de aserción ──
 export async function api(path: string, init?: RequestInit): Promise<Response> {
@@ -46,6 +52,7 @@ export const HealthSchema = z.object({
   modules: z.object({
     erp_medusa: z.string(), // URL del ERP (Payload CMS)
     x402_solana: z.string(),
+    object_store: z.enum(['local-s3', 'r2']).nullable(),
     cloudflare_r2: z.boolean(),
   }),
 });
@@ -155,8 +162,67 @@ export function generateSolanaKeypair(): { keypair: number[]; pubkey: string } {
  *  Solo para pruebas de integración: el flujo real lo hace el settler_loop
  *  cuando la tx confirma en la red de la cuenta. */
 export function settleInvoiceViaLedger(invoiceId: string): void {
-  const sql = `UPDATE x402_invoices SET status='settled', confirmation_status='confirmed' WHERE id='${invoiceId}';`;
-  execSync(`sqlite3 "${LEDGER_DB}" "${sql}"`, { stdio: 'pipe' });
+  runLedger(
+    "UPDATE x402_invoices SET status='settled', confirmation_status='confirmed' WHERE id=?",
+    [invoiceId],
+  );
+}
+
+/** Ejecuta una sentencia del ledger de pruebas sin depender del CLI sqlite3. */
+export function runLedger(
+  sql: string,
+  params: (string | number | bigint | Uint8Array | null)[] = [],
+): void {
+  if (tryRunLedgerInDocker(sql, params)) return;
+
+  const db = new DatabaseSync(LEDGER_DB);
+  try {
+    db.exec('PRAGMA busy_timeout = 5000');
+    db.prepare(sql).run(...params);
+  } finally {
+    db.close();
+  }
+}
+
+function tryRunLedgerInDocker(
+  sql: string,
+  params: (string | number | bigint | Uint8Array | null)[],
+): boolean {
+  if (process.env.LEDGER_DB) return false;
+
+  if (dockerSqliteAvailable === undefined) {
+    const probe = spawnSync('docker', ['compose', 'ps', '-q', 'api'], {
+      cwd: WORKSPACE_ROOT,
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+    dockerSqliteAvailable = !probe.error && probe.status === 0 && Boolean(probe.stdout.trim());
+  }
+  if (!dockerSqliteAvailable) return false;
+
+  let index = 0;
+  const boundSql = sql.replace(/\?/g, () => {
+    if (index >= params.length) throw new Error('Faltan parámetros para la sentencia del ledger');
+    return sqliteLiteral(params[index++]);
+  });
+  if (index !== params.length) throw new Error('Sobran parámetros para la sentencia del ledger');
+
+  const result = spawnSync(
+    'docker',
+    ['compose', 'exec', '-T', 'api', 'sqlite3', '-batch', '/app/data/agent-os.db', boundSql],
+    { cwd: WORKSPACE_ROOT, encoding: 'utf8', windowsHide: true },
+  );
+  if (result.error || result.status !== 0) {
+    throw new Error(`No se pudo actualizar el ledger dentro de Docker: ${result.stderr || result.error?.message || 'docker exec falló'}`);
+  }
+  return true;
+}
+
+function sqliteLiteral(value: string | number | bigint | Uint8Array | null): string {
+  if (value === null) return 'NULL';
+  if (typeof value === 'number' || typeof value === 'bigint') return String(value);
+  if (value instanceof Uint8Array) return `X'${Buffer.from(value).toString('hex')}'`;
+  return `'${value.replaceAll("'", "''")}'`;
 }
 
 /** Lee la api_key de NVIDIA NIM desde api/.env del workspace (sin hardcodear). */

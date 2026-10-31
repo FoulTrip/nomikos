@@ -7,7 +7,7 @@ Claude Code, Cursor, etc.). **Antes de tocar código de un proyecto, lee su
 | Proyecto | Leer SIEMPRE | Stack |
 |---|---|---|
 | `api/` | [`api/AGENTS.md`](api/AGENTS.md) + [`api/context.md`](api/context.md) | Rust (axum 0.8, rusqlite) |
-| `brain/` | [`brain/AGENTS.md`](brain/AGENTS.md) + [`brain/context.md`](brain/context.md) | Python (FastAPI, Llama Stack) |
+| `brain/` | [`brain/AGENTS.md`](brain/AGENTS.md) + [`brain/context.md`](brain/context.md) | Python (FastAPI, LLM por cuenta) |
 | `dapp/` | [`dapp/AGENTS.md`](dapp/AGENTS.md) + [`dapp/context.md`](dapp/context.md) | TypeScript (Next.js 16) |
 | `firmware/` | [`firmware/context.md`](firmware/context.md) | Rust (agentd-core no_std + simulador host + scaffold esp32) |
 | `os/` | [`os/context.md`](os/context.md) | Buildroot (BR2_EXTERNAL + agente systemd, nivel SBC) |
@@ -48,7 +48,6 @@ Claude Code, Cursor, etc.). **Antes de tocar código de un proyecto, lee su
 |---|---|---|
 | 8080 | `api` (Rust) | `cd api && cargo run` |
 | 8322 | `brain` (FastAPI, exige Bearer + LLM de cuenta) | `cd brain && .venv/bin/python -m uvicorn app.main:app --port 8322` |
-| 11434 | Ollama (SOLO shields Llama Guard) | `~/.local/bin/ollama serve` |
 | 3123 | `dapp` (Next.js) | `cd dapp && npm run dev` |
 
 ## Prueba de humo rápida (todo el flujo)

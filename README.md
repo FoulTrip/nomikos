@@ -66,9 +66,9 @@ it — reading collections, creating records, uploading media — costs one micr
 toll that is consumed only if the application actually answered. Additional
 applications are installed from a local registry through a tested installer
 script, at which point their tools appear in the agent's catalog automatically.
-A development faucet drips real Devnet SOL from a treasury keypair into each
-account's delegated wallet so the full settlement path can be exercised
-on-chain without touching mainnet funds.
+A development faucet requests a small amount of test SOL directly for the
+account's automatically generated Devnet wallet. The public Devnet RPC applies
+its own rate limits; this flow never touches Mainnet or tries to bypass them.
 
 The legal-agent workshop extends the same trust model to autonomous reasoning.
 In the first session, a runner reads only the visible case documents through a
@@ -102,8 +102,8 @@ the same reason. Nothing else in the repository stores business facts.
 The `brain` service is the Python orchestrator that exposes the agentic
 gateway. It resolves the caller's account context on every request, refuses to
 reason without a valid session or without an active provider on that account,
-shields both the incoming text and the outgoing reply with a small Llama Guard
-model served locally on CPU, and runs a bounded tool-calling loop whose tools
+shields both the incoming text and the outgoing reply with a configurable
+Llama Guard provider from the root `.env`, and runs a bounded tool-calling loop whose tools
 all pass through the reactive payment handshake. Its catalog covers device and
 network status, fleet state, metered calls, per-request application access,
 invoice management, and the four legal tools for listing and reading case
@@ -140,50 +140,134 @@ for installing, starting, testing, and imaging the whole system.
 
 ## Running the system
 
-Prerequisites are a Rust toolchain, Python 3.13, Node.js, and Ollama for the
-safety shields, with Docker available as an alternative deployment path. All
-configuration flows from a single environment file at the repository root,
-which is created from the provided template before generating secrets. The
-launcher passes that environment to each local service; it does not create
-per-service copies. One install command compiles the API, creates the
-Python environments, installs JavaScript dependencies, and pulls the two small
-Ollama models. One start command then brings up the API on port 8080, the
-orchestrator on port 8322, the shields on port 11434, the panel on port 3000,
-and the reference application on port 3100, waiting for each health check in
-turn. The verification console is intentionally separate and starts on port
-8765 on demand. Status, log tailing, and shutdown are single commands, and the
-smoke check confirms both health endpoints plus the gateway's rejection of
-anonymous requests, which must answer unauthorized because reasoning without
-an account is not permitted.
+Docker Compose is the default local runtime on Windows and Linux. A host Rust
+toolchain, Python, and Node.js are not needed to run the stack. The launcher
+creates the root `.env` on first start, generates persistent application
+secrets, builds each image sequentially to limit memory use, and starts the
+services in dependency order. `make up` on Linux delegates to the same Docker
+launcher; `up-host` remains available for native development.
+Use only one mode at a time: Docker and native host processes bind the same
+ports.
 
-In Docker, the API and the panel run as containers while the orchestrator, the
-shields, and the application stay on the host and are reached through the
-host gateway address. The ledger directory is mounted from the host so data
-survives container recreation, and the case and ground-truth directories are
-mounted read-only so the verifier keeps working identically inside and outside
-containers. The panel detects which deployment it serves and otherwise behaves
-the same.
+The stack contains Payload CMS (`3100`), the Rust API (`8080`), the brain
+gateway (`8322`), the panel (`3000`), and a local S3-compatible RustFS service
+(`9000`, console `9001`). API SQLite data is persisted in `api/data`; Payload
+and RustFS data use named Docker volumes. The root `.env` is created on first
+start and kept between runs.
+
+Running NomikOS locally does not mean running a local Solana blockchain. The
+default network is Devnet for testing; Mainnet is selected for production. The
+optional Solana `local` network needs a separate `solana-test-validator` on the
+host at port `8899`; Docker routes API requests to it through
+`host.docker.internal`. The Compose stack does not start that validator. Start
+it with `solana-test-validator --bind-address 0.0.0.0 --rpc-port 8899`, then
+select `local` under **Wallet · Red** for sandbox testing. This app's faucet is
+for Devnet; local validator balances come from its own RPC `requestAirdrop`.
+
+Local Docker defaults to RustFS. On startup, the API creates the `nomikos-models`
+bucket on first upload, and the launcher publishes the simulator GLB through
+the API if it is missing. The browser
+continues to request the model only from the API; it never reads from a local
+file or directly from RustFS. To use Cloudflare R2 for a deployment, set
+`OBJECT_STORE_BACKEND=r2` and provide `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
+`R2_SECRET_ACCESS_KEY`, and `R2_BUCKET`. The launcher then skips RustFS. Agent
+reasoning still needs an LLM provider configured for the account in the
+panel's Models dialog.
 
 ## Usage guide
 
 ### First start
 
-Copy the template, generate the missing secrets, install once per machine,
-and start the stack. The smoke check at the end must print two health lines
-and a 401 for the anonymous gateway call, which proves the orchestrator
-refuses to reason without an account.
+Install Docker Desktop (Windows) or Docker Engine with the Compose v2 plugin
+(Linux), start the Docker engine, clone the repository, and run one command
+from its root. The launcher copies `.env.example` only when `.env` is absent;
+it then generates `ACCOUNTS_MASTER_KEY`, `AUTH_SECRET`, and `PAYLOAD_SECRET`
+only when those values are empty. Keep `.env` between restarts: the master key
+is needed to decrypt account secrets already stored in SQLite.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\nomikos.ps1 up
+```
+
+On Linux:
 
 ```bash
-cp .env.example .env && make secrets && make install && make up
-make test-smoke
+bash scripts/nomikos.sh up
 ```
+
+Both commands build Payload CMS, API, brain, and dapp one at a time, then start
+the selected storage backend and the rest of the Compose stack. In local mode
+they wait for RustFS to become healthy, upload the GLB through the API if it is
+missing, and print container status. They require only Docker; the Windows path uses
+PowerShell and the Linux path uses the system Bash.
+`bash scripts/nomikos.sh init` or
+`powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\nomikos.ps1 init`
+creates the configuration and secrets without building or starting containers.
+
+Open `http://localhost:3000` for the panel, `http://localhost:3100` for the
+local Payload app, `http://localhost:8080/api/health` for API health, and
+`http://localhost:8322/v1/health` for brain health. The panel redirects an
+unauthenticated browser to `/signin`; create an account there, then add an LLM
+provider in **Modelos** before using the agent. The 3D model is available from
+the first local start. Open `http://localhost:9001` only if you want to inspect
+RustFS; its console login is `nomikos-local` / `nomikos-local-s3-secret`, and
+the model bucket is `nomikos-models`. The API keeps the bucket private to the
+Docker network for model delivery.
+
+For Cloudflare R2, fill in the four R2 credentials in `.env`. Keep
+`OBJECT_STORE_BACKEND=r2` there or select it with the launcher flag. The
+launcher stops local RustFS and switches the API to R2. The GLB is read from the
+configured R2 bucket. If it has not been uploaded there yet, use
+**Flota > Instalador > Preparar simulador 3D + OS** to publish it through the
+API. The browser still uses the API endpoint. R2 credentials are required by
+Cloudflare and cannot be generated locally.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\nomikos.ps1 up -Backend r2
+```
+
+```bash
+bash scripts/nomikos.sh up --r2
+```
+
+Inspect or stop the services without deleting their persistent data:
+
+```bash
+bash scripts/nomikos.sh status
+bash scripts/nomikos.sh logs api brain dapp payload-cms rustfs
+bash scripts/nomikos.sh down
+```
+
+Windows status, logs, and shutdown:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\nomikos.ps1 status
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\nomikos.ps1 logs api
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\nomikos.ps1 down
+```
+
+Linux uses the same actions with Bash:
+
+```bash
+bash scripts/nomikos.sh status
+bash scripts/nomikos.sh logs api
+bash scripts/nomikos.sh down
+```
+The shell `make up`, `make status`, `make logs svc=api`, and `make down` commands
+use the same Docker stack. `make install` and `make up-host` are only for
+developers who explicitly want the native host processes instead.
 
 ### Give the account a brain and funds
 
 Register and log in to obtain a bearer token, then attach a language-model
 provider to the account. The panel does this through its Models dialog with
-live key validation; the direct equivalent is one API call. On Devnet, fund
-the delegated wallet from the treasury faucet so tolls can settle on-chain.
+live key validation; the direct equivalent is one API call. Registration
+creates one encrypted dPaaS signing wallet per account for Devnet and one for
+Mainnet. In Sandbox, **Wallet · Red** can request 0.005 Devnet SOL for that
+account's Devnet address. If the shared RPC rate-limits the request, copy the
+address and use the official faucet link shown there. In Production, copy the
+Mainnet address and send real SOL from an exchange or another wallet over the
+Solana network. Never send real funds to the Devnet address.
 
 ```bash
 curl -s -X POST http://localhost:8080/api/auth/register \
@@ -302,8 +386,10 @@ which it shows its own claim code on screen and pairs the same way.
 
 ## Testing
 
-The suite contains eighteen end-to-end files with one hundred tests that run
-serially against live services and treat the public HTTP contracts as law.
+The suite contains twenty end-to-end files with 103 API tests, plus a Playwright
+browser flow. The Node test runner requires Node 22.22.3 or newer in 22.x, or
+24.8 or newer. Tests run serially against live services and treat the public
+HTTP contracts as law.
 They cover ecosystem health, identity with revocation and rate limiting,
 per-account language-model and chain configuration, the payment gateway
 including replay and ownership conflicts, the orchestrator's authentication
@@ -314,7 +400,9 @@ device simulator, and the two legal verification suites that exercise the
 rules engine, world events, the review console contract, and the full
 human-in-the-loop lifecycle. The fast battery runs the hard-contract subset
 for quick iteration, while a single suite can be selected by path whenever a
-change is scoped.
+change is scoped. Run `npm run test:e2e:flow` from `tests/` for the local Docker
+health, API/R2 model, and browser sandbox path. Suites that call NVIDIA NIM or
+the Devnet faucet need their API key or available public Devnet faucet quota.
 
 ## Things worth knowing
 
@@ -386,6 +474,6 @@ and daily limits before any signature happens. Reasoning is fenced on both
 sides by content shields, high-stakes agent output additionally requires a
 passing rule-based verdict the agent cannot influence, and final legal
 acceptance requires a human signature that cannot be replayed or delegated to
-a device. Secrets, live ledgers, and treasury keypairs stay out of version
-control by ignore rules, with each service shipping only an example
-environment template.
+a device. Secrets and live ledgers stay out of version control; account wallet
+keypairs are encrypted in the persistent API database. Each service ships only
+an example environment template.

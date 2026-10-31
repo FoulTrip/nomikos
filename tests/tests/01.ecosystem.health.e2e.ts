@@ -10,7 +10,8 @@ test('api responde health con módulos del ecosistema', async () => {
   const health = HealthSchema.parse(await res.json());
   expect(health.ok).toBe(true);
   expect(health.modules.x402_solana).toBeTruthy();
-  expect(health.modules.cloudflare_r2).toBe(true); // R2 con credenciales
+  expect(['local-s3', 'r2']).toContain(health.modules.object_store);
+  expect(health.modules.cloudflare_r2).toBe(health.modules.object_store === 'r2');
 });
 
 test('api expone las URLs RPC de Solana por red (fuente única de verdad)', async () => {
@@ -22,14 +23,16 @@ test('api expone las URLs RPC de Solana por red (fuente única de verdad)', asyn
   for (const url of Object.values(urls)) expect(url).toMatch(/^https?:\/\//);
 });
 
-test('brain reporta conectividad con api y ollama (guard)', async () => {
+test('brain reporta API y configuración del proveedor de guard del .env', async () => {
   const res = await brain('/v1/health');
   expect(res.status).toBe(200);
-  const h = (await res.json()) as { api: { ok: boolean }; ollama: { ok: boolean; models: string[] }; guard: { enabled: boolean; model: string } };
+  const h = (await res.json()) as { api: { ok: boolean }; guard: { enabled: boolean; backend: string; provider: string; model: string; configured: boolean } };
   expect(h.api.ok).toBe(true); // el orquestador ve a la API
-  expect(h.ollama.ok).toBe(true);
-  expect(h.ollama.models).toContain('llama-guard3:1b'); // shield disponible
   expect(h.guard.enabled).toBe(true);
+  expect(h.guard.backend).toBe(h.guard.provider);
+  expect(h.guard.provider.length).toBeGreaterThan(0);
+  expect(h.guard.model.length).toBeGreaterThan(0);
+  expect(h.guard.configured).toBe(true);
 });
 
 test('brain expone su catálogo de herramientas (11 tools del ecosistema)', async () => {

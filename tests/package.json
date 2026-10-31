@@ -1,11 +1,17 @@
 {
   "private": true,
   "type": "module",
+  "engines": {
+    "node": "^22.22.3 || >=24.8.0"
+  },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "e2e": "^0.21.3"
   },
   "scripts": {
-    "test:e2e": "e2e run"
+    "test:e2e": "e2e run",
+    "test:e2e:browser": "playwright test --config=playwright.config.ts",
+    "test:e2e:flow": "npm run test:e2e -- tests/01.ecosystem.health.e2e.ts && npm run test:e2e -- tests/20.docker.sandbox.model.e2e.ts && npm run test:e2e:browser"
   },
   "dependencies": {
     "zod": "^4.6.7"

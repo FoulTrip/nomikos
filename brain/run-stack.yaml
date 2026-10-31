@@ -3,7 +3,7 @@
 # Inference   : remote::openai (OPENAI_API_KEY) y remote::nvidia (NVIDIA_API_KEY, NIM real)
 # Responses   : builtin (server-side orchestration con tool-calling)
 # Tool runtime: MCP (client remoto, para servidores MCP a futuro)
-# Llama Guard : corriendo en Ollama local (:11434, llama-guard3:1b) desde agent-brain/shields.py
+# Llama Guard : endpoint independiente configurado por GUARD_* en el .env raíz
 # Muse        : no es HTTP (MSP/stdio) → integrado como tool `ask_muse` (muse exec)
 #
 # Arrancar:

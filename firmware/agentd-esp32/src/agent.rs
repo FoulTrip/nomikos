@@ -166,10 +166,9 @@ pub fn run(
                 }
 
                 // ── Tienda de dapps: las apps del worker en pantalla ──
-                // (GET /api/apps es público: la placa muestra las apps
-                //  INSTALADAS; «apretar agregar» corre desde la consola
-                //  con el CLI nomikos — ver scripts/nomikos.)
-                if let Some(res) = http::request(stack, "GET", "/apps", None, None, None) {
+                // La API filtra el catálogo según las asignaciones de esta
+                // cuenta y dispositivo; por eso se consulta con su token.
+                if let Some(res) = http::request(stack, "GET", "/apps", None, Some(&token), None) {
                     if res.status == 200 {
                         let installed = res.body_str().matches(r#""status":"installed""#).count();
                         if installed > 0 {

@@ -1,5 +1,5 @@
 # Dockerfile para el dapp de NomikOS (Next.js 16) — contexto = ./dapp
-FROM node:20-slim AS builder
+FROM node:24-slim AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -11,7 +11,7 @@ ARG NEXT_PUBLIC_DEPLOYMENT=""
 ENV NEXT_PUBLIC_DEPLOYMENT=$NEXT_PUBLIC_DEPLOYMENT
 RUN npm run build
 
-FROM node:20-slim
+FROM node:24-slim
 WORKDIR /app
 COPY --from=builder /app/.next .next
 COPY --from=builder /app/public public

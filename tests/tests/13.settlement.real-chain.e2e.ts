@@ -2,9 +2,8 @@
  * 13.settlement.real-chain.e2e.ts — NomikOS W6: el peaje x402 se liquida
  * de VERDAD on-chain (Devnet) — el settler de ledger queda fuera del flujo.
  *
- *   ① status del faucet: treasury presente y con fondos (si falla, el
- *      error te dice exactamente cómo fundearlo)
- *   ② el faucet gotea a la wallet dPaaS de la cuenta → tx REAL en Devnet
+ *   ① status del faucet: la wallet Devnet automática de la cuenta existe
+ *   ② el faucet solicita SOL de prueba directamente para esa wallet
  *   ③ peaje: POST /app/request → 402 (la app es Payload CMS real :3100)
  *   ④ dPaaS: pay-invoice firma la transfer con la wallet cifrada de la
  *      CUENTA → CONFIRMA on-chain → settled (sin tocar SQLite)
@@ -18,8 +17,8 @@ const withH = (t: string) => ({ Authorization: `Bearer ${t}`, 'Content-Type': 'a
 interface FaucetStatus {
   ok: boolean;
   network: string;
-  treasury_pubkey: string;
-  treasury_balance_lamports: number;
+  wallet_pubkey: string;
+  balance_lamports: number | null;
   lamports_per_drip: number;
 }
 
@@ -32,22 +31,20 @@ interface Invoice {
   account_id: string;
 }
 
-test('① faucet: treasury presente y con fondos (devnet)', async ({ account }) => {
+test('① faucet: wallet Devnet de la cuenta disponible para recibir fondos', async ({ account }) => {
   const st = await api('/dev/faucet', auth(account.token));
   expect(st.status).toBe(200);
   const body = (await st.json()) as FaucetStatus;
   expect(body.ok).toBe(true);
   expect(body.network).toBe('devnet');
-  expect(body.treasury_pubkey).toMatch(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
-  // Si esto falla: cd api && ./scripts/faucet/faucet.sh fund
-  expect(
-    body.treasury_balance_lamports,
-    'treasury sin SOL → `api/scripts/faucet/faucet.sh fund` (o pega el pubkey en faucet.solana.com)',
-  ).toBeGreaterThan(0);
+  expect(body.wallet_pubkey).toMatch(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
+  expect(body.balance_lamports === null || body.balance_lamports >= 0).toBe(true);
+  expect(body.lamports_per_drip).toBe(5_000_000);
 });
 
-test('②→⑥ settlement REAL: faucet → 402 → dPaaS firma → settled on-chain → one-shot', { timeout: 180_000 }, async ({ account }) => {
-  // La cuenta configura su cadena + importa el keypair dPaaS (cifrado en reposo).
+test('②→⑥ settlement REAL: faucet Devnet → 402 → dPaaS firma → settled on-chain → one-shot', { timeout: 180_000 }, async ({ account }) => {
+  // La cuenta importa un keypair de prueba; los usuarios normales reciben
+  // una wallet Devnet generada automáticamente al registrarse.
   const { keypair } = generateSolanaKeypair();
   await api('/accounts/me/chain', {
     method: 'PUT', headers: withH(account.token),

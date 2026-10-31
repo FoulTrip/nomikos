@@ -15,18 +15,17 @@ imprescindible: [`context.md`](context.md).
      se opera con identidad rota).
    - LLM: SOLO el de la cuenta (`backend: "account:<provider>"`, key +
      modelos del contexto). Sin proveedor activo → `LLMNotConfigured` →
-     **400 `LLM_NOT_CONFIGURED`**. NO hay fallback global (el stack :8321
-     y `LLM_MODEL` son vestigiales: solo sonda de salud y shields).
+     **400 `LLM_NOT_CONFIGURED`**. NO hay fallback global.
    - x402: **TODAS** las llamadas a `api` pasan por `x402.guarded_call()`
      (handshake reactivo: 402 → `pay-invoice` delegado → poll → reintento
      con `X-Payment`). NO reintroducir el flujo proactivo viejo.
-3. **Shields Llama Guard 3** (`shields.py`): prompt OFICIAL con conversación
-   completa `User:/Agent:` (output=True requiere el texto original del
-   usuario — sin eso el 1B responde vacío). Sanitizar markdown antes
-   (`_sanitize_for_guard`), truncar a 1500 chars, `num_ctx: 1024` (sin eso,
-   Ollama+Vulkan da ErrorOutOfDeviceMemory). Exclusiones de categorías por
-   `GUARD_EXCLUDED_CATEGORIES` (falsos positivos del 1B, práctica Red Hat).
-   Fail-open documentado (en producción, fail-closed).
+3. **Shields Llama Guard** (`shields.py`): proveedor, URL OpenAI-compatible,
+   clave y modelo salen de `GUARD_PROVIDER`, `GUARD_API_URL`, `GUARD_API_KEY`
+   y `GUARD_MODEL` del `.env` raíz. Para salida, reconstruir la conversación
+   completa `User:/Agent:`. Sanitizar y truncar ambos textos a 1500 caracteres
+   antes de enviarlos al proveedor. Nunca loguear la clave ni el contenido.
+   Aplicar `GUARD_EXCLUDED_CATEGORIES` al resultado. Fail-open documentado
+   (en producción, fail-closed). Ollama ya no se usa ni se inicia.
 4. **Loop de tools** (`llm.py::run_agent`): máx `MAX_TOOL_ITERATIONS` (8).
    Los tool messages van serializados con `ToolResult.as_tool_message()`
    (incluye `x402` outcome si hubo handshake). Nunca inventar datos: si una
@@ -47,8 +46,8 @@ imprescindible: [`context.md`](context.md).
 - No loguear api_keys ni tokens de sesión (el contexto trae el api_key del
   proveedor de la cuenta: solo se usa en el cliente OpenAI).
 - No cachear `AccountContext` entre requests: se resuelve por petición.
-- No cambiar `OLLAMA`/`num_ctx` del guard sin probar el caso de texto
-  largo (markdown) — es la causa conocida de respuestas vacías del 1B.
+
+- No loguear ni exponer GUARD_API_KEY o el contenido moderado.
 
 ## Prueba de humo
 

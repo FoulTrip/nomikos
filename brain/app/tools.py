@@ -102,7 +102,8 @@ async def _call_api(
 # ---------------------------------------------------------------------------
 
 async def _get_navbar_status(ctx, ev, **_: Any) -> ToolResult:
-    return await _call_api("/navbar", ctx=ctx, events=ev)
+    result = await _call_api("/navbar", ctx=ctx, events=ev)
+    return await _include_account_wallet(result, ctx, ev)
 
 
 async def _get_device(ctx, ev, **_: Any) -> ToolResult:
@@ -115,7 +116,48 @@ async def _get_health(ctx, ev, **_: Any) -> ToolResult:
 
 async def _solana_status(network: str | None = None, ctx=None, ev=None, **_: Any) -> ToolResult:
     qs = f"?network={network}" if network else ""
-    return await _call_api(f"/solana/status{qs}", ctx=ctx, events=ev)
+    result = await _call_api(f"/solana/status{qs}", ctx=ctx, events=ev)
+    return await _include_account_wallet(result, ctx, ev, network=network)
+
+
+async def _include_account_wallet(
+    result: ToolResult,
+    ctx: AccountContext | None,
+    ev: RunEvents | None,
+    *,
+    network: str | None = None,
+) -> ToolResult:
+    """Keep global RPC health separate from the authenticated account payer."""
+    if not result.ok or ctx is None:
+        return result
+
+    account = await _call_api("/accounts/me/x402/summary", ctx=ctx, events=ev)
+    data = dict(result.data) if isinstance(result.data, dict) else {"status": result.data}
+    if not account.ok or not isinstance(account.data, dict):
+        data["account_dpaas"] = None
+        data["account_dpaas_error"] = account.error or "resumen de cuenta no disponible"
+        return ToolResult(True, data, x402=result.x402)
+
+    dpaas = account.data.get("dpaas")
+    if isinstance(dpaas, dict):
+        dpaas = dict(dpaas)
+        if network:
+            wallets = dpaas.get("wallets")
+            selected = next(
+                (
+                    wallet for wallet in wallets or []
+                    if isinstance(wallet, dict)
+                    and str(wallet.get("network") or "").lower() == network.lower()
+                ),
+                None,
+            )
+            dpaas["wallet"] = selected.get("wallet_pubkey") if selected else None
+            dpaas["network"] = network.lower()
+            dpaas["balance_lamports"] = selected.get("balance_lamports") if selected else None
+        data["account_dpaas"] = dpaas
+    else:
+        data["account_dpaas"] = None
+    return ToolResult(True, data, x402=result.x402)
 
 
 async def _solana_urls(ctx, ev, **_: Any) -> ToolResult:
@@ -296,7 +338,8 @@ TOOLS: dict[str, Tool] = {
         name="get_navbar_status",
         description=(
             "Estado agregado del Agente OS: dispositivo, ERP (semáforo) y Solana "
-            "(red, wallet, balance). Puede requerir micro-peaje x402 (se paga solo)."
+            "(salud global) junto a la wallet dPaaS y balance de la cuenta autenticada. "
+            "Puede requerir micro-peaje x402 (se paga solo)."
         ),
         parameters=_p({}, []),
         handler=_get_navbar_status,
@@ -318,7 +361,10 @@ TOOLS: dict[str, Tool] = {
     ),
     "solana_status": Tool(
         name="solana_status",
-        description="Estado de la red Solana: running, validador, slot y balance de la wallet.",
+        description=(
+            "Estado RPC global de Solana (running, validador y slot) y wallet dPaaS "
+            "con balance de la cuenta autenticada para la red solicitada."
+        ),
         parameters=_p(
             {
                 "network": {

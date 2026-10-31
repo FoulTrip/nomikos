@@ -21,9 +21,8 @@
  */
 import {
   test, expect, api, json, LoginSchema, generateSolanaKeypair,
-  dapp, dappCsrf, randomEmail, randomPassword, DAPP_URL, setupAccountLLM,
+  dapp, dappCsrf, randomEmail, randomPassword, DAPP_URL, setupAccountLLM, runLedger,
 } from './_helpers';
-import { execSync } from 'node:child_process';
 
 interface Sim {
   stage: 'boot' | 'claim' | 'online';
@@ -100,16 +99,15 @@ test('①→⑦ el OS NomikOS simulado: retoma, empareja, paga y se reconstruye'
 
   // ②b el código expiró (la ventana de emparejado son 15 min):
   // AGREGAR lo RENUEVA solo — nunca 409, la pantalla muestra el nuevo
-  const LEDGER = process.env.LEDGER_DB ?? '../api/data/agent-os.db';
-  execSync(`sqlite3 "${LEDGER}" "UPDATE devices SET claim_expires_at = 1 WHERE id='${booted.device_id}';"`, { stdio: 'pipe' });
-  const renewed = await simStep(jar, 'claim');
+  runLedger('UPDATE devices SET claim_expires_at = 1 WHERE id = ?', [booted.device_id]);
+  const renewed = await simStep(jar, 'claim', { claim_code: booted.claim_code });
   expect(renewed.stage).toBe('claim');
   expect(renewed.claim_code).not.toBe(booted.claim_code);
   expect(renewed.claim_code).toMatch(/^[0-9A-F]{8}$/);
   expect(renewed.events.some((e) => e.ev === 'code-renewed')).toBe(true);
 
   // ③ AGREGAR (con el código renovado) → ONLINE bloqueado (flota real)
-  const online = await simStep(jar, 'claim');
+  const online = await simStep(jar, 'claim', { claim_code: renewed.claim_code });
   expect(online.stage).toBe('online');
   expect(online.claimed).toBe(true);
   expect(online.locked).toBe(true); // como la placa: arranca bloqueado

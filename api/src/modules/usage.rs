@@ -8,7 +8,7 @@ use crate::db::{new_id, now_ms};
 use crate::error::{AppError, AppResult};
 use crate::modules::accounts::AuthedAccount;
 use crate::modules::devices;
-use crate::modules::x402::{self, EnvironmentQuery};
+use crate::modules::x402;
 use crate::state::SharedState;
 use axum::extract::{Query, State};
 use axum::http::HeaderMap;
@@ -30,6 +30,12 @@ pub struct RecordUsageBody {
     provider: String,
     model: String,
     events: Vec<CompletionUsage>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LlmUsageQuery {
+    environment: Option<String>,
+    days: Option<u32>,
 }
 
 /// POST /api/accounts/me/llm-usage — ingestión interna desde Brain.
@@ -109,7 +115,7 @@ pub async fn record_llm_usage_handler(
 pub async fn me_llm_usage_handler(
     State(state): State<SharedState>,
     auth: AuthedAccount,
-    Query(query): Query<EnvironmentQuery>,
+    Query(query): Query<LlmUsageQuery>,
 ) -> AppResult<Response> {
     let environment = match query.environment.as_deref().map(str::trim) {
         None | Some("") => None,
@@ -121,6 +127,11 @@ pub async fn me_llm_usage_handler(
             )))
         }
     };
+    let days = query.days.unwrap_or(14);
+    if !matches!(days, 7 | 14 | 30 | 90) {
+        return Err(AppError::bad_request("days debe ser 7, 14, 30 o 90"));
+    }
+    let usage_since = now_ms() - i64::from(days) * 24 * 60 * 60 * 1_000;
     let scope = match environment {
         Some("production") => " AND execution_environment = 'production' AND network = 'mainnet'",
         Some("sandbox") => " AND execution_environment = 'sandbox' AND network != 'mainnet'",
@@ -131,10 +142,10 @@ pub async fn me_llm_usage_handler(
         let mut stmt = conn.prepare(&format!(
             "SELECT provider, model, COUNT(*), SUM(prompt_tokens), SUM(completion_tokens), \
                     SUM(total_tokens), MAX(created_at) \
-             FROM llm_usage_events WHERE account_id = ?1{scope} \
+             FROM llm_usage_events WHERE account_id = ?1 AND created_at >= ?2{scope} \
              GROUP BY provider, model ORDER BY SUM(total_tokens) DESC"
         ))?;
-        let rows = stmt.query_map(params![auth.account_id], |row| {
+        let rows = stmt.query_map(params![auth.account_id, usage_since], |row| {
             Ok(json!({
                 "provider": row.get::<_, String>(0)?,
                 "model": row.get::<_, String>(1)?,
@@ -148,7 +159,6 @@ pub async fn me_llm_usage_handler(
         rows.collect::<rusqlite::Result<Vec<_>>>()
     })?;
 
-    let daily_since = now_ms() - 14 * 24 * 60 * 60 * 1_000;
     let daily_usage: Vec<Value> = state.db.with(|conn| {
         let mut stmt = conn.prepare(&format!(
             "SELECT strftime('%Y-%m-%d', created_at / 1000, 'unixepoch'), \
@@ -156,7 +166,7 @@ pub async fn me_llm_usage_handler(
              FROM llm_usage_events WHERE account_id = ?1 AND created_at >= ?2{scope} \
              GROUP BY 1 ORDER BY 1"
         ))?;
-        let rows = stmt.query_map(params![auth.account_id, daily_since], |row| {
+        let rows = stmt.query_map(params![auth.account_id, usage_since], |row| {
             Ok(json!({
                 "date": row.get::<_, String>(0)?,
                 "prompt_tokens": row.get::<_, i64>(1)?,
@@ -182,6 +192,7 @@ pub async fn me_llm_usage_handler(
     Ok(Json(json!({
         "ok": true,
         "environment": environment,
+        "period_days": days,
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
         "total_tokens": total_tokens,

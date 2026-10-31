@@ -39,14 +39,42 @@ creds_from_dotenv() {
 case "$SLUG" in
 
 payload-cms)
-  # MODO DOCKER: app gestionada en el host — solo registrarla.
+  # MODO DOCKER: Payload corre como servicio de Compose.
   if [ -n "${NOMIKOS_APP_URL:-}" ]; then
-    step "modo docker: app gestionada en ${NOMIKOS_APP_URL} — registrando"
+    step "modo docker: comprobando Payload en ${NOMIKOS_APP_URL}"
     creds_from_env
     [ -n "$EMAIL" ] || creds_from_dotenv
+    [ -n "$EMAIL" ] || EMAIL="agent@nomikos.$(hostname -s 2>/dev/null || echo local)"
+    [ -n "$PASSWORD" ] || PASSWORD="nomikos-$(cat /proc/sys/kernel/random/uuid)"
+
+    json_escape() {
+      local value="$1"
+      value="${value//\\/\\\\}"
+      value="${value//\"/\\\"}"
+      value="${value//$'\n'/\\n}"
+      printf '%s' "$value"
+    }
+    EMAIL_JSON="$(json_escape "$EMAIL")"
+    PASSWORD_JSON="$(json_escape "$PASSWORD")"
+    AUTH_JSON="{\"email\":\"$EMAIL_JSON\",\"password\":\"$PASSWORD_JSON\"}"
+
+    CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+      -X POST "$NOMIKOS_APP_URL/api/users/first-register" \
+      -H 'Content-Type: application/json' -d "$AUTH_JSON")
+    if [ "$CODE" != "200" ]; then
+      LOGIN_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+        -X POST "$NOMIKOS_APP_URL/api/users/login" \
+        -H 'Content-Type: application/json' -d "$AUTH_JSON")
+      [ "$LOGIN_CODE" = "200" ] || {
+        echo "ERROR: Payload rechazó first-register (HTTP $CODE) y login (HTTP $LOGIN_CODE); revisa PAYLOAD_EMAIL/PAYLOAD_PASSWORD en .env."
+        exit 1
+      }
+    fi
+
+    URL_JSON="$(json_escape "$NOMIKOS_APP_URL")"
     printf '{"base_url":"%s","email":"%s","password":"%s"}\n' \
-      "$NOMIKOS_APP_URL" "$EMAIL" "$PASSWORD" > "$RESULT"
-    step "instalada ✓ (gestionada por el host; credenciales selladas)"
+      "$URL_JSON" "$EMAIL_JSON" "$PASSWORD_JSON" > "$RESULT"
+    step "instalada ✓ (Payload Compose disponible; credenciales selladas por el API)"
     exit 0
   fi
 
@@ -54,7 +82,7 @@ payload-cms)
 
   step "1/4 · código fuente (clon del upstream de Payload 3)"
   if [ ! -d "$TPL" ]; then
-    git clone --depth 1 https://github.com/payloadcms/payload.git \
+    git clone --depth 1 --branch v3.82.1 https://github.com/payloadcms/payload.git \
       "$ROOT/dapps/payload-cms"
   fi
   [ -d "$TPL" ] || { echo "ERROR: falta el template with-cloudflare-d1"; exit 1; }
@@ -62,7 +90,7 @@ payload-cms)
   step "2/4 · dependencias del template"
   if [ ! -d "$TPL/node_modules" ]; then
     command -v pnpm >/dev/null || npm install -g pnpm
-    (cd "$TPL" && pnpm install)
+    (cd "$TPL" && pnpm install --ignore-workspace)
   fi
 
   step "3/4 · secret y servicio en :3100"

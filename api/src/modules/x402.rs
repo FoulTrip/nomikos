@@ -522,7 +522,12 @@ async fn attempt_verify(state: &SharedState, id: &str) -> Option<Value> {
                 })
                 .ok()?;
             if n >= state.cfg.x402_max_verify_attempts.max(1) as i64 {
-                mark_invoice(state, id, "failed", Some("sin confirmación on-chain"));
+                mark_invoice(
+                    state,
+                    id,
+                    "failed",
+                    Some("firma no encontrada en el historial del RPC; no confirmada on-chain"),
+                );
                 Some(invoice_value_of(state, load_invoice(state, id).ok()?))
             } else {
                 None
@@ -668,9 +673,8 @@ fn resolve_payer_for_network(
     })
 }
 
-/// Cliente RPC para una red concreta (la de la cuenta o la global).
-/// Cliente RPC por nombre de red (dPaaS usa la red de la cuenta; el
-/// faucet de devnet la usa fija).
+/// Cliente RPC por nombre de red (dPaaS usa la red de la factura; el
+/// faucet de devnet usa siempre el cluster Devnet).
 pub async fn client_for_network(state: &SharedState, network: &str) -> AppResult<SolanaClient> {
     let url = state
         .cfg
@@ -1258,7 +1262,7 @@ pub async fn pay_invoice_value(
         .await
         .map_err(|e| {
             AppError::bad_request(format!(
-                "firma delegada falló (wallet de la cuenta sin fondos o RPC rechazó): {e}"
+                "el pago no se envió y la factura sigue pendiente; fondea la wallet de su red y reintenta: {e}"
             ))
         })?;
         tracing::info!("dPaaS: factura {invoice_id} firmada por la cuenta → {sig}");

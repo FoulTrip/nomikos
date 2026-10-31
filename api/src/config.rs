@@ -56,38 +56,55 @@ fn env_u64(key: &str, default: u64) -> u64 {
         .unwrap_or(default)
 }
 
-/// Credenciales S3-compatibles de Cloudflare R2.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObjectStoreBackend {
+    LocalS3,
+    CloudflareR2,
+}
+
+impl ObjectStoreBackend {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::LocalS3 => "local-s3",
+            Self::CloudflareR2 => "r2",
+        }
+    }
+}
+
+/// S3-compatible object storage. Local Docker defaults to the RustFS service;
+/// Cloudflare credentials are only read when OBJECT_STORE_BACKEND=r2.
 #[derive(Debug, Clone)]
-pub struct R2Config {
-    pub account_id: String,
+pub struct ObjectStoreConfig {
+    pub backend: ObjectStoreBackend,
+    pub endpoint_url: String,
     pub access_key_id: String,
     pub secret_access_key: String,
     pub bucket: String,
-    /// Región de R2 (ej. "us", "wm", etc.). Se infiere de R2_PUBLIC_URL_BASE si se define.
-    pub r2_region: Option<String>,
-    /// Cloudflare API Token (Bearer) para leer/escribir objetos vía
-    /// https://api.cloudflare.com/client/v4/accounts/{id}/storage/r2/objects/{bucket}/{key}
+    pub region: String,
+    pub account_id: Option<String>,
     pub api_token: Option<String>,
 }
 
-impl R2Config {
-    /// Endpoint de R2. Si `r2_region` está seteada, usa {account}.{region}.r2.cloudflarestorage.com,
-    /// si no, {account}.r2.cloudflarestorage.com.
-    pub fn host(&self) -> String {
-        match &self.r2_region {
-            Some(region) => format!("{}.{}.r2.cloudflarestorage.com", self.account_id, region),
-            None => format!("{}.r2.cloudflarestorage.com", self.account_id),
-        }
-    }
-
+impl ObjectStoreConfig {
     /// URL de la Cloudflare REST API para un objeto R2.
     /// https://api.cloudflare.com/client/v4/accounts/{account_id}/storage/r2/objects/{bucket}/{key}
     pub fn cf_object_url(&self, key: &str) -> String {
         let encoded = key.replace('/', "%2F");
         format!(
             "https://api.cloudflare.com/client/v4/accounts/{}/storage/r2/objects/{}/{}",
-            self.account_id, self.bucket, encoded
+            self.account_id.as_deref().unwrap_or_default(),
+            self.bucket,
+            encoded
         )
+    }
+
+    pub fn endpoint_host(&self) -> String {
+        let url = reqwest::Url::parse(&self.endpoint_url)
+            .expect("OBJECT_STORE_ENDPOINT must be a valid URL");
+        match url.port() {
+            Some(port) => format!("{}:{port}", url.host_str().unwrap_or_default()),
+            None => url.host_str().unwrap_or_default().to_string(),
+        }
     }
 }
 
@@ -111,14 +128,9 @@ pub struct Config {
     pub brain_url: String,
     /// [ NomikOS F5 ] peaje de cada petición del agente a la app.
     pub x402_app_lamports: i64,
-    /// [ NomikOS W6 — Faucet Devnet ] gotea SOL del treasury a las wallets
-    /// de las cuentas para que el settlement confirme on-chain (real).
-    /// FAUCET_ENABLED=0 → el endpoint responde 404 (oculto).
+    /// [ NomikOS W6 — Faucet Devnet ] habilitado mientras exista un RPC Devnet,
+    /// sin depender de la red activa de la cuenta ni de una treasury financiada.
     pub faucet_enabled: bool,
-    /// Ruta al keypair JSON (id.json) del treasury — SOLO devnet.
-    pub faucet_keypair: Option<String>,
-    /// [ NomikOS W6 ] Lamports por goteo (default 0.05 SOL ≈ 10k tx de fees).
-    pub faucet_lamports: i64,
     /// [ Tienda de apps ] directorio con los manifiestos de las dapps
     /// (`<slug>.json` — catálogo + specs de tools). Ver dapps/README.md.
     pub dapps_registry: String,
@@ -154,12 +166,12 @@ pub struct Config {
     /// cada minuto es una factura x402 que la cuenta paga por dPaaS.
     pub x402_call_lamports: i64,
 
-    /// [ Dispositivo + R2 ]
+    /// [ Dispositivo + object storage ]
     pub device_name: String,
     pub device_model_file: String,
-    pub r2_model_key: String,
+    pub object_model_key: String,
     pub r2_public_base: Option<String>,
-    pub r2: Option<R2Config>,
+    pub object_store: Option<ObjectStoreConfig>,
 
     /// [ Cuentas / dPaaS ] Master key (32 bytes) para cifrar secretos de
     /// cuentas en reposo (API keys de proveedores, keypairs del orquestador).
@@ -179,6 +191,8 @@ pub struct Config {
 impl Config {
     pub fn load() -> Self {
         load_dotenv();
+
+        let solana_network = env_str("SOLANA_NETWORK", "devnet").to_lowercase();
 
         let solana_urls: BTreeMap<String, String> = [
             (
@@ -202,28 +216,52 @@ impl Config {
         .map(|(k, v)| (k.to_string(), v.trim_end_matches('/').to_string()))
         .collect();
 
-        // R2 solo si las cuatro variables S3 están completas.
-        let r2 = match (
-            env_opt("R2_ACCOUNT_ID"),
-            env_opt("R2_ACCESS_KEY_ID"),
-            env_opt("R2_SECRET_ACCESS_KEY"),
-            env_opt("R2_BUCKET"),
-        ) {
-            (Some(account_id), Some(access_key_id), Some(secret_access_key), Some(bucket)) => {
-                let api_token = env_opt("R2_API_TOKEN").or_else(|| env_opt("CLOUDFLARE_API_TOKEN"));
-                // Región de R2 (opcional): R2_REGION="us" | "wm" | etc. Vacío = global (sin región).
-                let r2_region = env_opt("R2_REGION");
-                Some(R2Config {
-                    account_id,
-                    access_key_id,
-                    secret_access_key,
-                    bucket,
-                    r2_region,
-                    api_token,
-                })
-            }
+        let object_store_backend = env_str("OBJECT_STORE_BACKEND", "local").to_lowercase();
+        let object_store = match object_store_backend.as_str() {
+            "local" => Some(ObjectStoreConfig {
+                backend: ObjectStoreBackend::LocalS3,
+                endpoint_url: env_str("OBJECT_STORE_ENDPOINT", "http://localhost:9000")
+                    .trim_end_matches('/')
+                    .to_string(),
+                access_key_id: env_str("OBJECT_STORE_ACCESS_KEY_ID", "nomikos-local"),
+                secret_access_key: env_str(
+                    "OBJECT_STORE_SECRET_ACCESS_KEY",
+                    "nomikos-local-s3-secret",
+                ),
+                bucket: env_str("OBJECT_STORE_BUCKET", "nomikos-models"),
+                region: env_str("OBJECT_STORE_REGION", "us-east-1"),
+                account_id: None,
+                api_token: None,
+            }),
+            "r2" => match (
+                env_opt("R2_ACCOUNT_ID"),
+                env_opt("R2_ACCESS_KEY_ID"),
+                env_opt("R2_SECRET_ACCESS_KEY"),
+                env_opt("R2_BUCKET"),
+            ) {
+                (Some(account_id), Some(access_key_id), Some(secret_access_key), Some(bucket)) => {
+                    let endpoint_region = env_opt("R2_REGION");
+                    let endpoint_host = endpoint_region
+                        .map(|region| format!("{account_id}.{region}.r2.cloudflarestorage.com"))
+                        .unwrap_or_else(|| format!("{account_id}.r2.cloudflarestorage.com"));
+                    Some(ObjectStoreConfig {
+                        backend: ObjectStoreBackend::CloudflareR2,
+                        endpoint_url: format!("https://{endpoint_host}"),
+                        access_key_id,
+                        secret_access_key,
+                        bucket,
+                        region: "auto".to_string(),
+                        account_id: Some(account_id),
+                        api_token: env_opt("R2_API_TOKEN")
+                            .or_else(|| env_opt("CLOUDFLARE_API_TOKEN")),
+                    })
+                }
+                _ => None,
+            },
             _ => None,
         };
+
+        let faucet_enabled = solana_urls.get("devnet").is_some_and(|url| !url.is_empty());
 
         Self {
             host: env_str("AGENT_OS_API_HOST", "127.0.0.1"),
@@ -240,16 +278,12 @@ impl Config {
                 .trim_end_matches('/')
                 .to_string(),
             x402_app_lamports: env_str("X402_APP_LAMPORTS", "1000").parse().unwrap_or(1000),
-            faucet_enabled: env_str("FAUCET_ENABLED", "0") == "1",
-            faucet_keypair: env_opt("FAUCET_KEYPAIR"),
-            faucet_lamports: env_str("FAUCET_LAMPORTS", "50000000")
-                .parse()
-                .unwrap_or(50_000_000),
+            faucet_enabled,
             dapps_registry: env_str("DAPPS_REGISTRY", "../dapps/registry"),
             app_install_script: env_str("APP_INSTALL_SCRIPT", "../scripts/install-app.sh"),
             medusa_mcp_url: env_str("MEDUSA_MCP_URL", "https://cloud.medusajs.com/mcp"),
             medusa_mcp_token: env_opt("MEDUSA_MCP_TOKEN"),
-            solana_network: env_str("SOLANA_NETWORK", "devnet").to_lowercase(),
+            solana_network,
             solana_urls,
             solana_wallet: env_opt("SOLANA_WALLET"),
             payer_keypair: env_opt("SOLANA_PAYER_KEYPAIR"),
@@ -273,10 +307,13 @@ impl Config {
                 "DEVICE_MODEL_FILE",
                 "../dapp/public/models/ESP32-S3-Touch-AMOLED-1.43.glb",
             ),
-            r2_model_key: env_str("R2_MODEL_KEY", "models/ESP32-S3-Touch-AMOLED-1.43.glb"),
+            object_model_key: env_str(
+                "OBJECT_STORE_MODEL_KEY",
+                &env_str("R2_MODEL_KEY", "models/ESP32-S3-Touch-AMOLED-1.43.glb"),
+            ),
             r2_public_base: env_opt("R2_PUBLIC_URL_BASE")
                 .map(|b| b.trim_end_matches('/').to_string()),
-            r2,
+            object_store,
             accounts_master_key: load_master_key(),
             verifier_enabled: env_str("VERIFIER_ENABLED", "1") == "1",
             verifier_gt_dir: env_str("VERIFIER_GT_DIR", "../ground_truth"),

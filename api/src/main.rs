@@ -57,14 +57,20 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             .cloned()
             .unwrap_or_else(|| "(desconocida)".into())
     );
-    match (&cfg.r2, &cfg.payer_keypair) {
-        (Some(_), Some(_)) => tracing::info!("[R2] configurado · [payer] configurado"),
-        (Some(_), None) => {
-            tracing::info!("[R2] configurado · [payer] solo liquidaciones entrantes")
-        }
-        (None, _) => {
-            tracing::info!("[R2] sin credenciales (el modelo 3D se sirve del archivo local)")
-        }
+    match &cfg.object_store {
+        Some(storage) => tracing::info!(
+            "[Object storage] {} configurado · bucket {}",
+            storage.backend.as_str(),
+            storage.bucket
+        ),
+        None => tracing::warn!(
+            "[Object storage] sin configuración válida para OBJECT_STORE_BACKEND={}",
+            std::env::var("OBJECT_STORE_BACKEND").unwrap_or_else(|_| "local".to_string())
+        ),
+    }
+    match &cfg.payer_keypair {
+        Some(_) => tracing::info!("[payer] configurado"),
+        None => tracing::info!("[payer] solo liquidaciones entrantes"),
     }
     tracing::info!(
         "[Cuentas] master key {} · registro email+password habilitado",
@@ -88,10 +94,10 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let http = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()?;
-    let r2 = cfg
-        .r2
+    let object_store = cfg
+        .object_store
         .as_ref()
-        .map(|rc| r2::R2::new(rc.clone(), http.clone()));
+        .map(|store_cfg| r2::ObjectStore::new(store_cfg.clone(), http.clone()));
     let mcp =
         modules::mcp::McpClient::new(cfg.medusa_mcp_url.clone(), cfg.medusa_mcp_token.clone());
 
@@ -102,7 +108,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         cfg,
         db,
         http,
-        r2,
+        object_store,
         mcp,
         started_at: db::now_ms(),
     });

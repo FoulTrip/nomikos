@@ -17,7 +17,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { Bot, ChevronDown, Cpu, LoaderCircle, Receipt, Send, X } from "lucide-react";
+import Image from "next/image";
+import { Blocks, Bot, ChevronDown, Cpu, LoaderCircle, Receipt, Send, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ChatRichText from "@/components/panel/ChatRichText";
 import DeviceSelect from "@/components/panel/DeviceSelect";
@@ -52,6 +53,21 @@ interface X402Service {
   resource: string;
 }
 
+interface DAppTool {
+  name: string;
+  call?: { method?: string; path?: string };
+}
+
+interface DAppCatalogEntry {
+  slug: string;
+  name: string;
+  tools?: DAppTool[];
+}
+
+const DAPP_LOGOS: Record<string, string> = {
+  "payload-cms": "/apps/payload-cms.svg",
+};
+
 function resourcePath(resource: string): string {
   return resource.replace(/^x402:path:/, "");
 }
@@ -64,6 +80,54 @@ function invoiceService(resource: string, services: X402Service[]): X402Service 
       ? path.startsWith(pattern.slice(0, -1))
       : path === pattern;
   });
+}
+
+function parseAppResource(resource: string): { slug: string; method: string; path: string } | undefined {
+  const match = /^x402:app:([^:]+):([^:]+):(.*)$/.exec(resource);
+  if (!match) return undefined;
+  return { slug: match[1], method: match[2], path: match[3] };
+}
+
+function pathMatchesTemplate(template: string, actual: string): boolean {
+  const [templatePath, templateQuery = ""] = template.split("?", 2);
+  const [actualPath, actualQuery = ""] = actual.split("?", 2);
+  const templateSegments = templatePath.split("/");
+  const actualSegments = actualPath.split("/");
+  if (
+    templateSegments.length !== actualSegments.length ||
+    templateSegments.some((part, index) => {
+      const value = actualSegments[index];
+      return part.startsWith("{") && part.endsWith("}")
+        ? !value
+        : part !== value;
+    })
+  ) {
+    return false;
+  }
+
+  const actualParams = new URLSearchParams(actualQuery);
+  for (const [key, expected] of new URLSearchParams(templateQuery)) {
+    const value = actualParams.get(key);
+    if (value === null) return false;
+    if (!(expected.startsWith("{") && expected.endsWith("}")) && expected !== value) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function appToolForInvoice(invoice: X402Invoice, apps: DAppCatalogEntry[]): string | undefined {
+  if (invoice.tool) return invoice.tool;
+  const parsed = parseAppResource(invoice.resource);
+  if (!parsed) return undefined;
+  const app = apps.find((entry) => entry.slug === parsed.slug);
+  return app?.tools?.find((tool) => {
+    const path = tool.call?.path;
+    if (!path || (tool.call?.method ?? "GET").toUpperCase() !== parsed.method.toUpperCase()) {
+      return false;
+    }
+    return pathMatchesTemplate(path, parsed.path);
+  })?.name;
 }
 
 export default function AgentDock({ specs }: { specs: [string, string][] }) {
@@ -90,6 +154,7 @@ export default function AgentDock({ specs }: { specs: [string, string][] }) {
   const lastTurnTsRef = useRef(feed.turnTs);
   const [invoices, setInvoices] = useState<X402Invoice[] | null>(null);
   const [services, setServices] = useState<X402Service[]>([]);
+  const [apps, setApps] = useState<DAppCatalogEntry[]>([]);
   const [invoicesLoading, setInvoicesLoading] = useState(false);
   const [invoicesError, setInvoicesError] = useState(false);
   // compositor: chatear sin hablar (solo sandbox)
@@ -157,9 +222,10 @@ export default function AgentDock({ specs }: { specs: [string, string][] }) {
       }
       setInvoicesError(false);
       try {
-        const [invoiceRes, serviceRes] = await Promise.all([
+        const [invoiceRes, serviceRes, appRes] = await Promise.all([
           fetch("/api/account/x402/invoices?environment=sandbox", { cache: "no-store" }),
           fetch("/api/account/services", { cache: "no-store" }),
+          fetch("/api/apps", { cache: "no-store" }),
         ]);
         const invoiceData = (await invoiceRes.json().catch(() => null)) as
           | { ok?: boolean; invoices?: X402Invoice[] }
@@ -167,12 +233,16 @@ export default function AgentDock({ specs }: { specs: [string, string][] }) {
         const serviceData = (await serviceRes.json().catch(() => null)) as
           | { ok?: boolean; services?: X402Service[] }
           | null;
+        const appData = (await appRes.json().catch(() => null)) as
+          | { ok?: boolean; apps?: DAppCatalogEntry[] }
+          | null;
         if (!invoiceRes.ok || invoiceData?.ok !== true) {
           throw new Error("invoice list unavailable");
         }
         if (active) {
           setInvoices(invoiceData.invoices ?? []);
           setServices(serviceData?.ok ? serviceData.services ?? [] : []);
+          setApps(appData?.ok ? appData.apps ?? [] : []);
         }
       } catch {
         if (active) setInvoicesError(true);
@@ -209,37 +279,37 @@ export default function AgentDock({ specs }: { specs: [string, string][] }) {
   return (
     <div className="pointer-events-none absolute top-4 bottom-4 left-4 z-[5] flex w-[380px] max-w-[calc(100vw-24px)] flex-col justify-end gap-2 max-md:right-3 max-md:left-3 max-md:z-30 max-md:w-auto">
       {/* Los accesos abren una única sección del dock. */}
-      <div className="pointer-events-auto flex w-fit max-w-full flex-wrap items-center gap-2 self-start">
+      <div className="pointer-events-auto flex w-fit max-w-full flex-wrap items-center gap-1 self-start">
         <button
           type="button"
           onClick={() => toggleSection("turn")}
           title={t("see")}
           aria-pressed={section === "turn"}
           className={cn(
-            "flex cursor-pointer items-center gap-2 rounded-full border bg-white px-3.5 py-2 text-xs font-medium shadow-[0_3px_16px_rgba(0,0,0,0.06)]",
+            "flex min-h-7 cursor-pointer items-center gap-1.5 rounded-full border bg-white px-2.5 py-1.5 text-[11px] leading-none font-medium shadow-sm",
             section === "turn"
               ? "border-[#343433]/50 text-foreground"
               : "border-[#EDEDED] text-muted-foreground hover:text-foreground",
           )}
         >
-          <Bot className={cn("size-4", active && "animate-pulse text-foreground")} />
+          <Bot className={cn("size-3.5", active && "animate-pulse text-foreground")} />
           {t("lastTurn")}
-          <ChevronDown className={cn("size-3.5 transition-transform", section === "turn" && "rotate-180")} />
+          <ChevronDown className={cn("size-3 transition-transform", section === "turn" && "rotate-180")} />
         </button>
         <button
           type="button"
           onClick={() => toggleSection("invoices")}
           aria-pressed={section === "invoices"}
           className={cn(
-            "flex cursor-pointer items-center gap-2 rounded-full border bg-white px-3.5 py-2 text-xs font-medium shadow-[0_3px_16px_rgba(0,0,0,0.06)]",
+            "flex min-h-7 cursor-pointer items-center gap-1.5 rounded-full border bg-white px-2.5 py-1.5 text-[11px] leading-none font-medium shadow-sm",
             section === "invoices"
               ? "border-[#343433]/50 text-foreground"
               : "border-[#EDEDED] text-muted-foreground hover:text-foreground",
           )}
         >
-          <Receipt className="size-4" />
+          <Receipt className="size-3.5" />
           {t("invoices")}
-          <ChevronDown className={cn("size-3.5 transition-transform", section === "invoices" && "rotate-180")} />
+          <ChevronDown className={cn("size-3 transition-transform", section === "invoices" && "rotate-180")} />
         </button>
         <ViewLockButton />
         <button
@@ -249,13 +319,13 @@ export default function AgentDock({ specs }: { specs: [string, string][] }) {
           title={t("specs")}
           aria-label={t("specs")}
           className={cn(
-            "flex size-9 cursor-pointer items-center justify-center rounded-full border bg-white shadow-[0_3px_16px_rgba(0,0,0,0.06)]",
+            "flex size-8 cursor-pointer items-center justify-center rounded-full border bg-white shadow-sm",
             section === "specs"
               ? "border-[#343433]/50 text-foreground"
               : "border-[#EDEDED] text-muted-foreground hover:text-foreground",
           )}
         >
-          <Cpu className="size-4" />
+          <Cpu className="size-3.5" />
         </button>
       </div>
 
@@ -373,6 +443,10 @@ export default function AgentDock({ specs }: { specs: [string, string][] }) {
               <div className="grid gap-2.5">
                 {invoices?.map((invoice) => {
                   const service = invoiceService(invoice.resource, services);
+                  const parsedApp = parseAppResource(invoice.resource);
+                  const app = apps.find((entry) => entry.slug === parsedApp?.slug);
+                  const appName = app?.name ?? invoice.app ?? service?.display_name ?? t("unknownApp");
+                  const logo = app ? DAPP_LOGOS[app.slug] : undefined;
                   const amount = new Intl.NumberFormat(locale, { maximumFractionDigits: 9 }).format(
                     invoice.amount_lamports / 1_000_000_000,
                   );
@@ -380,7 +454,8 @@ export default function AgentDock({ specs }: { specs: [string, string][] }) {
                     dateStyle: "short",
                     timeStyle: "short",
                   }).format(new Date(invoice.created_at));
-                  const resource = invoice.tool || resourcePath(invoice.resource);
+                  const toolName = appToolForInvoice(invoice, apps) ??
+                    (parsedApp ? t("appRequestTool") : resourcePath(invoice.resource));
                   return (
                     <article key={invoice.id} className="grid gap-2 rounded-2xl border border-[#EDEDED]/80 p-3">
                       <div className="flex items-center justify-between gap-2">
@@ -393,13 +468,18 @@ export default function AgentDock({ specs }: { specs: [string, string][] }) {
                       <dl className="grid gap-1.5 text-xs">
                         <div className="grid grid-cols-[58px_minmax(0,1fr)] gap-2">
                           <dt className="text-muted-foreground">{t("invoiceApp")}</dt>
-                          <dd className="truncate font-medium" title={invoice.app ?? service?.display_name ?? ""}>
-                            {invoice.app ?? service?.display_name ?? t("unknownApp")}
+                          <dd className="flex min-w-0 items-center gap-1.5 font-medium" title={appName}>
+                            {logo ? (
+                              <Image src={logo} alt="" aria-hidden="true" width={20} height={20} className="size-5 shrink-0 object-contain" />
+                            ) : (
+                              <Blocks className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                            )}
+                            <span className="truncate">{appName}</span>
                           </dd>
                         </div>
                         <div className="grid grid-cols-[58px_minmax(0,1fr)] gap-2">
                           <dt className="text-muted-foreground">{t("invoiceTool")}</dt>
-                          <dd className="truncate font-mono text-[10px]" title={resource}>{resource || "—"}</dd>
+                          <dd className="truncate font-medium" title={toolName}>{toolName || "—"}</dd>
                         </div>
                       </dl>
                     </article>

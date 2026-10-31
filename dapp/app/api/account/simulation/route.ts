@@ -26,7 +26,12 @@ export async function POST(req: Request) {
   return forwardToApi(
     "/accounts/me/simulation/step",
     { method: "POST" },
-    { action: body.action, text: body.text, target: body.target },
+    {
+      action: body.action,
+      text: body.text,
+      target: body.target,
+      claim_code: body.claim_code,
+    },
     310_000,
   );
 }

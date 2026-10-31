@@ -24,10 +24,10 @@ import {
   Copy,
   Droplets,
   Ghost,
+  ArrowLeft,
   LoaderCircle,
   PlugZap,
   Plus,
-  Radio,
   RotateCw,
   Search,
   Sun,
@@ -93,6 +93,13 @@ interface DAppRow {
   version: string;
   status: string;
   tools_count: number;
+}
+interface ControlDevice {
+  id: string;
+  name: string;
+  board: string;
+  status: string;
+  online: boolean;
 }
 interface LlmConfig {
   provider?: string;
@@ -404,7 +411,7 @@ function WalletModal({ onClose }: { onClose: () => void }) {
     }
   };
 
-  /** Faucet Devnet (W6): treasury del ecosistema → wallet dPaaS. */
+  /** Faucet Devnet: solicita fondos de prueba para la wallet Devnet de la cuenta. */
   const onFaucet = async () => {
     setFaucetBusy(true);
     setError(null);
@@ -628,7 +635,24 @@ function WalletModal({ onClose }: { onClose: () => void }) {
                     {faucetMsg}
                   </p>
                 )}
+                <a
+                  href="https://faucet.solana.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-medium text-primary underline-offset-4 hover:underline"
+                >
+                  {t("officialFaucet")}
+                </a>
               </CardContent>
+            </Card>
+          )}
+
+          {!sandbox && (
+            <Card className="gap-0 py-0 shadow-none">
+              <CardHeader className="gap-1 px-4 py-3">
+                <CardTitle className="text-sm">Solana Mainnet</CardTitle>
+                <CardDescription>{t("mainnetFundingInfo")}</CardDescription>
+              </CardHeader>
             </Card>
           )}
 
@@ -1307,6 +1331,183 @@ function DAppLogo({ app }: { app: DAppRow }) {
   );
 }
 
+function DAppControlModal({
+  app,
+  onBack,
+  onClose,
+}: {
+  app: DAppRow;
+  onBack: () => void;
+  onClose: () => void;
+}) {
+  const t = useTranslations("dapps");
+  const [devices, setDevices] = useState<ControlDevice[] | null>(null);
+  const [mode, setMode] = useState<"all" | "selected">("all");
+  const [deviceIds, setDeviceIds] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const path = `/api/account/apps/${encodeURIComponent(app.slug)}/visibility`;
+      const [fleetRes, visibilityRes] = await Promise.all([
+        fetch("/api/account/devices", { cache: "no-store" }),
+        fetch(path, { cache: "no-store" }),
+      ]);
+      const [fleetData, visibilityData] = await Promise.all([
+        fleetRes.json(),
+        visibilityRes.json(),
+      ]);
+      if (!fleetRes.ok || !fleetData.ok) {
+        throw new Error(fleetData.error ?? t("controlLoadError"));
+      }
+      if (!visibilityRes.ok || !visibilityData.ok) {
+        throw new Error(visibilityData.error ?? t("controlLoadError"));
+      }
+      setDevices(fleetData.devices ?? []);
+      setMode(visibilityData.mode === "selected" ? "selected" : "all");
+      setDeviceIds(Array.isArray(visibilityData.device_ids) ? visibilityData.device_ids : []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("controlLoadError"));
+    } finally {
+      setLoading(false);
+    }
+  }, [app.slug, t]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const res = await fetch(`/api/account/apps/${encodeURIComponent(app.slug)}/visibility`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode,
+          device_ids: mode === "selected" ? deviceIds : [],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error ?? `HTTP ${res.status}`);
+      }
+      setSaved(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("controlSaveError"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleDevice = (id: string, checked: boolean) => {
+    setDeviceIds((current) => checked
+      ? [...new Set([...current, id])]
+      : current.filter((deviceId) => deviceId !== id));
+    setSaved(false);
+  };
+
+  return (
+    <Modal
+      title={<><Blocks className="size-5 text-primary" />{t("controlTitle", { app: app.name })}</>}
+      onClose={onClose}
+    >
+      <Button type="button" variant="ghost" size="sm" className="-mt-2 w-fit" onClick={onBack}>
+        <ArrowLeft />{t("backToCatalog")}
+      </Button>
+      <p className="-mt-2 text-sm text-muted-foreground">{app.name}</p>
+
+      {loading && (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <LoaderCircle className="size-4 animate-spin" />{t("controlLoading")}
+        </p>
+      )}
+
+      {!loading && (
+        <fieldset className="grid gap-3" disabled={saving}>
+          <legend className="mb-1 text-sm font-medium">{t("visibilityScope")}</legend>
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm">
+            <input
+              type="radio"
+              name={`visibility-${app.slug}`}
+              checked={mode === "all"}
+              onChange={() => { setMode("all"); setSaved(false); }}
+              className="mt-1 accent-zinc-900"
+            />
+            <span className="grid gap-0.5">
+              <span className="font-medium">{t("allDevices")}</span>
+              <span className="text-xs text-muted-foreground">{t("allDevicesHint")}</span>
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm">
+            <input
+              type="radio"
+              name={`visibility-${app.slug}`}
+              checked={mode === "selected"}
+              onChange={() => { setMode("selected"); setSaved(false); }}
+              className="mt-1 accent-zinc-900"
+            />
+            <span className="grid gap-0.5">
+              <span className="font-medium">{t("selectedDevices")}</span>
+              <span className="text-xs text-muted-foreground">{t("selectedDevicesHint")}</span>
+            </span>
+          </label>
+
+          {mode === "selected" && (
+            <div className="grid max-h-56 gap-1 overflow-y-auto rounded-lg border p-2">
+              {devices?.length ? devices.map((device) => (
+                <label key={device.id} className="flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 hover:bg-muted/60">
+                  <input
+                    type="checkbox"
+                    checked={deviceIds.includes(device.id)}
+                    onChange={(event) => toggleDevice(device.id, event.target.checked)}
+                    className="mt-1 accent-zinc-900"
+                  />
+                  <span className="grid min-w-0 flex-1 gap-0.5">
+                    <span className="truncate text-sm font-medium">{device.name}</span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {device.board} · {device.online ? t("deviceOnline") : t("deviceOffline")}
+                    </span>
+                  </span>
+                </label>
+              )) : (
+                <p className="p-3 text-sm text-muted-foreground">{t("noFleetDevices")}</p>
+              )}
+            </div>
+          )}
+        </fieldset>
+      )}
+
+      {error && (
+        <Alert variant="destructive">
+          <TriangleAlert />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      {saved && (
+        <p role="status" className="text-sm font-medium text-emerald-700">{t("controlSaved")}</p>
+      )}
+      <div className="flex justify-end border-t pt-3">
+        <Button
+          type="button"
+          onClick={() => void save()}
+          disabled={loading || saving || devices === null || (mode === "selected" && deviceIds.length === 0)}
+        >
+          {saving ? <LoaderCircle className="animate-spin" /> : null}
+          {saving ? t("controlSaving") : t("saveControl")}
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
 /** Catálogo de DApps disponible en la API del ecosistema. */
 function DAppsModal({ onClose }: { onClose: () => void }) {
   const t = useTranslations("dapps");
@@ -1314,6 +1515,7 @@ function DAppsModal({ onClose }: { onClose: () => void }) {
   const [apps, setApps] = useState<DAppRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [installingSlug, setInstallingSlug] = useState<string | null>(null);
+  const [controlApp, setControlApp] = useState<DAppRow | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -1374,6 +1576,15 @@ function DAppsModal({ onClose }: { onClose: () => void }) {
     if (status === "failed") return t("statusFailed");
     return t("statusAvailable");
   };
+  if (controlApp) {
+    return (
+      <DAppControlModal
+        app={controlApp}
+        onBack={() => setControlApp(null)}
+        onClose={onClose}
+      />
+    );
+  }
   return (
     <Modal
       title={
@@ -1454,15 +1665,25 @@ function DAppsModal({ onClose }: { onClose: () => void }) {
                 {!installed && (
                   <span className="text-xs text-muted-foreground">{t("connectHint")}</span>
                 )}
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => void install(app.slug)}
-                  disabled={pending || installed}
-                >
-                  {pending ? <LoaderCircle className="animate-spin" /> : <Plus />}
-                  {pending ? t("installing") : t("install")}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => void install(app.slug)}
+                    disabled={pending || installed}
+                  >
+                    {pending ? <LoaderCircle className="animate-spin" /> : <Plus />}
+                    {pending ? t("installing") : t("install")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setControlApp(app)}
+                  >
+                    {t("control")}
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -1485,50 +1706,48 @@ export default function TopbarTools() {
 
   return (
     <>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => setModal("wallet")}
-        title={t("walletTitle")}
-        className="h-8 px-2 sm:h-9 sm:px-3"
+      <div
+        role="group"
+        aria-label="Herramientas del panel"
+        className="flex shrink-0 items-center gap-0.5 sm:gap-1"
       >
-        <Wallet />
-        <span className="hidden min-[480px]:inline">{t("wallet")}</span>
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => setModal("models")}
-        title={t("modelsTitle")}
-        className="h-8 px-2 sm:h-9 sm:px-3"
-      >
-        <Bot />
-        <span className="hidden min-[480px]:inline">{t("models")}</span>
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => setModal("dapps")}
-        title={t("dappsTitle")}
-        className="h-8 px-2 sm:h-9 sm:px-3"
-      >
-        <Blocks />
-        <span className="hidden min-[480px]:inline">{t("dapps")}</span>
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => setModal("fleet")}
-        title={t("fleetTitle")}
-        className="h-8 px-2 sm:h-9 sm:px-3"
-      >
-        <Radio />
-        <span className="hidden min-[480px]:inline">{t("fleet")}</span>
-      </Button>
+        <button
+          type="button"
+          onClick={() => setModal("wallet")}
+          title={t("walletTitle")}
+          aria-haspopup="dialog"
+          className="inline-flex min-h-8 items-center rounded-lg pl-0 pr-1.5 text-xs font-medium tracking-[-0.01em] text-zinc-600 transition-colors duration-200 hover:bg-zinc-100 hover:text-zinc-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 sm:pr-2 sm:text-[13px]"
+        >
+          {t("wallet")}
+        </button>
+        <button
+          type="button"
+          onClick={() => setModal("models")}
+          title={t("modelsTitle")}
+          aria-haspopup="dialog"
+          className="inline-flex min-h-8 items-center rounded-lg px-1.5 text-xs font-medium tracking-[-0.01em] text-zinc-600 transition-colors duration-200 hover:bg-zinc-100 hover:text-zinc-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 sm:px-2 sm:text-[13px]"
+        >
+          {t("models")}
+        </button>
+        <button
+          type="button"
+          onClick={() => setModal("dapps")}
+          title={t("dappsTitle")}
+          aria-haspopup="dialog"
+          className="inline-flex min-h-8 items-center rounded-lg px-1.5 text-xs font-medium tracking-[-0.01em] text-zinc-600 transition-colors duration-200 hover:bg-zinc-100 hover:text-zinc-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 sm:px-2 sm:text-[13px]"
+        >
+          {t("dapps")}
+        </button>
+        <button
+          type="button"
+          onClick={() => setModal("fleet")}
+          title={t("fleetTitle")}
+          aria-haspopup="dialog"
+          className="inline-flex min-h-8 items-center rounded-lg px-1.5 text-xs font-medium tracking-[-0.01em] text-zinc-600 transition-colors duration-200 hover:bg-zinc-100 hover:text-zinc-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 sm:px-2 sm:text-[13px]"
+        >
+          {t("fleet")}
+        </button>
+      </div>
       <SandboxIndicator />
 
       {modal === "wallet" && <WalletModal onClose={() => setModal(null)} />}
